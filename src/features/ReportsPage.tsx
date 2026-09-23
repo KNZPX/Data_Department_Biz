@@ -135,7 +135,7 @@ export function ReportsPage() {
               onClick={() => setKind("report")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                kind === "report" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
+                kind === "report" ? "bg-[#B45309] text-white shadow-xs" : "text-slate-600 hover:text-[#B45309]"
               )}
             >
               Reports ({items.length})
@@ -145,7 +145,7 @@ export function ReportsPage() {
               onClick={() => setKind("dashboard")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                kind === "dashboard" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
+                kind === "dashboard" ? "bg-[#B45309] text-white shadow-xs" : "text-slate-600 hover:text-[#B45309]"
               )}
             >
               Dashboards
@@ -161,7 +161,7 @@ export function ReportsPage() {
             onClick={() => refresh()}
             disabled={state.status === "loading"}
           >
-            <RefreshCw className={clsx("h-3.5 w-3.5", state.status === "loading" && "animate-spin text-[#002D72]")} />
+            <RefreshCw className={clsx("h-3.5 w-3.5", state.status === "loading" && "animate-spin text-[#B45309]")} />
             <span>Sync Catalog</span>
           </Button>
 
@@ -183,7 +183,7 @@ export function ReportsPage() {
       {/* Main Mail Inbox 2-Pane Container */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 min-h-[680px]">
         {/* LEFT PANE: Workspace Mailbox Folders (4 Cols) */}
-        <div className="md:col-span-4 lg:col-span-4 flex flex-col rounded-3xl border border-slate-200/90 bg-white p-4 shadow-xs">
+        <div className="md:col-span-4 lg:col-span-4 flex flex-col rounded-2xl border border-slate-200/70 bg-white p-4 minimals-card">
           {/* Folder Header */}
           <div className="pb-3 border-b border-slate-100 space-y-2.5">
             <div className="flex items-center justify-between">
@@ -285,7 +285,7 @@ export function ReportsPage() {
         </div>
 
         {/* RIGHT PANE: Mail Inbox Reports List (8 Cols) */}
-        <div className="md:col-span-8 lg:col-span-8 flex flex-col rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs">
+        <div className="md:col-span-8 lg:col-span-8 flex flex-col rounded-2xl border border-slate-200/70 bg-white p-5 minimals-card">
           {!selectedWorkspace ? (
             /* Empty State: Prompt User to Select Workspace */
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center my-auto min-h-[400px]">

@@ -71,18 +71,16 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { href: "/", label: "Portal Hub", icon: LayoutDashboard, exact: true },
-    { href: "/reports", label: "Workspaces & Reports", icon: Inbox },
-    { href: "/licenses", label: "License Manager (32 Col)", icon: ShieldCheck },
-    { href: "/changelog", label: "Publish History", icon: History, count: unreadCount },
-    { href: "/settings", label: "Settings & DB", icon: Settings },
+    { href: "/reports", label: "Reports & Workspaces", icon: Inbox },
+    { href: "/settings", label: "Settings", icon: Settings },
   ];
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900 selection:bg-[#B45309] selection:text-white">
+    <div className="flex min-h-screen bg-[#F4F6F8] text-[#1C252E] selection:bg-[#B45309] selection:text-white">
       {/* Mobile Drawer Backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs md:hidden transition-opacity"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -90,7 +88,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       {/* Sidebar Navigation */}
       <aside
         className={clsx(
-          "fixed top-0 bottom-0 left-0 z-50 flex flex-col border-r border-slate-200/80 bg-white transition-all duration-300 ease-in-out md:translate-x-0",
+          "fixed top-0 bottom-0 left-0 z-50 flex flex-col border-r border-slate-200/70 bg-white transition-all duration-300 ease-in-out md:translate-x-0 shadow-xs",
           collapsed ? "w-20" : "w-64",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
@@ -145,25 +143,18 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 onClick={() => setMobileOpen(false)}
                 title={collapsed ? item.label : undefined}
                 className={clsx(
-                  "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-xs font-semibold transition duration-150 active:scale-[0.98]",
+                  "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition duration-150 active:scale-[0.98]",
                   active
-                    ? "bg-[#B45309] text-white shadow-xs"
-                    : "text-slate-600 hover:bg-[#B45309]/10 hover:text-[#B45309]",
+                    ? "bg-[#B45309]/10 text-[#B45309] font-bold"
+                    : "text-[#637381] hover:bg-slate-100/80 hover:text-[#1C252E]",
                   collapsed && "justify-center px-0"
                 )}
               >
-                <Icon className={clsx("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-white" : "text-slate-500 group-hover:text-[#B45309]")} />
+                {active && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-[#B45309]" />
+                )}
+                <Icon className={clsx("h-4.5 w-4.5 shrink-0 transition-transform group-hover:scale-110", active ? "text-[#B45309]" : "text-[#637381] group-hover:text-[#1C252E]")} />
                 {!collapsed && <span className="truncate">{item.label}</span>}
-                {item.count && item.count > 0 ? (
-                  <span
-                    className={clsx(
-                      "rounded-full bg-[#D97706] px-1.5 py-0.2 text-[10px] font-bold text-white shadow-2xs",
-                      collapsed ? "absolute top-1 right-2" : "ml-auto"
-                    )}
-                  >
-                    {item.count}
-                  </span>
-                ) : null}
               </Link>
             );
           })}
@@ -237,7 +228,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         )}
       >
         {/* Top Header Bar for Mobile & Breadcrumbs */}
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur-md sm:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200/70 bg-white/80 px-4 backdrop-blur-md sm:px-6">
           <div className="flex items-center gap-3">
             {/* Mobile Hamburger Button */}
             <button
@@ -253,15 +244,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2 text-xs">
               <span className="font-bold text-[#B45309]">BIZ-ANALYTIC</span>
               <span className="text-slate-300">/</span>
-              <span className="text-slate-500 font-medium">
+              <span className="text-slate-600 font-medium">
                 {pathname === "/"
                   ? "Portal Hub"
                   : pathname.startsWith("/reports")
-                  ? "Workspaces & Reports Inbox"
-                  : pathname.startsWith("/licenses")
-                  ? "Power BI Licenses (32 Columns)"
-                  : pathname.startsWith("/changelog")
-                  ? "Version History"
+                  ? "Reports & Workspaces"
                   : "Settings"}
               </span>
             </div>

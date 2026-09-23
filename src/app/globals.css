@@ -10,28 +10,49 @@
   --biz-yellow-50: #FFFBEB;
   --biz-slate: #0F172A;
   
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
+  --background: #F4F6F8;
+  --foreground: #1C252E;
+  --muted: #637381;
+  --line: #E5E8EB;
   --panel: #ffffff;
   
   /* daisyUI 5 theme mapping for Biz-Analytic */
   --color-primary: #B45309;
   --color-primary-content: #ffffff;
-  --color-secondary: #0F172A;
+  --color-secondary: #1C252E;
   --color-secondary-content: #ffffff;
   --color-accent: #D97706;
   --color-accent-content: #ffffff;
-  --color-neutral: #1E293B;
+  --color-neutral: #212B36;
   --color-neutral-content: #ffffff;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Kanit', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: 'Kanit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Minimals.cc Signature Elevation & Shadows */
+.minimals-card {
+  background-color: #ffffff;
+  border-radius: 1rem;
+  border: 1px solid rgba(145, 158, 171, 0.16);
+  box-shadow: 0 0 2px 0 rgba(145, 158, 171, 0.2), 0 12px 24px -4px rgba(145, 158, 171, 0.12);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.minimals-card:hover {
+  box-shadow: 0 0 2px 0 rgba(145, 158, 171, 0.24), 0 16px 32px -4px rgba(145, 158, 171, 0.16);
+}
+
+.minimals-glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 /* Custom scrollbars */
