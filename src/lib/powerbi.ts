@@ -337,3 +337,33 @@ export async function getAllReports() {
 export async function getAllDashboards() {
   return fetchItemsForKind("dashboard");
 }
+
+export async function getAllDatasets(): Promise<PowerBiDataset[]> {
+  try {
+    const token = await getAccessToken();
+    const res = await powerBiGet<{ value: PowerBiDataset[] }>(token, "/datasets");
+    return res.value || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function executeDaxQuery(datasetId: string, daxQuery: string): Promise<any> {
+  const token = await getAccessToken();
+  const res = await fetch(`https://api.powerbi.com/v1.0/myorg/datasets/${datasetId}/executeQueries`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      queries: [{ query: daxQuery }],
+      serializerSettings: { includeNulls: true },
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`ExecuteQueries failed (${res.status}): ${errText}`);
+  }
+  return res.json();
+}
