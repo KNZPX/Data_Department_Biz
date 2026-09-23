@@ -3,15 +3,12 @@
 @plugin "daisyui";
 
 :root {
-  /* Bangkok Hospital Brand CI Palette */
-  --bh-blue: #002D72;
-  --bh-blue-dark: #001f52;
-  --bh-blue-light: #0d4494;
-  --bh-blue-50: #edf4fc;
-  --bh-red: #AB2328;
-  --bh-red-dark: #8c1b20;
-  --bh-red-light: #c9343a;
-  --bh-red-50: #fdf2f2;
+  /* Biz-Analytic Brand CI Palette - Dark Yellow & Deep Amber */
+  --biz-yellow: #B45309;
+  --biz-yellow-dark: #92400E;
+  --biz-yellow-light: #D97706;
+  --biz-yellow-50: #FFFBEB;
+  --biz-slate: #0F172A;
   
   --background: #f8fafc;
   --foreground: #0f172a;
@@ -19,14 +16,14 @@
   --line: #e2e8f0;
   --panel: #ffffff;
   
-  /* daisyUI 5 theme mapping for Bangkok Hospital */
-  --color-primary: #002D72;
+  /* daisyUI 5 theme mapping for Biz-Analytic */
+  --color-primary: #B45309;
   --color-primary-content: #ffffff;
-  --color-secondary: #AB2328;
+  --color-secondary: #0F172A;
   --color-secondary-content: #ffffff;
-  --color-accent: #AB2328;
+  --color-accent: #D97706;
   --color-accent-content: #ffffff;
-  --color-neutral: #002D72;
+  --color-neutral: #1E293B;
   --color-neutral-content: #ffffff;
 }
 

@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { clsx } from "clsx";
-import { BangkokHospitalLogo } from "@/components/brand/BangkokHospitalLogo";
+import { BizAnalyticLogo } from "@/components/brand/BizAnalyticLogo";
 import { TokenModal } from "@/components/TokenModal";
 import { LoginGate, useAuth } from "@/components/auth/LoginGate";
 
@@ -78,7 +78,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900 selection:bg-[#002D72] selection:text-white">
+    <div className="flex min-h-screen bg-slate-50 text-slate-900 selection:bg-[#B45309] selection:text-white">
       {/* Mobile Drawer Backdrop */}
       {mobileOpen && (
         <div
@@ -95,8 +95,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
-        {/* Brand Top Accent Stripe */}
-        <div className="h-1 w-full bg-gradient-to-r from-[#002D72] via-[#002D72] to-[#AB2328]" />
+        {/* Brand Top Accent Stripe - Dark Yellow / Amber Gradient */}
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
 
         {/* Sidebar Header & Brand */}
         <div className="flex h-16 items-center justify-between px-4 border-b border-slate-100">
@@ -104,12 +104,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             href="/"
             onClick={() => setMobileOpen(false)}
             className="flex items-center gap-2 overflow-hidden py-1 transition hover:opacity-90"
-            title="Bangkok Hospital Enterprise Analytics Portal"
+            title="Biz-Analytic Enterprise Portal"
           >
             {collapsed ? (
-              <BangkokHospitalLogo size="md" showText={false} />
+              <BizAnalyticLogo size="md" showText={false} />
             ) : (
-              <BangkokHospitalLogo size="sm" showText={true} subtext="Enterprise Analytics Portal" />
+              <BizAnalyticLogo size="sm" showText={true} subtext="Enterprise BI Hub" />
             )}
           </Link>
 
@@ -118,7 +118,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={toggleSidebar}
             title={collapsed ? "Expand sidebar" : "Hide / Collapse sidebar"}
-            className="hidden md:grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#002D72] transition"
+            className="hidden md:grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#B45309] transition"
           >
             {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
@@ -147,17 +147,17 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 className={clsx(
                   "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-xs font-semibold transition duration-150 active:scale-[0.98]",
                   active
-                    ? "bg-[#002D72] text-white shadow-xs"
-                    : "text-slate-600 hover:bg-[#002D72]/5 hover:text-[#002D72]",
+                    ? "bg-[#B45309] text-white shadow-xs"
+                    : "text-slate-600 hover:bg-[#B45309]/10 hover:text-[#B45309]",
                   collapsed && "justify-center px-0"
                 )}
               >
-                <Icon className={clsx("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-white" : "text-slate-500 group-hover:text-[#002D72]")} />
+                <Icon className={clsx("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-white" : "text-slate-500 group-hover:text-[#B45309]")} />
                 {!collapsed && <span className="truncate">{item.label}</span>}
                 {item.count && item.count > 0 ? (
                   <span
                     className={clsx(
-                      "rounded-full bg-[#AB2328] px-1.5 py-0.2 text-[10px] font-bold text-white shadow-2xs",
+                      "rounded-full bg-[#D97706] px-1.5 py-0.2 text-[10px] font-bold text-white shadow-2xs",
                       collapsed ? "absolute top-1 right-2" : "ml-auto"
                     )}
                   >
@@ -180,12 +180,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 collapsed ? "justify-center p-1.5" : ""
               )}
             >
-              <div className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-[#002D72] text-xs font-bold text-white shadow-xs">
+              <div className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-[#B45309] text-xs font-bold text-white shadow-xs">
                 {user.name ? user.name.slice(0, 1).toUpperCase() : <User className="h-3.5 w-3.5" />}
               </div>
               {!collapsed && (
                 <div className="flex flex-col min-w-0 flex-1 leading-tight">
-                  <span className="font-bold text-[#002D72] truncate">{user.name}</span>
+                  <span className="font-bold text-[#B45309] truncate">{user.name}</span>
                   <span className="text-[10px] text-slate-400 truncate font-mono">{user.email}</span>
                 </div>
               )}
@@ -197,7 +197,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             {/* DB Indicator */}
             {!collapsed && (
               <div className="flex items-center gap-1.5 px-1 text-[10px] font-mono text-slate-500">
-                <Database className="h-3 w-3 text-[#002D72]" />
+                <Database className="h-3 w-3 text-[#B45309]" />
                 <span className="font-semibold text-slate-700 uppercase">
                   {dbProvider === "supabase" ? "Supabase Cloud" : "SQLite Local"}
                 </span>
@@ -210,7 +210,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => setTokenOpen(true)}
                 title="Inspect or Copy Access Token"
-                className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-[#002D72]/10 hover:text-[#002D72] transition"
+                className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-[#B45309]/10 hover:text-[#B45309] transition"
               >
                 <KeyRound className="h-4 w-4" />
               </button>
@@ -220,7 +220,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => logout()}
                 title="Sign out of Microsoft 365"
-                className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-[#AB2328]/10 hover:text-[#AB2328] transition"
+                className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
               >
                 <LogOut className="h-4 w-4" />
               </button>
@@ -251,7 +251,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
             {/* Breadcrumb / Title */}
             <div className="flex items-center gap-2 text-xs">
-              <span className="font-bold text-[#002D72]">BANGKOK HOSPITAL</span>
+              <span className="font-bold text-[#B45309]">BIZ-ANALYTIC</span>
               <span className="text-slate-300">/</span>
               <span className="text-slate-500 font-medium">
                 {pathname === "/"
@@ -268,9 +268,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-[#002D72]/5 px-2.5 py-0.5 text-[10px] font-semibold text-[#002D72] border border-[#002D72]/15">
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-[#B45309]/10 px-2.5 py-0.5 text-[10px] font-semibold text-[#B45309] border border-[#B45309]/20">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>BDMS Connected</span>
+              <span>Biz-Analytic Ready</span>
             </span>
           </div>
         </header>
@@ -284,12 +284,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         <footer className="border-t border-slate-200/80 bg-white py-4 text-center text-xs text-slate-400">
           <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px]">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-[#002D72]">BANGKOK HOSPITAL</span>
+              <span className="font-bold text-[#B45309]">BIZ-ANALYTIC</span>
               <span>&bull;</span>
-              <span>Continuous development towards the pinnacle of care</span>
+              <span>Enterprise Business Analytics & Intelligence Hub</span>
             </div>
             <div>
-              <span>BDMS Data Department &bull; Enterprise Analytics Platform</span>
+              <span>Biz-Analytic Department &bull; Power BI Governance Platform</span>
             </div>
           </div>
         </footer>

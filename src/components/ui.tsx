@@ -24,11 +24,11 @@ export function Button({
         dense ? "btn-sm text-xs px-3.5" : "text-sm px-5",
         size === "iconWide" && "h-9 w-9 p-0 sm:h-10 sm:w-auto sm:px-4",
         size === "icon" && "h-9 w-9 p-0 sm:h-10 sm:w-10",
-        variant === "primary" && "bg-[#002D72] hover:bg-[#001f52] text-white border-[#002D72] shadow-xs",
-        variant === "secondary" && "btn-outline border-slate-200 bg-white text-slate-800 hover:bg-[#002D72]/5 hover:border-[#002D72]/30 hover:text-[#002D72]",
-        variant === "danger" && "bg-[#AB2328] hover:bg-[#8c1b20] text-white border-[#AB2328] shadow-xs",
-        variant === "gold" && "bg-[#AB2328] hover:bg-[#8c1b20] text-white border-[#AB2328] font-bold shadow-xs",
-        variant === "ghost" && "btn-ghost text-slate-600 hover:bg-[#002D72]/5 hover:text-[#002D72]",
+        variant === "primary" && "bg-[#B45309] hover:bg-[#92400E] text-white border-[#B45309] shadow-xs",
+        variant === "secondary" && "btn-outline border-slate-200 bg-white text-slate-800 hover:bg-[#B45309]/10 hover:border-[#B45309]/30 hover:text-[#B45309]",
+        variant === "danger" && "bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-xs",
+        variant === "gold" && "bg-[#D97706] hover:bg-[#B45309] text-white border-[#D97706] font-bold shadow-xs",
+        variant === "ghost" && "btn-ghost text-slate-600 hover:bg-[#B45309]/10 hover:text-[#B45309]",
         className,
       )}
       {...props}
@@ -47,10 +47,10 @@ export function IconButton({
       type="button"
       className={clsx(
         "btn btn-circle btn-sm shrink-0 shadow-2xs transition duration-150 active:scale-95",
-        tone === "danger" && "btn-soft text-[#AB2328] bg-[#AB2328]/10 border border-[#AB2328]/20",
-        tone === "edit" && "btn-soft text-[#002D72] bg-[#002D72]/10 border border-[#002D72]/20",
-        tone === "gold" && "btn-soft text-[#AB2328] bg-[#AB2328]/10 border border-[#AB2328]/20",
-        tone === "default" && "btn-ghost border border-slate-200 bg-white text-slate-500 hover:text-[#002D72] hover:border-[#002D72]/30",
+        tone === "danger" && "btn-soft text-rose-600 bg-rose-50 border border-rose-200",
+        tone === "edit" && "btn-soft text-[#B45309] bg-[#B45309]/10 border border-[#B45309]/20",
+        tone === "gold" && "btn-soft text-[#D97706] bg-[#D97706]/10 border border-[#D97706]/20",
+        tone === "default" && "btn-ghost border border-slate-200 bg-white text-slate-500 hover:text-[#B45309] hover:border-[#B45309]/30",
         className,
       )}
       {...props}
@@ -85,8 +85,8 @@ export function ViewToggle<T extends string>({
             className={clsx(
               "btn btn-sm rounded-full px-3.5 text-xs font-semibold border-none transition duration-150",
               active
-                ? "bg-[#002D72] text-white shadow-xs"
-                : "btn-ghost text-slate-600 hover:bg-white/80 hover:text-[#002D72]",
+                ? "bg-[#B45309] text-white shadow-xs"
+                : "btn-ghost text-slate-600 hover:bg-white/80 hover:text-[#B45309]",
             )}
           >
             {Icon ? <Icon className="h-3.5 w-3.5 mr-1" /> : null}
@@ -95,7 +95,7 @@ export function ViewToggle<T extends string>({
               <span
                 className={clsx(
                   "badge badge-xs ml-1 font-mono font-bold",
-                  active ? "bg-[#AB2328] text-white border-[#AB2328]" : "badge-ghost text-slate-600",
+                  active ? "bg-[#D97706] text-white border-[#D97706]" : "badge-ghost text-slate-600",
                 )}
               >
                 {option.count}
@@ -300,9 +300,9 @@ export function StatCard({
   className?: string;
 }) {
   const toneBg: Record<string, string> = {
-    default: "bg-slate-100 text-[#002D72]",
-    gold: "bg-[#AB2328]/10 text-[#AB2328]",
-    blue: "bg-[#002D72]/10 text-[#002D72]",
+    default: "bg-amber-50 text-[#B45309]",
+    gold: "bg-[#D97706]/15 text-[#B45309]",
+    blue: "bg-[#B45309]/10 text-[#B45309]",
     emerald: "bg-emerald-100 text-emerald-800",
   };
 

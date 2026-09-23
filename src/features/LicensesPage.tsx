@@ -181,7 +181,7 @@ export function LicensesPage() {
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Total License Holders" value={stats.total} icon={Users} tone="blue" />
+        <StatCard label="Total License Holders" value={stats.total} icon={Users} tone="gold" />
         <StatCard label="Active Licenses" value={stats.active} icon={UserCheck} tone="emerald" />
         <StatCard label="Premium Capacity Users" value={stats.capacityUsers} icon={ShieldCheck} tone="gold" />
         <StatCard label="With Security Groups" value={stats.phuketSecGroupUsers} icon={Lock} tone="default" />
@@ -197,7 +197,7 @@ export function LicensesPage() {
               onClick={() => setPageViewMode("table")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                pageViewMode === "table" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
+                pageViewMode === "table" ? "bg-[#B45309] text-white shadow-xs" : "text-slate-600 hover:text-[#B45309]"
               )}
             >
               License Table (32 Columns)
@@ -207,7 +207,7 @@ export function LicensesPage() {
               onClick={() => setPageViewMode("permissions")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                pageViewMode === "permissions" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
+                pageViewMode === "permissions" ? "bg-[#B45309] text-white shadow-xs" : "text-slate-600 hover:text-[#B45309]"
               )}
             >
               Permission Matrix Analysis
@@ -221,7 +221,7 @@ export function LicensesPage() {
               dense
               onClick={() => setImportOpen(true)}
             >
-              <Upload className="h-3.5 w-3.5 text-[#002D72]" />
+              <Upload className="h-3.5 w-3.5 text-[#B45309]" />
               <span>Import Excel</span>
             </Button>
             <Button
@@ -263,7 +263,7 @@ export function LicensesPage() {
           </div>
           <div>
             <Select value={hospitalFilter} onChange={(e) => setHospitalFilter(e.target.value)}>
-              <option value="All">All Hospital Sites / Branches</option>
+              <option value="All">All Business Sites / Branches</option>
               {COMMON_HOSPITALS.map((h) => (
                 <option key={h} value={h}>
                   {h}
@@ -302,8 +302,8 @@ export function LicensesPage() {
                 className={clsx(
                   "rounded-full px-3 py-1 font-semibold transition border",
                   activeGroup === g.key
-                    ? "bg-[#002D72] text-white border-[#002D72] shadow-xs"
-                    : "bg-white text-slate-600 border-slate-200 hover:bg-[#002D72]/5 hover:text-[#002D72]"
+                    ? "bg-[#B45309] text-white border-[#B45309] shadow-xs"
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-[#B45309]/10 hover:text-[#B45309]"
                 )}
               >
                 {g.label}
@@ -327,7 +327,7 @@ export function LicensesPage() {
         /* Table View */
         <div className="overflow-x-auto rounded-3xl border border-slate-200/90 bg-white shadow-xs">
           <table className="table table-zebra table-xs w-full text-left">
-            <thead className="bg-slate-50 text-[#002D72] font-bold border-b border-slate-200">
+            <thead className="bg-slate-50 text-[#B45309] font-bold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-3 whitespace-nowrap">#</th>
                 {activeColumns.map((col) => (
@@ -367,7 +367,7 @@ export function LicensesPage() {
                             {String(val || "active")}
                           </span>
                         ) : col.key === "license_type" ? (
-                          <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 text-[11px] font-bold text-[#002D72] border border-[#002D72]/20">
+                          <span className="rounded-full bg-[#B45309]/10 px-2 py-0.5 text-[11px] font-bold text-[#B45309] border border-[#B45309]/20">
                             {String(val || "-")}
                           </span>
                         ) : (
@@ -420,14 +420,14 @@ export function LicensesPage() {
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-[#002D72] text-white px-2 py-0.2 font-mono text-[10px] font-bold shadow-2xs">
+                        <span className="rounded-full bg-[#B45309] text-white px-2 py-0.2 font-mono text-[10px] font-bold shadow-2xs">
                           {lic.site || "PKT"}
                         </span>
                         <h4 className="text-sm font-bold text-slate-900">{lic.display_name}</h4>
                       </div>
                       <p className="text-xs text-slate-500">{lic.department_name || lic.department_en}</p>
                     </div>
-                    <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 text-[10px] font-bold text-[#002D72] border border-[#002D72]/20">
+                    <span className="rounded-full bg-[#B45309]/10 px-2 py-0.5 text-[10px] font-bold text-[#B45309] border border-[#B45309]/20">
                       {lic.license_type}
                     </span>
                   </div>
@@ -478,7 +478,7 @@ export function LicensesPage() {
                       setEditingLicense(lic);
                       setFormOpen(true);
                     }}
-                    className="text-xs font-semibold text-[#002D72] hover:underline"
+                    className="text-xs font-semibold text-[#B45309] hover:underline"
                   >
                     Edit
                   </button>

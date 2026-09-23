@@ -294,9 +294,9 @@ export function DashboardLogModal({
             <div className="text-[10px] font-bold text-emerald-600 uppercase">Latest Version</div>
             <div className="mt-0.5 text-[11px] font-bold text-emerald-900 truncate">{latestPublishDateStr}</div>
           </div>
-          <div className="rounded-2xl border border-[#AB2328]/20 bg-[#AB2328]/5 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-[#AB2328] uppercase">Audit Database</div>
-            <div className="mt-0.5 text-[11px] font-bold text-[#AB2328]">Bangkok Hospital Cloud</div>
+          <div className="rounded-2xl border border-[#B45309]/20 bg-[#B45309]/5 p-2.5 text-center">
+            <div className="text-[10px] font-bold text-[#B45309] uppercase">Audit Database</div>
+            <div className="mt-0.5 text-[11px] font-bold text-[#B45309]">Biz-Analytic Cloud</div>
           </div>
         </div>
 
@@ -489,9 +489,9 @@ export function DashboardLogModal({
               href={item.webUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-[#002D72] text-white px-4 py-2 text-xs font-bold hover:bg-[#001f52] transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-[#B45309] text-white px-4 py-2 text-xs font-bold hover:bg-[#92400E] transition shadow-xs"
             >
-              <Ticket className="h-4 w-4 text-[#AB2328]" />
+              <Ticket className="h-4 w-4 text-[#FEF3C7]" />
               <span>Open on Power BI Service</span>
               <ExternalLink className="h-3.5 w-3.5 opacity-90" />
             </a>

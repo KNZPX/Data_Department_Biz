@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button, Textarea } from "@/components/ui";
-import { BangkokHospitalLogo } from "@/components/brand/BangkokHospitalLogo";
+import { BizAnalyticLogo } from "@/components/brand/BizAnalyticLogo";
 
 export type AuthUser = {
   name: string;
@@ -131,27 +131,27 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 2. Unauthenticated: Show Bangkok Hospital Microsoft Login Gatekeeper
+  // 2. Unauthenticated: Show Biz-Analytic Microsoft Login Gatekeeper
   if (!authenticated) {
     return (
-      <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-800 selection:bg-[#002D72] selection:text-white">
-        {/* Brand CI Top Accent Bar */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#002D72] via-[#002D72] to-[#AB2328]" />
+      <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-b from-slate-50 via-white to-amber-50/20 text-slate-800 selection:bg-[#B45309] selection:text-white">
+        {/* Brand CI Top Accent Bar - Dark Yellow / Amber */}
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
 
-        {/* Ambient Medical Soft Lighting */}
+        {/* Ambient Analytics Soft Lighting */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[#002D72]/5 blur-3xl" />
-          <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-[#AB2328]/5 blur-3xl" />
-          <div className="absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-[#002D72]/5 blur-3xl" />
+          <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[#B45309]/5 blur-3xl" />
+          <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-[#D97706]/5 blur-3xl" />
+          <div className="absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-[#F59E0B]/5 blur-3xl" />
         </div>
 
         {/* Top Header Branding */}
         <header className="relative z-10 mx-auto w-full max-w-7xl px-6 py-6 sm:px-10">
           <div className="flex items-center justify-between">
-            <BangkokHospitalLogo size="md" subtext="Enterprise Analytics Portal" />
+            <BizAnalyticLogo size="md" subtext="Enterprise Analytics Portal" />
             <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3.5 py-1 text-[11px] font-medium text-slate-600 shadow-2xs backdrop-blur-xs">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Bangkok Dusit Medical Services (BDMS)</span>
+              <span>Biz-Analytic Department</span>
             </div>
           </div>
         </header>
@@ -160,22 +160,22 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         <main className="relative z-10 mx-auto my-auto w-full max-w-md px-4 py-8">
           <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 shadow-xl shadow-slate-200/70 sm:p-9">
             {/* Top decorative stripe inside card */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#002D72] via-[#002D72] to-[#AB2328]" />
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
 
-            {/* Hospital Emblem & Title */}
+            {/* Analytics Emblem & Title */}
             <div className="text-center pt-2">
-              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#002D72]/5 border border-[#002D72]/15 shadow-2xs">
-                <Lock className="h-6 w-6 text-[#002D72]" />
+              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#B45309]/10 border border-[#B45309]/20 shadow-2xs">
+                <Lock className="h-6 w-6 text-[#B45309]" />
               </div>
-              <h1 className="text-xl font-bold tracking-tight text-[#002D72] sm:text-2xl">
+              <h1 className="text-xl font-bold tracking-tight text-[#B45309] sm:text-2xl">
                 Enterprise Sign In
               </h1>
               <p className="mt-1.5 text-xs text-slate-500">
-                Bangkok Hospital Analytics & License Management
+                Biz-Analytic Intelligence & Power BI Portal
               </p>
-              <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#AB2328]/10 px-3 py-0.5 text-[11px] font-semibold text-[#AB2328] border border-[#AB2328]/20">
+              <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#B45309]/10 px-3 py-0.5 text-[11px] font-semibold text-[#B45309] border border-[#B45309]/20">
                 <Sparkles className="h-3 w-3" />
-                <span>Continuous development towards the pinnacle of care</span>
+                <span>Enterprise Business Analytics & Intelligence</span>
               </div>
             </div>
 
@@ -196,7 +196,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             <div className="mt-7 space-y-3.5">
               <a
                 href="/api/powerbi/auth/start"
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-xs hover:border-[#002D72] hover:bg-slate-50 hover:text-[#002D72] active:scale-[0.99] transition duration-150"
+                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-xs hover:border-[#B45309] hover:bg-amber-50/30 hover:text-[#B45309] active:scale-[0.99] transition duration-150"
               >
                 {/* Official Microsoft 4-square logo */}
                 <svg className="h-5 w-5 shrink-0" viewBox="0 0 21 21">
@@ -210,7 +210,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
               <div className="flex items-center justify-center gap-1.5 pt-0.5 text-[11px] text-slate-500">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Secured via Microsoft Entra ID (BDMS Account)</span>
+                <span>Secured via Microsoft Entra ID (Single Sign-On)</span>
               </div>
             </div>
 
@@ -219,7 +219,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setManualOpen((v) => !v)}
-                className="flex w-full items-center justify-between text-xs text-slate-500 hover:text-[#002D72] transition"
+                className="flex w-full items-center justify-between text-xs text-slate-500 hover:text-[#B45309] transition"
               >
                 <span className="flex items-center gap-1.5">
                   <KeyRound className="h-3.5 w-3.5 text-slate-400" />
@@ -262,9 +262,9 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             {/* System Status Pills */}
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3.5 py-2.5 text-[11px] text-slate-500 border border-slate-200/80">
               <span className="flex items-center gap-1.5">
-                <Database className="h-3 w-3 text-[#002D72]" />
+                <Database className="h-3 w-3 text-[#B45309]" />
                 <span>DB:</span>
-                <span className="font-semibold text-[#002D72] uppercase font-mono">
+                <span className="font-semibold text-[#B45309] uppercase font-mono">
                   {dbProvider === "supabase" ? "Supabase Cloud" : "SQLite Local"}
                 </span>
               </span>
@@ -279,7 +279,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         {/* Brand Footer */}
         <footer className="relative z-10 px-6 py-5 text-center text-xs text-slate-400">
           <p>
-            Bangkok Hospital &bull; BDMS Data Department &bull; Enterprise Analytics Platform
+            Biz-Analytic Department &bull; Enterprise Business Intelligence &bull; Power BI Platform
           </p>
         </footer>
       </div>

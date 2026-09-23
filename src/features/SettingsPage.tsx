@@ -33,13 +33,13 @@ export function SettingsPage() {
 
   // Portal Management State (Persisted in localStorage)
   const [activeTab, setActiveTab] = useState<"connection" | "portal">("portal");
-  const [portalTitle, setPortalTitle] = useState("Healthcare Analytics & Power BI Portal");
+  const [portalTitle, setPortalTitle] = useState("Biz-Analytic Intelligence Portal");
   const [portalSubtitle, setPortalSubtitle] = useState(
-    "Centralized platform for hospital management dashboards, certified clinical metrics, publish version tracking, and enterprise 32-column license governance across BDMS healthcare network."
+    "Centralized platform for business intelligence dashboards, executive KPI tracking, certified analytics models, publish version tracking, and enterprise 32-column license governance for the Biz-Analytic Department."
   );
   const [portalBannerActive, setPortalBannerActive] = useState(true);
   const [portalAnnouncement, setPortalAnnouncement] = useState(
-    "Q1 2026 Semantic Models and Clinical Dashboards are fully connected and synchronized with Supabase Cloud Database."
+    "Q1 2026 Semantic Models and Business Dashboards are fully connected and synchronized with Supabase Cloud Database."
   );
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -92,8 +92,8 @@ export function SettingsPage() {
           onClick={() => setActiveTab("portal")}
           className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold transition ${
             activeTab === "portal"
-              ? "bg-[#002D72] text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-100 hover:text-[#002D72]"
+              ? "bg-[#B45309] text-white shadow-xs"
+              : "text-slate-600 hover:bg-slate-100 hover:text-[#B45309]"
           }`}
         >
           <LayoutDashboard className="h-4 w-4" />
@@ -105,8 +105,8 @@ export function SettingsPage() {
           onClick={() => setActiveTab("connection")}
           className={`flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold transition ${
             activeTab === "connection"
-              ? "bg-[#002D72] text-white shadow-xs"
-              : "text-slate-600 hover:bg-slate-100 hover:text-[#002D72]"
+              ? "bg-[#B45309] text-white shadow-xs"
+              : "text-slate-600 hover:bg-slate-100 hover:text-[#B45309]"
           }`}
         >
           <KeyRound className="h-4 w-4" />
@@ -120,7 +120,7 @@ export function SettingsPage() {
           <Panel className="p-5 sm:p-6 space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#002D72]/10 text-[#002D72] border border-[#002D72]/20 shadow-2xs">
+                <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#B45309]/10 text-[#B45309] border border-[#B45309]/20 shadow-2xs">
                   <LayoutDashboard className="h-5 w-5" />
                 </div>
                 <div>
@@ -162,17 +162,17 @@ export function SettingsPage() {
               <div className="pt-2 border-t border-slate-100 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-[#AB2328]" />
+                    <Bell className="h-4 w-4 text-[#D97706]" />
                     <span className="font-bold text-slate-800">Executive Announcement Banner</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setPortalBannerActive((v) => !v)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#002D72]"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#B45309]"
                   >
                     <span>{portalBannerActive ? "Active / Visible" : "Hidden"}</span>
                     {portalBannerActive ? (
-                      <ToggleRight className="h-6 w-6 text-[#002D72]" />
+                      <ToggleRight className="h-6 w-6 text-[#B45309]" />
                     ) : (
                       <ToggleLeft className="h-6 w-6 text-slate-400" />
                     )}
@@ -184,7 +184,7 @@ export function SettingsPage() {
                     rows={2}
                     value={portalAnnouncement}
                     onChange={(e) => setPortalAnnouncement(e.target.value)}
-                    placeholder="Enter broadcast message to hospital executives and clinicians..."
+                    placeholder="Enter broadcast message to business stakeholders and analysts..."
                   />
                 )}
               </div>
@@ -200,7 +200,7 @@ export function SettingsPage() {
 
           <Panel className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#AB2328]/10 text-[#AB2328] border border-[#AB2328]/20 shadow-2xs">
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#D97706]/10 text-[#D97706] border border-[#D97706]/20 shadow-2xs">
                 <Pin className="h-5 w-5" />
               </div>
               <div>
@@ -213,7 +213,7 @@ export function SettingsPage() {
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2 text-xs text-slate-600">
               <p>
-                Currently, the Portal dynamically promotes all certified Power BI reports with valid Code Series prefixes (e.g. <span className="font-mono font-bold text-[#002D72]">PKT-STG</span>, <span className="font-mono font-bold text-[#002D72]">BPK-MED</span>).
+                Currently, the Portal dynamically promotes all certified Power BI reports with valid Code Series prefixes (e.g. <span className="font-mono font-bold text-[#B45309]">PKT-STG</span>, <span className="font-mono font-bold text-[#B45309]">BPK-MED</span>).
               </p>
               <p className="text-[11px] text-slate-400">
                 To designate a report as certified, assign a standard report code in the Power BI Workspace or catalog database.
@@ -227,7 +227,7 @@ export function SettingsPage() {
           {/* 1. Power BI Connection Settings */}
           <Panel className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#002D72]/10 text-[#002D72] border border-[#002D72]/20 shadow-2xs">
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#B45309]/10 text-[#B45309] border border-[#B45309]/20 shadow-2xs">
                 <KeyRound className="h-5 w-5" />
               </div>
               <div>
@@ -247,8 +247,8 @@ export function SettingsPage() {
                     Connected (OAuth Active)
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#AB2328]/10 px-3 py-1 text-xs font-bold text-[#AB2328] border border-[#AB2328]/20">
-                    <span className="h-2 w-2 rounded-full bg-[#AB2328]" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 border border-rose-200">
+                    <span className="h-2 w-2 rounded-full bg-rose-500" />
                     Not Connected or Expired
                   </span>
                 )}
@@ -277,7 +277,7 @@ export function SettingsPage() {
           {/* 2. Dedicated Database Configuration */}
           <Panel className="p-5 sm:p-6 space-y-4">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#002D72]/10 text-[#002D72] border border-[#002D72]/20">
+              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#B45309]/10 text-[#B45309] border border-[#B45309]/20">
                 <Database className="h-5 w-5" />
               </div>
               <div>
@@ -291,8 +291,8 @@ export function SettingsPage() {
             <div className="space-y-3 text-xs text-slate-600">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 p-4 bg-white space-y-1.5">
-                  <span className="font-bold text-[#002D72] flex items-center gap-1.5">
-                    <Server className="h-4 w-4 text-[#002D72]" />
+                  <span className="font-bold text-[#B45309] flex items-center gap-1.5">
+                    <Server className="h-4 w-4 text-[#B45309]" />
                     <span>Active Provider: Supabase Cloud</span>
                   </span>
                   <p className="text-slate-500">
@@ -307,7 +307,7 @@ export function SettingsPage() {
 
                 <div className="rounded-2xl border border-slate-200 p-4 bg-white space-y-1.5">
                   <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <ExternalLink className="h-4 w-4 text-[#AB2328]" />
+                    <ExternalLink className="h-4 w-4 text-[#D97706]" />
                     <span>Database Schemas</span>
                   </span>
                   <p className="text-slate-500">

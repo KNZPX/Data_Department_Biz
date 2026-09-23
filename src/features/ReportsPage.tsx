@@ -188,7 +188,7 @@ export function ReportsPage() {
           <div className="pb-3 border-b border-slate-100 space-y-2.5">
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <Folder className="h-4 w-4 text-[#002D72]" />
+                <Folder className="h-4 w-4 text-[#B45309]" />
                 <span>Workspaces ({allWorkspaceNames.length})</span>
               </h2>
               <span className="text-[11px] text-slate-400 font-mono">
@@ -204,7 +204,7 @@ export function ReportsPage() {
                 value={workspaceSearch}
                 onChange={(e) => setWorkspaceSearch(e.target.value)}
                 placeholder="Filter workspaces..."
-                className="w-full rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-[#002D72] focus:ring-1 focus:ring-[#002D72]/20 outline-none"
+                className="w-full rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-[#B45309] focus:ring-1 focus:ring-[#B45309]/20 outline-none"
               />
               {workspaceSearch && (
                 <button
@@ -227,7 +227,7 @@ export function ReportsPage() {
                   className={clsx(
                     "rounded-full px-2.5 py-0.5 text-[10px] font-bold transition border",
                     siteFilter === k
-                      ? "bg-[#002D72] text-white border-[#002D72]"
+                      ? "bg-[#B45309] text-white border-[#B45309]"
                       : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                   )}
                 >
@@ -255,15 +255,15 @@ export function ReportsPage() {
                     className={clsx(
                       "w-full flex items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-xs transition duration-150 active:scale-[0.99]",
                       isSelected
-                        ? "bg-[#002D72] text-white font-bold shadow-xs"
-                        : "text-slate-700 hover:bg-slate-100 hover:text-[#002D72]"
+                        ? "bg-[#B45309] text-white font-bold shadow-xs"
+                        : "text-slate-700 hover:bg-slate-100 hover:text-[#B45309]"
                     )}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {isSelected ? (
                         <FolderOpen className="h-4 w-4 shrink-0 text-white" />
                       ) : (
-                        <Folder className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-[#002D72]" />
+                        <Folder className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-[#B45309]" />
                       )}
                       <span className="truncate">{ws}</span>
                     </div>
@@ -271,7 +271,7 @@ export function ReportsPage() {
                       className={clsx(
                         "rounded-full px-2 py-0.2 text-[10px] font-mono font-bold shrink-0",
                         isSelected
-                          ? "bg-[#AB2328] text-white"
+                          ? "bg-[#D97706] text-white"
                           : "bg-slate-100 text-slate-500"
                       )}
                     >
@@ -289,14 +289,14 @@ export function ReportsPage() {
           {!selectedWorkspace ? (
             /* Empty State: Prompt User to Select Workspace */
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center my-auto min-h-[400px]">
-              <div className="grid h-16 w-16 place-items-center rounded-3xl bg-[#002D72]/5 border border-[#002D72]/15 text-[#002D72] mb-4 shadow-sm">
+              <div className="grid h-16 w-16 place-items-center rounded-3xl bg-[#B45309]/10 border border-[#B45309]/20 text-[#B45309] mb-4 shadow-sm">
                 <Inbox className="h-8 w-8" />
               </div>
               <h3 className="text-base font-bold text-slate-800">
                 Select a Workspace to view reports
               </h3>
               <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-slate-400">
-                Please select a hospital department or branch workspace from the left pane folder list to display its reports and dashboards in inbox view.
+                Please select an analytics department or workspace folder from the left pane to display its reports and dashboards in inbox view.
               </p>
             </div>
           ) : (
@@ -306,10 +306,10 @@ export function ReportsPage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-[#002D72] truncate max-w-md">
+                    <h3 className="text-base font-bold text-[#B45309] truncate max-w-md">
                       {selectedWorkspace}
                     </h3>
-                    <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 text-[10px] font-bold text-[#002D72] border border-[#002D72]/20">
+                    <span className="rounded-full bg-[#B45309]/10 px-2 py-0.5 text-[10px] font-bold text-[#B45309] border border-[#B45309]/20">
                       {workspaceItems.length} {kind === "report" ? "reports" : "dashboards"}
                     </span>
                   </div>
@@ -352,17 +352,17 @@ export function ReportsPage() {
                     return (
                       <div
                         key={item.id}
-                        className="py-3 px-2 flex items-start sm:items-center justify-between gap-3 group hover:bg-[#002D72]/5 rounded-2xl transition duration-150"
+                        className="py-3 px-2 flex items-start sm:items-center justify-between gap-3 group hover:bg-[#B45309]/5 rounded-2xl transition duration-150"
                       >
                         {/* Left: Code badge & Subject/Title */}
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             {item.reportCode ? (
-                              <span className="rounded-full bg-[#002D72]/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-[#002D72] border border-[#002D72]/20">
+                              <span className="rounded-full bg-[#B45309]/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-[#B45309] border border-[#B45309]/20">
                                 {item.reportCode}
                               </span>
                             ) : null}
-                            <span className="text-xs sm:text-sm font-semibold text-slate-900 group-hover:text-[#002D72] transition">
+                            <span className="text-xs sm:text-sm font-semibold text-slate-900 group-hover:text-[#B45309] transition">
                               {item.reportTitle}
                             </span>
                           </div>
