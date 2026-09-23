@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3005",
+    "dev": "next dev --port 3000",
+    "dev:3005": "next dev --port 3005",
     "build": "next build",
-    "start": "next start --port 3005",
+    "start": "next start --port 3000",
     "lint": "eslint",
     "migrate:timesheet": "bun run scripts/migrate-from-timesheet.ts",
     "db:push-supabase": "bun run scripts/push-to-supabase.ts"

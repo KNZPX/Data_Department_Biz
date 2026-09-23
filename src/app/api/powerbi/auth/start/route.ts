@@ -9,7 +9,7 @@ const COOKIE_MAX_AGE_SECONDS = 600;
 
 export async function GET(request: NextRequest) {
   try {
-    const redirectUri = new URL("/api/powerbi/auth/callback", request.nextUrl.origin).toString();
+    const redirectUri = process.env.AZURE_REDIRECT_URI || new URL("/api/powerbi/auth/callback", request.nextUrl.origin).toString();
     const verifier = generateCodeVerifier();
     const state = generateState();
     const challenge = codeChallengeFromVerifier(verifier);
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax" as const,
-      path: "/api/powerbi/auth",
+      path: "/",
       maxAge: COOKIE_MAX_AGE_SECONDS,
     };
     response.cookies.set(VERIFIER_COOKIE, verifier, cookieOptions);

@@ -2,42 +2,34 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   BarChart3,
   Database,
   History,
   KeyRound,
-  Layers,
+  LogOut,
   Settings,
   ShieldCheck,
-  Sparkles,
+  User,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { TokenModal } from "@/components/TokenModal";
+import { LoginGate, useAuth } from "@/components/auth/LoginGate";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { user, dbProvider, logout, refreshAuth } = useAuth();
   const [tokenOpen, setTokenOpen] = useState(false);
-  const [tokenActive, setTokenActive] = useState(false);
-  const [dbProvider, setDbProvider] = useState<string>("sqlite");
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
   useEffect(() => {
-    void checkStatus();
-    const interval = setInterval(checkStatus, 30_000);
+    void checkUnreadLogs();
+    const interval = setInterval(checkUnreadLogs, 30_000);
     return () => clearInterval(interval);
   }, []);
 
-  async function checkStatus() {
-    try {
-      const res = await fetch("/api/powerbi/token", { cache: "no-store" });
-      if (res.ok) {
-        const json = await res.json();
-        setTokenActive(Boolean(json.hasToken && !json.expired));
-      }
-    } catch {}
-
+  async function checkUnreadLogs() {
     try {
       const logRes = await fetch("/api/powerbi/changelog?limit=50", { cache: "no-store" });
       if (logRes.ok) {
@@ -108,28 +100,52 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
 
-          {/* Quick Status Tools */}
+          {/* User Profile & Quick Status Tools */}
           <div className="flex items-center gap-2">
             {/* Database Engine Pill */}
-            <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600 border border-slate-200/80">
+            <div className="hidden lg:flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600 border border-slate-200/80">
               <Database className="h-3 w-3 text-slate-500" />
               <span>DB:</span>
-              <span className="font-bold text-slate-800 uppercase font-mono">SQLite (Local)</span>
+              <span className="font-bold text-slate-800 uppercase font-mono">
+                {dbProvider === "supabase" ? "Supabase (Cloud)" : "SQLite (Local)"}
+              </span>
             </div>
 
-            {/* Token / OAuth Status Button */}
+            {/* Authenticated Microsoft User Badge */}
+            {user ? (
+              <div
+                title={user.email}
+                className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-700"
+              >
+                <div className="grid h-5 w-5 place-items-center rounded-full bg-amber-400 text-[10px] font-bold text-slate-950">
+                  {user.name ? user.name.slice(0, 1).toUpperCase() : <User className="h-3 w-3" />}
+                </div>
+                <div className="flex flex-col text-left leading-tight">
+                  <span className="font-bold text-slate-900 max-w-[140px] truncate">{user.name}</span>
+                  <span className="text-[9px] text-slate-400 max-w-[140px] truncate font-mono">{user.email}</span>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Token details button */}
             <button
               type="button"
               onClick={() => setTokenOpen(true)}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold border transition shadow-2xs active:scale-95",
-                tokenActive
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                  : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-              )}
+              title="ตรวจสอบหรือคัดลอก Access Token"
+              className="grid h-8 w-8 place-items-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition border border-transparent hover:border-slate-200"
             >
-              <KeyRound className={clsx("h-3 w-3", tokenActive ? "text-emerald-600" : "text-amber-600")} />
-              <span>{tokenActive ? "MS OAuth เชื่อมต่อแล้ว" : "ต่อกับ Microsoft"}</span>
+              <KeyRound className="h-4 w-4" />
+            </button>
+
+            {/* Sign Out Button */}
+            <button
+              type="button"
+              onClick={() => logout()}
+              title="ออกจากระบบ"
+              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 transition shadow-2xs active:scale-95"
+            >
+              <LogOut className="h-3.5 w-3.5 text-slate-400 group-hover:text-rose-600" />
+              <span className="hidden sm:inline">ออกจากระบบ</span>
             </button>
           </div>
         </div>
@@ -169,8 +185,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <TokenModal
         isOpen={tokenOpen}
         onClose={() => setTokenOpen(false)}
-        onSuccess={() => checkStatus()}
+        onSuccess={() => refreshAuth()}
       />
     </div>
+  );
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={null}>
+      <LoginGate>
+        <AppShellInner>{children}</AppShellInner>
+      </LoginGate>
+    </Suspense>
   );
 }

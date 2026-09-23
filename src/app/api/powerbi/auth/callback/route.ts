@@ -8,8 +8,8 @@ const VERIFIER_COOKIE = "pbi_oauth_verifier";
 const STATE_COOKIE = "pbi_oauth_state";
 
 function clearOAuthCookies(response: NextResponse) {
-  response.cookies.delete(VERIFIER_COOKIE);
-  response.cookies.delete(STATE_COOKIE);
+  response.cookies.delete({ name: VERIFIER_COOKIE, path: "/" });
+  response.cookies.delete({ name: STATE_COOKIE, path: "/" });
 }
 
 export async function GET(request: NextRequest) {
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const redirectUri = new URL("/api/powerbi/auth/callback", origin).toString();
+    const redirectUri = process.env.AZURE_REDIRECT_URI || new URL("/api/powerbi/auth/callback", origin).toString();
     const tokens = await exchangeCodeForTokens({ code, codeVerifier: verifier, redirectUri });
     await saveOAuthTokens(tokens);
   } catch (error) {
