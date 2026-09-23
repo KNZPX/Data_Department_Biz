@@ -22,9 +22,19 @@ export type ChangeLogEntry = {
   changed_at: string;
 };
 
+const DEFAULT_SUPABASE_URL = "https://wwnzwsjquostxfpjerla.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind3bnp3c2pxdW9zdHhmcGplcmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxMzYxOTgsImV4cCI6MjEwNTcxMjE5OH0.j_M4ShyvxrqN8o_RCAP4IMFjBOVpdiL69_YkkfJsR7I";
+
 // Check configured provider
 export function getDbProvider(): "sqlite" | "supabase" {
-  if (process.env.DATABASE_PROVIDER === "supabase" && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  // If running on Vercel or in cloud production, always use Supabase
+  if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+    return "supabase";
+  }
+  if (process.env.DATABASE_PROVIDER === "supabase") {
+    return "supabase";
+  }
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL) {
     return "supabase";
   }
   return "sqlite";
@@ -34,10 +44,22 @@ export function getDbProvider(): "sqlite" | "supabase" {
 // Supabase Client Helper
 // -----------------------------------------------------------------------------
 export function getSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    DEFAULT_SUPABASE_URL;
+
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    DEFAULT_SUPABASE_ANON_KEY;
+
   if (!url || !key) {
-    throw new Error("Supabase is not configured in .env.local (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY missing)");
+    throw new Error("Supabase is not configured (missing URL or Key)");
   }
   return createClient(url, key);
 }
