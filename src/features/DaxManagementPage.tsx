@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   Activity,
   Binary,
@@ -11,9 +11,11 @@ import {
   ChevronDown,
   ChevronRight,
   Code2,
+  Columns,
   Copy,
   Cpu,
   Database,
+  Edit3,
   ExternalLink,
   Eye,
   EyeOff,
@@ -25,17 +27,21 @@ import {
   Info,
   KeyRound,
   Layers,
+  LayoutGrid,
   Lightbulb,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
   Play,
+  Plus,
   RefreshCw,
   Search,
   Server,
   Share2,
   Sparkles,
-  Table,
+  Table as TableIcon,
   Terminal,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -46,7 +52,7 @@ interface ItemRecord {
   id: string;
   name: string;
   tableName: string;
-  type: "Measure" | "Data Column" | "Calculated Column";
+  type: string;
   dataType: string;
   description: string;
   expression: string | null;
@@ -54,6 +60,10 @@ interface ItemRecord {
   isHidden: boolean;
   modelCode: string;
   modelName: string;
+  mathDefinition?: string;
+  businessDefinition?: string;
+  notes?: string;
+  isCustom?: boolean;
 }
 
 interface ModelMeta {
@@ -62,6 +72,38 @@ interface ModelMeta {
   id: string;
   totalMeasures: number;
   totalColumns: number;
+}
+
+function HighlightText({
+  text,
+  match,
+  active,
+}: {
+  text: string;
+  match: string;
+  active: boolean;
+}) {
+  if (!active || !match.trim() || !text) return <>{text}</>;
+  const query = match.trim();
+  const escaped = query.replace(/[.*+?^$\{}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${escaped})`, "gi");
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <mark
+            key={i}
+            className="bg-blue-100 text-blue-900 font-bold px-1 rounded-xs"
+          >
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </>
+  );
 }
 
 export function DaxManagementPage() {
@@ -75,6 +117,9 @@ export function DaxManagementPage() {
 
   // Tab: explorer | api-console
   const [activeTab, setActiveTab] = useState<"explorer" | "api-console">("explorer");
+
+  // View Mode: "table" | "sidebox" | "split"
+  const [viewMode, setViewMode] = useState<"table" | "sidebox" | "split">("table");
 
   // Items & Metadata State
   const [items, setItems] = useState<ItemRecord[]>([]);
@@ -95,9 +140,14 @@ export function DaxManagementPage() {
     },
   ]);
   const [loading, setLoading] = useState(true);
+
+  // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchMode, setSearchMode] = useState<"partial" | "exact">("partial");
   const [selectedTable, setSelectedTable] = useState("all");
+  const [tableSearchQuery, setTableSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("all");
+
   const [meta, setMeta] = useState<any>({
     total: 0,
     totalMeasures: 0,
@@ -108,6 +158,9 @@ export function DaxManagementPage() {
     activeModelName: "PKT-D01 Strategy Semantic Model",
   });
 
+  // Selected item for Sidebox view & modals
+  const [selectedItem, setSelectedItem] = useState<ItemRecord | null>(null);
+
   // Copied state
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -117,9 +170,30 @@ export function DaxManagementPage() {
   const [execResult, setExecResult] = useState<any>(null);
   const [execError, setExecError] = useState<string | null>(null);
 
+  // Modals state
+  const [definitionModalOpen, setDefinitionModalOpen] = useState(false);
+  const [definitionTarget, setDefinitionTarget] = useState<ItemRecord | null>(null);
+  const [defMath, setDefMath] = useState("");
+  const [defBusiness, setDefBusiness] = useState("");
+  const [defNotes, setDefNotes] = useState("");
+  const [isSavingDef, setIsSavingDef] = useState(false);
+
+  // Custom DAX Modal state
+  const [customDaxModalOpen, setCustomDaxModalOpen] = useState(false);
+  const [customDaxTarget, setCustomDaxTarget] = useState<ItemRecord | null>(null);
+  const [customName, setCustomName] = useState("");
+  const [customTable, setCustomTable] = useState("");
+  const [customDataType, setCustomDataType] = useState("Decimal");
+  const [customExpression, setCustomExpression] = useState("");
+  const [customMath, setCustomMath] = useState("");
+  const [customBusiness, setCustomBusiness] = useState("");
+  const [customNotes, setCustomNotes] = useState("");
+  const [isSavingCustom, setIsSavingCustom] = useState(false);
+  const [customError, setCustomError] = useState<string | null>(null);
+
   useEffect(() => {
     void fetchItems();
-  }, [activeModel, selectedTable, selectedType]);
+  }, [activeModel, selectedTable, selectedType, searchMode]);
 
   async function fetchItems() {
     setLoading(true);
@@ -127,6 +201,7 @@ export function DaxManagementPage() {
       const params = new URLSearchParams();
       params.set("model", activeModel);
       if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      params.set("searchMode", searchMode);
       if (selectedTable !== "all") params.set("table", selectedTable);
       if (selectedType !== "all") params.set("type", selectedType);
       params.set("limit", "150");
@@ -134,9 +209,21 @@ export function DaxManagementPage() {
       const res = await fetch(`/api/powerbi/dax?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
-        setItems(json.items || []);
+        const loadedItems = json.items || [];
+        setItems(loadedItems);
         if (json.meta) setMeta(json.meta);
         if (json.models && json.models.length > 0) setModels(json.models);
+
+        // Keep or select first item for sidebox view
+        if (loadedItems.length > 0) {
+          setSelectedItem((prev) => {
+            if (!prev) return loadedItems[0];
+            const found = loadedItems.find((i: ItemRecord) => i.id === prev.id);
+            return found || loadedItems[0];
+          });
+        } else {
+          setSelectedItem(null);
+        }
       }
     } catch (err) {
       console.error("Error fetching DAX items:", err);
@@ -154,6 +241,151 @@ export function DaxManagementPage() {
     void navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  // Open Edit Definitions Modal
+  function openDefinitionModal(item: ItemRecord) {
+    setDefinitionTarget(item);
+    setDefMath(item.mathDefinition || "");
+    setDefBusiness(item.businessDefinition || "");
+    setDefNotes(item.notes || "");
+    setDefinitionModalOpen(true);
+  }
+
+  async function handleSaveDefinitions() {
+    if (!definitionTarget) return;
+    setIsSavingDef(true);
+    try {
+      const res = await fetch("/api/powerbi/dax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_annotation",
+          modelCode: activeModel,
+          tableName: definitionTarget.tableName,
+          objectName: definitionTarget.name,
+          objectType: definitionTarget.type,
+          mathDefinition: defMath,
+          businessDefinition: defBusiness,
+          notes: defNotes,
+        }),
+      });
+
+      if (res.ok) {
+        // Update local item state
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === definitionTarget.id
+              ? {
+                  ...item,
+                  mathDefinition: defMath,
+                  businessDefinition: defBusiness,
+                  notes: defNotes,
+                }
+              : item
+          )
+        );
+        if (selectedItem?.id === definitionTarget.id) {
+          setSelectedItem({
+            ...selectedItem,
+            mathDefinition: defMath,
+            businessDefinition: defBusiness,
+            notes: defNotes,
+          });
+        }
+        setDefinitionModalOpen(false);
+      }
+    } catch (err) {
+      console.error("Error saving annotations:", err);
+    } finally {
+      setIsSavingDef(false);
+    }
+  }
+
+  // Open Custom DAX Modal (new or edit)
+  function openCustomDaxModal(item?: ItemRecord) {
+    if (item) {
+      setCustomDaxTarget(item);
+      setCustomName(item.name);
+      setCustomTable(item.tableName);
+      setCustomDataType(item.dataType || "Decimal");
+      setCustomExpression(item.expression || "");
+      setCustomMath(item.mathDefinition || "");
+      setCustomBusiness(item.businessDefinition || "");
+      setCustomNotes(item.notes || "");
+    } else {
+      setCustomDaxTarget(null);
+      setCustomName("");
+      setCustomTable(selectedTable !== "all" ? selectedTable : "Custom Metrics");
+      setCustomDataType("Decimal");
+      setCustomExpression("");
+      setCustomMath("");
+      setCustomBusiness("");
+      setCustomNotes("");
+    }
+    setCustomError(null);
+    setCustomDaxModalOpen(true);
+  }
+
+  async function handleSaveCustomDax() {
+    if (!customName.trim() || !customTable.trim() || !customExpression.trim()) {
+      setCustomError("Name, Table, and DAX Expression are required.");
+      return;
+    }
+    setIsSavingCustom(true);
+    setCustomError(null);
+    try {
+      const res = await fetch("/api/powerbi/dax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_custom",
+          id: customDaxTarget?.id,
+          name: customName.trim(),
+          tableName: customTable.trim(),
+          dataType: customDataType,
+          expression: customExpression.trim(),
+          mathDefinition: customMath.trim(),
+          businessDefinition: customBusiness.trim(),
+          notes: customNotes.trim(),
+          modelCode: activeModel,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setCustomError(json.error || "Failed to save Custom DAX");
+      } else {
+        setCustomDaxModalOpen(false);
+        void fetchItems();
+      }
+    } catch (err: any) {
+      setCustomError(err.message || "Network error");
+    } finally {
+      setIsSavingCustom(false);
+    }
+  }
+
+  async function handleDeleteCustomDax(id: string) {
+    if (!confirm("Are you sure you want to delete this custom DAX measure?")) return;
+    try {
+      const res = await fetch("/api/powerbi/dax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete_custom",
+          id,
+        }),
+      });
+      if (res.ok) {
+        setItems((prev) => prev.filter((i) => i.id !== id));
+        if (selectedItem?.id === id) {
+          setSelectedItem(null);
+        }
+      }
+    } catch (err) {
+      console.error("Error deleting custom DAX:", err);
+    }
   }
 
   async function handleExecuteQuery() {
@@ -187,12 +419,20 @@ export function DaxManagementPage() {
     }
   }
 
+  // Filtered table list for floating sidebar
+  const filteredTables = useMemo(() => {
+    const all = meta.tables || [];
+    if (!tableSearchQuery.trim()) return all;
+    const q = tableSearchQuery.toLowerCase();
+    return all.filter((t: string) => t.toLowerCase().includes(q));
+  }, [meta.tables, tableSearchQuery]);
+
   const currentModelMeta = models.find((m) => m.code === activeModel) || models[0];
 
   return (
     <div className="h-full w-full overflow-hidden flex flex-col gap-4 font-sans select-none">
       {/* 1. TOP CONTROL BAR */}
-      <div className="shrink-0 bg-white rounded-3xl p-4 shadow-xs border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="shrink-0 bg-white rounded-3xl p-4 shadow-xs border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div
             style={{
@@ -213,13 +453,23 @@ export function DaxManagementPage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Extracted directly via Power BI REST API &bull; Active: {currentModelMeta.name}
+              Direct telemetry from Power BI REST API &bull; Active: {currentModelMeta.name}
             </p>
           </div>
         </div>
 
-        {/* Tab & Floating Sidebar Toggle */}
-        <div className="flex items-center gap-2">
+        {/* View Switcher, Custom DAX Button & Dataset Sidebar Toggle */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Add Custom DAX Button */}
+          <button
+            type="button"
+            onClick={() => openCustomDaxModal()}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition"
+          >
+            <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+            <span>Add Custom DAX</span>
+          </button>
+
           {/* Floating Sidebar Toggle Button */}
           <button
             type="button"
@@ -227,48 +477,95 @@ export function DaxManagementPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
           >
             <Layers className="h-3.5 w-3.5 text-blue-600" />
-            <span>{floatSidebarOpen ? "Hide Dataset Sidebar" : "Dataset Sidebar"}</span>
+            <span>{floatSidebarOpen ? "Hide Datasets" : "Show Datasets"}</span>
           </button>
 
+          {/* View Modes (Table | Sidebox | Split) */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-full text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode("table")}
+              title="Table View (Full Grid)"
+              className={clsx(
+                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition",
+                viewMode === "table"
+                  ? "bg-white text-blue-600 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <TableIcon className="h-3.5 w-3.5" />
+              <span>Table</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("sidebox")}
+              title="Sidebox View (List with Inspector Drawer)"
+              className={clsx(
+                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition",
+                viewMode === "sidebox"
+                  ? "bg-white text-blue-600 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>Sidebox</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("split")}
+              title="Split View (Card List with Inline DAX)"
+              className={clsx(
+                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition",
+                viewMode === "split"
+                  ? "bg-white text-blue-600 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Columns className="h-3.5 w-3.5" />
+              <span>Split</span>
+            </button>
+          </div>
+
+          {/* Tab: Model Explorer vs Live Console */}
           <div className="flex items-center bg-slate-100 p-1 rounded-full text-xs">
             <button
               type="button"
               onClick={() => setActiveTab("explorer")}
               className={clsx(
-                "flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold transition",
+                "flex items-center gap-1.5 px-3.5 py-1 rounded-full font-bold transition",
                 activeTab === "explorer"
                   ? "bg-blue-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               )}
             >
               <BookOpen className="h-3.5 w-3.5" />
-              <span>Model Explorer</span>
+              <span>Explorer</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab("api-console")}
               className={clsx(
-                "flex items-center gap-1.5 px-4 py-1.5 rounded-full font-bold transition",
+                "flex items-center gap-1.5 px-3.5 py-1 rounded-full font-bold transition",
                 activeTab === "api-console"
                   ? "bg-blue-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               )}
             >
               <Terminal className="h-3.5 w-3.5" />
-              <span>Live DAX Console</span>
+              <span>Console</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. MAIN SPLIT VIEW (With Floating Dataset Sidebar) */}
+      {/* 2. MAIN WORKSPACE (With Floating Dataset Sidebar) */}
       <div className="flex-1 min-h-0 flex gap-4 overflow-hidden relative">
         {/* FLOATING DATASET SIDEBAR */}
         {floatSidebarOpen && (
           <aside className="w-72 lg:w-80 shrink-0 h-full bg-white rounded-3xl p-4 shadow-sm border border-slate-200/80 flex flex-col justify-between overflow-hidden animate-in slide-in-from-left duration-200">
-            <div className="flex flex-col space-y-4 overflow-hidden min-h-0">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex flex-col space-y-3 overflow-hidden min-h-0">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
                   <Database className="h-4 w-4 text-blue-600" />
                   <span>Semantic Models ({models.length})</span>
@@ -276,15 +573,15 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={() => void fetchItems()}
-                  title="Refresh Model Data"
-                  className="text-slate-400 hover:text-slate-600"
+                  title="Refresh Model Telemetry"
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition"
                 >
                   <RefreshCw className={clsx("h-3.5 w-3.5", loading && "animate-spin")} />
                 </button>
               </div>
 
               {/* Models List */}
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {models.map((m) => {
                   const isSelected = activeModel === m.code;
                   return (
@@ -296,9 +593,9 @@ export function DaxManagementPage() {
                         setSelectedTable("all");
                       }}
                       className={clsx(
-                        "w-full p-3 rounded-2xl border text-left transition flex flex-col justify-between space-y-2",
+                        "w-full p-2.5 rounded-2xl border text-left transition flex flex-col justify-between space-y-1.5",
                         isSelected
-                          ? "border-blue-600 bg-blue-50/50 shadow-xs ring-2 ring-blue-500/20"
+                          ? "border-blue-600 bg-blue-50/60 shadow-xs ring-2 ring-blue-500/20"
                           : "border-slate-200 hover:border-slate-300 bg-white"
                       )}
                     >
@@ -318,11 +615,9 @@ export function DaxManagementPage() {
                         </span>
                       </div>
 
-                      <div>
-                        <p className="text-xs font-bold text-slate-900 leading-tight">
-                          {m.name}
-                        </p>
-                      </div>
+                      <p className="text-xs font-bold text-slate-900 leading-tight">
+                        {m.name}
+                      </p>
 
                       <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100/80">
                         <span className="font-semibold text-blue-700">
@@ -340,8 +635,29 @@ export function DaxManagementPage() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-700">Tables in Model</span>
                   <span className="text-[10px] text-slate-400 font-mono">
-                    {meta.totalTables} Tables
+                    {meta.totalTables} Total
                   </span>
+                </div>
+
+                {/* Table Search Input */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                  <input
+                    type="text"
+                    value={tableSearchQuery}
+                    onChange={(e) => setTableSearchQuery(e.target.value)}
+                    placeholder="Search tables..."
+                    className="w-full rounded-xl bg-slate-50 pl-8 pr-2.5 py-1.5 text-[11px] text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                  {tableSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setTableSearchQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-1 pr-1">
@@ -359,7 +675,7 @@ export function DaxManagementPage() {
                     <span className="text-[10px] opacity-75">{meta.total}</span>
                   </button>
 
-                  {(meta.tables || []).map((tbl: string) => {
+                  {filteredTables.map((tbl: string) => {
                     const isSelected = selectedTable.toLowerCase() === tbl.toLowerCase();
                     return (
                       <button
@@ -377,44 +693,83 @@ export function DaxManagementPage() {
                       </button>
                     );
                   })}
+                  {filteredTables.length === 0 && (
+                    <p className="text-[11px] text-slate-400 italic text-center py-4">
+                      No tables match "{tableSearchQuery}"
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Floating Sidebar Footer */}
-            <div className="pt-3 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Source: Microsoft Entra ID</span>
+            <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Source: Azure Entra ID</span>
               <span className="text-emerald-700 font-bold">&bull; 200 OK</span>
             </div>
           </aside>
         )}
 
-        {/* MAIN VISUAL CONTENT AREA (Scrolls Internally) */}
+        {/* MAIN VISUAL CONTENT AREA */}
         <div className="flex-1 h-full min-w-0 bg-white rounded-3xl p-5 shadow-xs border border-slate-200/80 flex flex-col overflow-hidden">
           {activeTab === "explorer" ? (
-            <div className="h-full flex flex-col space-y-4 overflow-hidden">
+            <div className="h-full flex flex-col space-y-3 overflow-hidden">
               {/* Filter & Search Header */}
-              <div className="shrink-0 flex flex-col sm:flex-row gap-3">
-                <form onSubmit={handleSearchSubmit} className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search measures, columns, expressions..."
-                    className="w-full rounded-full bg-slate-50 pl-10 pr-4 py-2 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
+              <div className="shrink-0 flex flex-col lg:flex-row gap-3">
+                {/* Search Input with Partial vs Exact Toggle */}
+                <form onSubmit={handleSearchSubmit} className="relative flex-1 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search measures, columns, expressions, definitions..."
+                      className="w-full rounded-full bg-slate-50 pl-10 pr-4 py-2 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+
+                  {/* Partial vs Exact Toggle */}
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded-full text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setSearchMode("partial")}
+                      className={clsx(
+                        "px-2.5 py-1 rounded-full font-bold transition",
+                        searchMode === "partial"
+                          ? "bg-white text-blue-600 shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      Partial
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSearchMode("exact")}
+                      className={clsx(
+                        "px-2.5 py-1 rounded-full font-bold transition",
+                        searchMode === "exact"
+                          ? "bg-white text-blue-600 shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      Exact
+                    </button>
+                  </div>
                 </form>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Type Filter Pills */}
                   <select
                     value={selectedType}
                     onChange={(e) => setSelectedType(e.target.value)}
                     className="rounded-full bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 border border-slate-200 focus:outline-none"
                   >
-                    <option value="all">All Types</option>
+                    <option value="all">All Types ({meta.total})</option>
                     <option value="measure">Measures Only ({meta.totalMeasures})</option>
                     <option value="column">Columns Only ({meta.totalColumns})</option>
+                    <option value="calculated_column">Calculated Columns</option>
+                    <option value="custom">Custom DAX</option>
                   </select>
 
                   <button
@@ -430,104 +785,472 @@ export function DaxManagementPage() {
               {/* Status Header */}
               <div className="shrink-0 flex items-center justify-between text-xs text-slate-500 pb-2 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <span>Displaying:</span>
+                  <span>Scope:</span>
                   <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-0.5 rounded-full">
                     {activeModel} &bull; {selectedTable === "all" ? "All Tables" : selectedTable}
                   </span>
+                  {searchQuery && (
+                    <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-semibold">
+                      Matching: "{searchQuery}" ({searchMode})
+                    </span>
+                  )}
                 </div>
                 <span>Showing {items.length} of {meta.total} results</span>
               </div>
 
-              {/* Internal Scrollable Table List */}
-              <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+              {/* MAIN CONTENT BY VIEW MODE */}
+              <div className="flex-1 min-h-0 overflow-hidden">
                 {loading ? (
-                  <div className="py-20 text-center text-xs text-slate-400 animate-pulse">
-                    Loading semantic model definitions from Power BI API...
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400 animate-pulse">
+                    Querying Power BI REST API and Data Dictionary...
                   </div>
                 ) : items.length === 0 ? (
-                  <div className="py-20 text-center text-xs text-slate-400">
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">
                     No matching measures or columns found.
                   </div>
-                ) : (
-                  items.map((it) => (
-                    <div
-                      key={it.id}
-                      className="p-4 rounded-2xl border border-slate-100 hover:border-slate-200 hover:shadow-xs transition bg-slate-50/40 space-y-2.5"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <span
+                ) : viewMode === "table" ? (
+                  /* ================= 1. TABLE VIEW ================= */
+                  <div className="h-full overflow-y-auto border border-slate-200/80 rounded-2xl">
+                    <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                      <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80 z-10">
+                        <tr>
+                          <th className="py-2.5 px-3">Type</th>
+                          <th className="py-2.5 px-3">Name</th>
+                          <th className="py-2.5 px-3">Table</th>
+                          <th className="py-2.5 px-3">Data Type</th>
+                          <th className="py-2.5 px-3">Definitions</th>
+                          <th className="py-2.5 px-3">Formula / DAX</th>
+                          <th className="py-2.5 px-3">Status</th>
+                          <th className="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {items.map((it) => (
+                          <tr
+                            key={it.id}
+                            className="hover:bg-blue-50/30 transition group"
+                          >
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              <span
+                                className={clsx(
+                                  "px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase",
+                                  it.isCustom
+                                    ? "bg-purple-100 text-purple-800"
+                                    : it.type === "Measure"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : it.type.includes("Calculated")
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-emerald-100 text-emerald-800"
+                                )}
+                              >
+                                {it.isCustom ? "Custom DAX" : it.type}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                              <HighlightText
+                                text={it.name}
+                                match={searchQuery}
+                                active={searchMode === "partial" || searchMode === "exact"}
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                              <HighlightText
+                                text={it.tableName}
+                                match={searchQuery}
+                                active={searchMode === "partial" || searchMode === "exact"}
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                              {it.dataType}
+                            </td>
+                            <td className="py-2.5 px-3 max-w-xs">
+                              {it.mathDefinition || it.businessDefinition ? (
+                                <div className="space-y-0.5">
+                                  {it.businessDefinition && (
+                                    <p className="text-[11px] text-slate-700 truncate" title={it.businessDefinition}>
+                                      <span className="font-semibold text-blue-700">Biz:</span> {it.businessDefinition}
+                                    </p>
+                                  )}
+                                  {it.mathDefinition && (
+                                    <p className="text-[10px] font-mono text-slate-500 truncate" title={it.mathDefinition}>
+                                      <span className="font-semibold text-purple-700">Math:</span> {it.mathDefinition}
+                                    </p>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-slate-300 italic">None defined</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 max-w-sm truncate font-mono text-[11px] text-slate-600">
+                              {it.expression ? (
+                                <span className="truncate block font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-800" title={it.expression}>
+                                  {it.expression}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 italic">Direct column</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              {it.isHidden ? (
+                                <span className="text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                                  <EyeOff className="h-3 w-3" /> Hidden
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                                  <Eye className="h-3 w-3" /> Visible
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {it.expression && (
+                                  <button
+                                    type="button"
+                                    onClick={() => copyText(it.id, it.expression!)}
+                                    title="Copy DAX Expression"
+                                    className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition"
+                                  >
+                                    {copiedId === it.id ? (
+                                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => openDefinitionModal(it)}
+                                  title="Edit Mathematical & Business Definitions"
+                                  className="p-1 rounded-lg hover:bg-blue-100 text-blue-600 transition"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                {it.isCustom && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCustomDax(it.id)}
+                                    title="Delete Custom DAX"
+                                    className="p-1 rounded-lg hover:bg-rose-100 text-rose-600 transition"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : viewMode === "sidebox" ? (
+                  /* ================= 2. SIDEBOX VIEW ================= */
+                  <div className="h-full flex gap-4 overflow-hidden">
+                    {/* Left List of Items */}
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                      {items.map((it) => {
+                        const isSelected = selectedItem?.id === it.id;
+                        return (
+                          <div
+                            key={it.id}
+                            onClick={() => setSelectedItem(it)}
                             className={clsx(
-                              "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase",
-                              it.type === "Measure"
-                                ? "bg-blue-100 text-blue-800"
-                                : "bg-emerald-100 text-emerald-800"
+                              "p-3 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3",
+                              isSelected
+                                ? "border-blue-600 bg-blue-50/60 shadow-xs ring-2 ring-blue-500/20"
+                                : "border-slate-200/80 hover:border-slate-300 bg-white"
                             )}
                           >
-                            {it.type}
-                          </span>
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={clsx(
+                                    "px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase",
+                                    it.isCustom
+                                      ? "bg-purple-100 text-purple-800"
+                                      : it.type === "Measure"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-emerald-100 text-emerald-800"
+                                  )}
+                                >
+                                  {it.isCustom ? "Custom" : it.type}
+                                </span>
+                                <h4 className="font-mono text-xs font-bold text-slate-900 truncate">
+                                  <HighlightText
+                                    text={it.name}
+                                    match={searchQuery}
+                                    active={searchMode === "partial" || searchMode === "exact"}
+                                  />
+                                </h4>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-mono truncate">
+                                Table: <span className="font-semibold text-slate-700">{it.tableName}</span> &bull; {it.dataType}
+                              </p>
+                              {it.businessDefinition && (
+                                <p className="text-[11px] text-slate-600 truncate">
+                                  {it.businessDefinition}
+                                </p>
+                              )}
+                            </div>
 
-                          <span className="font-mono text-xs font-bold text-slate-900">
-                            {it.name}
-                          </span>
+                            <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+                          </div>
+                        );
+                      })}
+                    </div>
 
-                          <span className="text-[11px] text-slate-400 font-mono">
-                            in <span className="font-semibold text-slate-700">{it.tableName}</span>
-                          </span>
-
-                          <span className="text-[10px] text-slate-400">
-                            Type: {it.dataType}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 self-end sm:self-auto">
-                          {it.isHidden ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                              <EyeOff className="h-3 w-3" />
-                              <span>Hidden</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                              <Eye className="h-3 w-3" />
-                              <span>Visible</span>
-                            </span>
-                          )}
-
-                          {it.expression && (
+                    {/* Right Inspector Sidebox */}
+                    {selectedItem ? (
+                      <div className="w-80 lg:w-96 shrink-0 h-full border border-slate-200/80 rounded-2xl p-4 bg-slate-50/50 flex flex-col justify-between overflow-y-auto">
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                            <div>
+                              <span
+                                className={clsx(
+                                  "px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase",
+                                  selectedItem.isCustom
+                                    ? "bg-purple-100 text-purple-800"
+                                    : selectedItem.type === "Measure"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-emerald-100 text-emerald-800"
+                                )}
+                              >
+                                {selectedItem.isCustom ? "Custom DAX" : selectedItem.type}
+                              </span>
+                              <h3 className="font-mono text-sm font-bold text-slate-900 mt-1">
+                                {selectedItem.name}
+                              </h3>
+                            </div>
                             <button
                               type="button"
-                              onClick={() => copyText(it.id, it.expression!)}
-                              className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold bg-white border border-slate-200 text-slate-700 hover:border-slate-400 shadow-2xs transition"
+                              onClick={() => openDefinitionModal(selectedItem)}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-2xs transition"
                             >
-                              {copiedId === it.id ? (
-                                <>
-                                  <Check className="h-3 w-3 text-emerald-600" />
-                                  <span className="text-emerald-700">Copied!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="h-3 w-3 text-slate-400" />
-                                  <span>Copy DAX</span>
-                                </>
-                              )}
+                              <Pencil className="h-3 w-3" />
+                              <span>Edit</span>
                             </button>
+                          </div>
+
+                          {/* Metadata Grid */}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="p-2.5 rounded-xl bg-white border border-slate-200/70">
+                              <span className="text-[10px] text-slate-400 font-bold block">Table</span>
+                              <span className="font-mono font-bold text-slate-800 truncate block">
+                                {selectedItem.tableName}
+                              </span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-white border border-slate-200/70">
+                              <span className="text-[10px] text-slate-400 font-bold block">Data Type</span>
+                              <span className="font-mono font-bold text-slate-800 truncate block">
+                                {selectedItem.dataType}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Business Definition */}
+                          <div className="space-y-1">
+                            <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                              Business Definition / Meaning
+                            </h5>
+                            <div className="p-3 rounded-xl bg-white border border-slate-200/70 text-xs text-slate-700 leading-relaxed">
+                              {selectedItem.businessDefinition || (
+                                <span className="text-slate-400 italic">No business definition provided. Click Edit to add one.</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Mathematical Definition */}
+                          <div className="space-y-1">
+                            <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                              Mathematical Formulation
+                            </h5>
+                            <div className="p-3 rounded-xl bg-white border border-slate-200/70 text-xs font-mono text-purple-900 leading-relaxed">
+                              {selectedItem.mathDefinition || (
+                                <span className="text-slate-400 italic font-sans">No mathematical definition specified.</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Notes */}
+                          {selectedItem.notes && (
+                            <div className="space-y-1">
+                              <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                Technical Notes
+                              </h5>
+                              <div className="p-3 rounded-xl bg-white border border-slate-200/70 text-xs text-slate-600">
+                                {selectedItem.notes}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* DAX Formula */}
+                          {selectedItem.expression && (
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                  DAX Expression
+                                </h5>
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(selectedItem.id, selectedItem.expression!)}
+                                  className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                                >
+                                  {copiedId === selectedItem.id ? (
+                                    <>
+                                      <Check className="h-3 w-3 text-emerald-600" />
+                                      <span className="text-emerald-700">Copied!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="h-3 w-3" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                              <div className="p-3 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner">
+                                <pre className="whitespace-pre-wrap">{selectedItem.expression}</pre>
+                              </div>
+                            </div>
                           )}
                         </div>
+
+                        {selectedItem.isCustom && (
+                          <div className="pt-3 border-t border-slate-200 mt-4 flex items-center justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCustomDax(selectedItem.id)}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>Delete Custom DAX</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
+                    ) : (
+                      <div className="w-80 lg:w-96 shrink-0 h-full border border-dashed border-slate-200 rounded-2xl flex items-center justify-center text-xs text-slate-400">
+                        Select an item to view inspector details
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* ================= 3. SPLIT VIEW ================= */
+                  <div className="h-full overflow-y-auto pr-1 space-y-3">
+                    {items.map((it) => (
+                      <div
+                        key={it.id}
+                        className="p-4 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs transition bg-slate-50/30 space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span
+                              className={clsx(
+                                "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase",
+                                it.isCustom
+                                  ? "bg-purple-100 text-purple-800"
+                                  : it.type === "Measure"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-emerald-100 text-emerald-800"
+                              )}
+                            >
+                              {it.isCustom ? "Custom DAX" : it.type}
+                            </span>
 
-                      {/* Description */}
-                      <p className="text-xs text-slate-600 leading-relaxed">
-                        {it.description}
-                      </p>
+                            <span className="font-mono text-xs font-bold text-slate-900">
+                              <HighlightText
+                                text={it.name}
+                                match={searchQuery}
+                                active={searchMode === "partial" || searchMode === "exact"}
+                              />
+                            </span>
 
-                      {/* Monospace Code Formula */}
-                      {it.expression && (
-                        <div className="rounded-xl bg-slate-900 p-3 text-xs text-emerald-400 font-mono overflow-x-auto shadow-inner border border-slate-800">
-                          <pre className="whitespace-pre-wrap">{it.expression}</pre>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              in <span className="font-semibold text-slate-700">{it.tableName}</span>
+                            </span>
+
+                            <span className="text-[10px] text-slate-400">
+                              Type: {it.dataType}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => openDefinitionModal(it)}
+                              className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold bg-white border border-slate-200 text-blue-600 hover:border-blue-300 shadow-2xs transition"
+                            >
+                              <Pencil className="h-3 w-3" />
+                              <span>Edit Definitions</span>
+                            </button>
+
+                            {it.expression && (
+                              <button
+                                type="button"
+                                onClick={() => copyText(it.id, it.expression!)}
+                                className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold bg-white border border-slate-200 text-slate-700 hover:border-slate-400 shadow-2xs transition"
+                              >
+                                {copiedId === it.id ? (
+                                  <>
+                                    <Check className="h-3 w-3 text-emerald-600" />
+                                    <span className="text-emerald-700">Copied!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="h-3 w-3 text-slate-400" />
+                                    <span>Copy DAX</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+
+                            {it.isCustom && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCustomDax(it.id)}
+                                className="p-1 rounded-full text-rose-500 hover:bg-rose-50 transition"
+                                title="Delete"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  ))
+
+                        {/* Mathematical & Business Definitions */}
+                        {(it.businessDefinition || it.mathDefinition) && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs bg-white p-3 rounded-xl border border-slate-100">
+                            {it.businessDefinition && (
+                              <div>
+                                <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wide">
+                                  Business Definition
+                                </span>
+                                <p className="text-slate-700 mt-0.5 leading-relaxed">
+                                  {it.businessDefinition}
+                                </p>
+                              </div>
+                            )}
+                            {it.mathDefinition && (
+                              <div>
+                                <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wide">
+                                  Mathematical Formula
+                                </span>
+                                <p className="font-mono text-purple-900 mt-0.5 leading-relaxed">
+                                  {it.mathDefinition}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Monospace Code Formula */}
+                        {it.expression && (
+                          <div className="rounded-xl bg-slate-900 p-3 text-xs text-emerald-400 font-mono overflow-x-auto shadow-inner border border-slate-800">
+                            <pre className="whitespace-pre-wrap">{it.expression}</pre>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -625,6 +1348,249 @@ export function DaxManagementPage() {
           )}
         </div>
       </div>
+
+      {/* MODAL 1: EDIT DEFINITIONS MODAL */}
+      {definitionModalOpen && definitionTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-xl bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800">
+                  {definitionTarget.type}
+                </span>
+                <h3 className="font-mono text-sm font-bold text-slate-900 mt-1">
+                  Edit Definitions: {definitionTarget.name}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Table: <span className="font-semibold text-slate-700">{definitionTarget.tableName}</span> &bull; Model: {activeModel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDefinitionModalOpen(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Business Definition / Calculation Logic
+                </label>
+                <textarea
+                  rows={3}
+                  value={defBusiness}
+                  onChange={(e) => setDefBusiness(e.target.value)}
+                  placeholder="Explain the business rationale, metric meaning, KPI significance..."
+                  className="w-full rounded-xl bg-slate-50 p-2.5 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Mathematical Formulation / Formula Reference
+                </label>
+                <input
+                  type="text"
+                  value={defMath}
+                  onChange={(e) => setDefMath(e.target.value)}
+                  placeholder="e.g. Total Revenue / Total Patient Encounters"
+                  className="w-full rounded-xl bg-slate-50 px-3 py-2 text-xs font-mono text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Technical Notes & Governance Constraints
+                </label>
+                <textarea
+                  rows={2}
+                  value={defNotes}
+                  onChange={(e) => setDefNotes(e.target.value)}
+                  placeholder="Filters applied, active relationships, refresh frequency notes..."
+                  className="w-full rounded-xl bg-slate-50 p-2.5 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDefinitionModalOpen(false)}
+                className="px-4 py-2 rounded-full text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDefinitions}
+                disabled={isSavingDef}
+                className="px-5 py-2 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSavingDef && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isSavingDef ? "Saving..." : "Save Definitions"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: ADD / EDIT CUSTOM DAX MODAL */}
+      {customDaxModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-2xl bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800">
+                  Custom DAX Authoring
+                </span>
+                <h3 className="text-base font-bold text-slate-900 mt-1">
+                  {customDaxTarget ? "Edit Custom DAX Measure" : "Create New Custom DAX Measure"}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Define standalone analytical measures with business logic and formulas
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCustomDaxModalOpen(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {customError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium">
+                {customError}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-2">
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Measure Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="e.g. Average Length of Stay (Days)"
+                    className="w-full rounded-xl bg-slate-50 px-3 py-2 text-xs font-mono text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Data Type
+                  </label>
+                  <select
+                    value={customDataType}
+                    onChange={(e) => setCustomDataType(e.target.value)}
+                    className="w-full rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 border border-slate-200 focus:outline-none"
+                  >
+                    <option value="Decimal">Decimal</option>
+                    <option value="Whole Number">Whole Number</option>
+                    <option value="Currency">Currency</option>
+                    <option value="Percentage">Percentage</option>
+                    <option value="Text">Text</option>
+                    <option value="Boolean">Boolean</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Home Table Name *
+                </label>
+                <input
+                  type="text"
+                  value={customTable}
+                  onChange={(e) => setCustomTable(e.target.value)}
+                  placeholder="e.g. Fact_Inpatient or Key Measures"
+                  className="w-full rounded-xl bg-slate-50 px-3 py-2 text-xs font-mono text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  DAX Formula / Expression *
+                </label>
+                <textarea
+                  rows={4}
+                  value={customExpression}
+                  onChange={(e) => setCustomExpression(e.target.value)}
+                  placeholder="e.g. DIVIDE(SUM('Fact_Inpatient'[Total_Stay_Hours]), 24, 0)"
+                  className="w-full rounded-xl bg-slate-900 p-3 text-xs font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Business Definition
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={customBusiness}
+                    onChange={(e) => setCustomBusiness(e.target.value)}
+                    placeholder="Clinical or operational logic..."
+                    className="w-full rounded-xl bg-slate-50 p-2.5 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Mathematical Formulation
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={customMath}
+                    onChange={(e) => setCustomMath(e.target.value)}
+                    placeholder="Formula notation (e.g. Sum / Count)..."
+                    className="w-full rounded-xl bg-slate-50 p-2.5 text-xs font-mono text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Notes
+                </label>
+                <input
+                  type="text"
+                  value={customNotes}
+                  onChange={(e) => setCustomNotes(e.target.value)}
+                  placeholder="Optional governance or refresh notes..."
+                  className="w-full rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setCustomDaxModalOpen(false)}
+                className="px-4 py-2 rounded-full text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCustomDax}
+                disabled={isSavingCustom}
+                className="px-5 py-2 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSavingCustom && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{isSavingCustom ? "Saving..." : "Save Custom DAX"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

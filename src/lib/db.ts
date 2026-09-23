@@ -14,7 +14,7 @@ export type ChangeLogEntry = {
   id: string;
   entity_table: string;
   entity_id: string;
-  action: "create" | "update" | "delete";
+  action: "create" | "update" | "delete" | "login" | string;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   summary: string;
@@ -284,8 +284,12 @@ export async function upsertDbItems(items: any[]): Promise<void> {
 }
 
 // 3. CHANGE LOG REPOSITORY
-export async function getDbChangeLogs(options: { itemId?: string; limit?: number } = {}): Promise<ChangeLogEntry[]> {
-  const { itemId, limit = 150 } = options;
+export async function getDbChangeLogs(options: {
+  itemId?: string;
+  entityTable?: string;
+  limit?: number;
+} = {}): Promise<ChangeLogEntry[]> {
+  const { itemId, entityTable, limit = 150 } = options;
   const provider = getDbProvider();
 
   if (provider === "supabase") {
@@ -293,10 +297,12 @@ export async function getDbChangeLogs(options: { itemId?: string; limit?: number
     let query = supabase
       .from("change_log")
       .select("*")
-      .eq("entity_table", "powerbi_items")
       .order("changed_at", { ascending: false })
       .limit(limit);
 
+    if (entityTable && entityTable !== "all") {
+      query = query.eq("entity_table", entityTable);
+    }
     if (itemId) query = query.eq("entity_id", itemId);
     const { data, error } = await query;
     if (error) {
@@ -310,11 +316,15 @@ export async function getDbChangeLogs(options: { itemId?: string; limit?: number
   let sql = `
     SELECT id, entity_table, entity_id, action, before, after, summary, changed_by, changed_at
     FROM change_log
-    WHERE entity_table = 'powerbi_items'
+    WHERE 1=1
   `;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const params: Record<string, any> = { $limit: limit };
 
+  if (entityTable && entityTable !== "all") {
+    sql += " AND entity_table = $entityTable";
+    params.$entityTable = entityTable;
+  }
   if (itemId) {
     sql += " AND entity_id = $itemId";
     params.$itemId = itemId;
@@ -559,4 +569,224 @@ export async function batchImportDbLicenses(licenses: PowerBiLicense[]): Promise
     await saveDbLicense(lic);
   }
   return { imported: licenses.length };
+}
+
+// =============================================================================
+// 5. USER SESSIONS & ACTIVITY AUDIT
+// =============================================================================
+export type AppUserSummary = {
+  email: string;
+  name: string;
+  lastLoginAt: string;
+  loginCount: number;
+  recentLogins: Array<{ date: string; userAgent?: string; ip?: string }>;
+};
+
+export async function recordUserLogin(user: {
+  email: string;
+  name: string;
+  userAgent?: string;
+  ip?: string;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  await insertDbChangeLogs([
+    {
+      id: crypto.randomUUID(),
+      entity_table: "app_users",
+      entity_id: user.email.toLowerCase(),
+      action: "login",
+      summary: `User ${user.name} (${user.email}) signed in`,
+      changed_by: user.name,
+      changed_at: now,
+      before: null,
+      after: {
+        email: user.email.toLowerCase(),
+        name: user.name,
+        userAgent: user.userAgent || "",
+        ip: user.ip || "",
+        login_at: now,
+      },
+    },
+  ]);
+}
+
+export async function getAppUsers(): Promise<AppUserSummary[]> {
+  const logs = await getDbChangeLogs({ entityTable: "app_users", limit: 500 });
+  const map = new Map<string, AppUserSummary>();
+
+  for (const log of logs) {
+    if (log.action !== "login") continue;
+    const email = log.entity_id.toLowerCase();
+    const existing = map.get(email);
+    const afterData = (log.after as Record<string, unknown>) || {};
+    const name = (afterData.name as string) || log.changed_by || email.split("@")[0];
+    const userAgent = (afterData.userAgent as string) || "";
+    const ip = (afterData.ip as string) || "";
+
+    if (!existing) {
+      map.set(email, {
+        email,
+        name,
+        lastLoginAt: log.changed_at,
+        loginCount: 1,
+        recentLogins: [{ date: log.changed_at, userAgent, ip }],
+      });
+    } else {
+      existing.loginCount += 1;
+      if (new Date(log.changed_at).getTime() > new Date(existing.lastLoginAt).getTime()) {
+        existing.lastLoginAt = log.changed_at;
+      }
+      if (existing.recentLogins.length < 10) {
+        existing.recentLogins.push({ date: log.changed_at, userAgent, ip });
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.lastLoginAt).getTime() - new Date(a.lastLoginAt).getTime()
+  );
+}
+
+// Generic system activity logger
+export async function logSystemActivity(entry: {
+  entityTable: string;
+  entityId: string;
+  action: "create" | "update" | "delete" | "login" | string;
+  summary: string;
+  changedBy?: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  await insertDbChangeLogs([
+    {
+      id: crypto.randomUUID(),
+      entity_table: entry.entityTable,
+      entity_id: entry.entityId,
+      action: entry.action,
+      summary: entry.summary,
+      changed_by: entry.changedBy || "System",
+      changed_at: now,
+      before: entry.before || null,
+      after: entry.after || null,
+    },
+  ]);
+}
+
+// =============================================================================
+// 6. DAX ANNOTATIONS (MATH & BUSINESS DEFINITIONS) & CUSTOM DAX
+// =============================================================================
+export type DaxAnnotation = {
+  id: string; // e.g. "D01_ms_Net_Revenue" or custom ID
+  mathDefinition?: string;
+  businessDefinition?: string;
+  notes?: string;
+  updatedAt?: string;
+};
+
+export async function saveDaxAnnotation(item: DaxAnnotation & { changedBy?: string }): Promise<void> {
+  const now = new Date().toISOString();
+  await insertDbChangeLogs([
+    {
+      id: crypto.randomUUID(),
+      entity_table: "dax_annotations",
+      entity_id: item.id,
+      action: "update",
+      summary: `Updated business/math definitions for DAX item: ${item.id}`,
+      changed_by: item.changedBy || "Analyst",
+      changed_at: now,
+      before: null,
+      after: {
+        id: item.id,
+        mathDefinition: item.mathDefinition || "",
+        businessDefinition: item.businessDefinition || "",
+        notes: item.notes || "",
+        updatedAt: now,
+      },
+    },
+  ]);
+}
+
+export async function getAllDaxAnnotations(): Promise<Record<string, DaxAnnotation>> {
+  const logs = await getDbChangeLogs({ entityTable: "dax_annotations", limit: 1000 });
+  const map: Record<string, DaxAnnotation> = {};
+  const sorted = [...logs].sort((a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime());
+  for (const log of sorted) {
+    const after = (log.after as Record<string, unknown>) || {};
+    if (log.entity_id) {
+      map[log.entity_id] = {
+        id: log.entity_id,
+        mathDefinition: (after.mathDefinition as string) || "",
+        businessDefinition: (after.businessDefinition as string) || "",
+        notes: (after.notes as string) || "",
+        updatedAt: log.changed_at,
+      };
+    }
+  }
+  return map;
+}
+
+export type CustomDaxItem = {
+  id: string;
+  datasetId: string;
+  tableName: string;
+  name: string;
+  expression: string;
+  formatString?: string;
+  itemType: "measure" | "column" | "calculated_column" | "custom_dax";
+  mathDefinition?: string;
+  businessDefinition?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt?: string;
+};
+
+export async function saveCustomDaxItem(item: CustomDaxItem): Promise<void> {
+  const now = new Date().toISOString();
+  await insertDbChangeLogs([
+    {
+      id: crypto.randomUUID(),
+      entity_table: "custom_dax_items",
+      entity_id: item.id,
+      action: "create",
+      summary: `Created custom DAX measure [${item.name}] in ${item.tableName}`,
+      changed_by: item.createdBy || "Analyst",
+      changed_at: now,
+      before: null,
+      after: { ...item, createdAt: item.createdAt || now, updatedAt: now },
+    },
+  ]);
+}
+
+export async function deleteCustomDaxItem(id: string, user: string = "Analyst"): Promise<void> {
+  const now = new Date().toISOString();
+  await insertDbChangeLogs([
+    {
+      id: crypto.randomUUID(),
+      entity_table: "custom_dax_items",
+      entity_id: id,
+      action: "delete",
+      summary: `Deleted custom DAX measure ID: ${id}`,
+      changed_by: user,
+      changed_at: now,
+      before: null,
+      after: null,
+    },
+  ]);
+}
+
+export async function getAllCustomDaxItems(): Promise<CustomDaxItem[]> {
+  const logs = await getDbChangeLogs({ entityTable: "custom_dax_items", limit: 500 });
+  const map = new Map<string, CustomDaxItem>();
+  const sorted = [...logs].sort((a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime());
+  for (const log of sorted) {
+    if (log.action === "delete") {
+      map.delete(log.entity_id);
+    } else if (log.action === "create" || log.action === "update") {
+      if (log.after) {
+        map.set(log.entity_id, log.after as unknown as CustomDaxItem);
+      }
+    }
+  }
+  return Array.from(map.values());
 }

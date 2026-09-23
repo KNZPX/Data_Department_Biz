@@ -67,8 +67,24 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         const isValid = Boolean(data.hasToken && !data.expired);
         setAuthenticated(isValid);
-        setUser(data.user || null);
+        const userData = data.user || null;
+        setUser(userData);
         if (data.dbProvider) setDbProvider(data.dbProvider);
+
+        if (isValid && userData && userData.email) {
+          const sessionKey = `login_recorded_${userData.email}`;
+          if (!sessionStorage.getItem(sessionKey)) {
+            sessionStorage.setItem(sessionKey, "true");
+            void fetch("/api/users", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: userData.name || userData.email,
+                email: userData.email,
+              }),
+            });
+          }
+        }
       } else {
         setAuthenticated(false);
       }

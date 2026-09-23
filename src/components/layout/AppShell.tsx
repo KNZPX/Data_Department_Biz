@@ -141,16 +141,16 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   // Navigation Items with Page Names and Subtitles
   const navItems = [
-    { href: "/", label: "Portal Hub", sub: "Executive BI Dashboard", icon: Home, exact: true },
     { href: "/reports", label: "Power BI Catalog", sub: "465 Workspaces & Reports", icon: LayoutGrid },
     { href: "/dax", label: "DAX Management", sub: "D01 & D02 Semantic Models", icon: FunctionSquare },
-    { href: "/licenses", label: "Team & Licenses", sub: "Governance & Governance", icon: Users },
+    { href: "/licenses", label: "Team & Licenses", sub: "Capacity & Group Governance", icon: Users },
+    { href: "/users", label: "User Management", sub: "Login Activity & Audit Logs", icon: ShieldCheck },
     { href: "/settings", label: "System Settings", sub: "Database & OAuth Config", icon: Settings },
   ];
 
   // Current active page name
   const activeNavItem = navItems.find((item) =>
-    item.exact ? pathname === item.href : pathname.startsWith(item.href)
+    pathname === "/" ? item.href === "/reports" : pathname.startsWith(item.href)
   ) || navItems[0];
 
   return (
@@ -511,7 +511,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             {/* Nav Items List */}
             <nav className="flex flex-col space-y-1.5 px-3">
               {navItems.map((item) => {
-                const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+                const active = pathname === "/" ? item.href === "/reports" : pathname.startsWith(item.href);
                 const Icon = item.icon;
 
                 return (
