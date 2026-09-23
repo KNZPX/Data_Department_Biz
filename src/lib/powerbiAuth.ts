@@ -1,7 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 
+const DEFAULT_CLIENT_ID = "e6cbc2a5-ce4e-4a77-8f6b-3ff4300a659e";
+const DEFAULT_TENANT_ID = "325c40be-6d2b-4006-b2c5-078947c856d2";
+
 const AUTHORITY_BASE = "https://login.microsoftonline.com";
-const TENANT_SEGMENT = process.env.AZURE_TENANT_ID || "organizations";
+const TENANT_SEGMENT = process.env.AZURE_TENANT_ID || process.env.NEXT_PUBLIC_AZURE_TENANT_ID || DEFAULT_TENANT_ID;
 const AUTHORIZE_ENDPOINT = `${AUTHORITY_BASE}/${TENANT_SEGMENT}/oauth2/v2.0/authorize`;
 const TOKEN_ENDPOINT = `${AUTHORITY_BASE}/${TENANT_SEGMENT}/oauth2/v2.0/token`;
 
@@ -18,11 +21,7 @@ const SCOPES = [
 ].join(" ");
 
 function requireClientId(): string {
-  const clientId = process.env.AZURE_CLIENT_ID;
-  if (!clientId) {
-    throw new Error("Missing AZURE_CLIENT_ID. Please set AZURE_CLIENT_ID in your .env.local file.");
-  }
-  return clientId;
+  return process.env.AZURE_CLIENT_ID || process.env.NEXT_PUBLIC_AZURE_CLIENT_ID || DEFAULT_CLIENT_ID;
 }
 
 function base64url(input: Buffer): string {
