@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --port 3005",
     "lint": "eslint",
-    "migrate:timesheet": "bun run scripts/migrate-from-timesheet.ts"
+    "migrate:timesheet": "bun run scripts/migrate-from-timesheet.ts",
+    "db:push-supabase": "bun run scripts/push-to-supabase.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
