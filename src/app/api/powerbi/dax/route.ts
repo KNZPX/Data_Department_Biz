@@ -13,6 +13,7 @@ interface DictionaryItem {
   Object_Type: string;
   DAX_Formula: string;
   Status: string;
+  Semantic_Model?: string;
 }
 
 let cachedDictionary: DictionaryItem[] | null = null;
@@ -36,28 +37,55 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const q = (searchParams.get("q") || "").toLowerCase().trim();
+    const model = searchParams.get("model") || "";
     const table = searchParams.get("table") || "";
     const type = searchParams.get("type") || "";
     const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || "50", 10);
+    const limit = parseInt(searchParams.get("limit") || "60", 10);
 
     const allItems = getDictionary();
 
-    // Collect summary statistics
-    const tablesSet = new Set<string>();
-    let measureCount = 0;
-    let dataColumnCount = 0;
-    let calcColumnCount = 0;
+    // Group items by Semantic Model
+    const modelStatsMap = new Map<string, {
+      name: string;
+      total: number;
+      measures: number;
+      columns: number;
+      tables: Set<string>;
+    }>();
 
     for (const item of allItems) {
-      if (item.Table_Name) tablesSet.add(item.Table_Name);
-      if (item.Object_Type === "Measure") measureCount++;
-      else if (item.Object_Type === "Data Column") dataColumnCount++;
-      else if (item.Object_Type === "Calculated Column") calcColumnCount++;
+      const mName = item.Semantic_Model || "Hospital Master Core Dimensions";
+      if (!modelStatsMap.has(mName)) {
+        modelStatsMap.set(mName, {
+          name: mName,
+          total: 0,
+          measures: 0,
+          columns: 0,
+          tables: new Set(),
+        });
+      }
+      const st = modelStatsMap.get(mName)!;
+      st.total++;
+      if (item.Object_Type === "Measure") st.measures++;
+      else st.columns++;
+      if (item.Table_Name) st.tables.add(item.Table_Name);
     }
+
+    const semanticModels = Array.from(modelStatsMap.values()).map((st) => ({
+      name: st.name,
+      total: st.total,
+      measures: st.measures,
+      columns: st.columns,
+      tableCount: st.tables.size,
+    })).sort((a, b) => b.total - a.total);
 
     // Filter items
     let filtered = allItems;
+
+    if (model && model !== "all") {
+      filtered = filtered.filter((i) => (i.Semantic_Model || "").toLowerCase() === model.toLowerCase());
+    }
 
     if (table && table !== "all") {
       filtered = filtered.filter((i) => i.Table_Name.toLowerCase() === table.toLowerCase());
@@ -74,9 +102,21 @@ export async function GET(request: NextRequest) {
           i.Table_Name.toLowerCase().includes(q) ||
           i.Description.toLowerCase().includes(q) ||
           i.Definition.toLowerCase().includes(q) ||
-          i.DAX_Formula.toLowerCase().includes(q)
+          i.DAX_Formula.toLowerCase().includes(q) ||
+          (i.Semantic_Model && i.Semantic_Model.toLowerCase().includes(q))
         );
       });
+    }
+
+    // Collect filtered table names
+    const filteredTablesSet = new Set<string>();
+    let filteredMeasures = 0;
+    let filteredColumns = 0;
+
+    for (const item of filtered) {
+      if (item.Table_Name) filteredTablesSet.add(item.Table_Name);
+      if (item.Object_Type === "Measure") filteredMeasures++;
+      else filteredColumns++;
     }
 
     const total = filtered.length;
@@ -96,12 +136,12 @@ export async function GET(request: NextRequest) {
         page,
         limit,
         totalPages: Math.ceil(total / limit),
-        totalMeasures: measureCount,
-        totalDataColumns: dataColumnCount,
-        totalCalcColumns: calcColumnCount,
-        totalTables: tablesSet.size,
-        tables: Array.from(tablesSet).sort(),
+        totalMeasures: filteredMeasures,
+        totalColumns: filteredColumns,
+        totalTables: filteredTablesSet.size,
+        tables: Array.from(filteredTablesSet).sort(),
       },
+      semanticModels,
       datasets,
     });
   } catch (err: any) {

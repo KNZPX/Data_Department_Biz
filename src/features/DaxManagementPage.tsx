@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import {
+  Activity,
   Binary,
   BookOpen,
   Calculator,
@@ -18,6 +19,7 @@ import {
   EyeOff,
   Filter,
   FileCode,
+  FolderTree,
   FunctionSquare,
   HelpCircle,
   Info,
@@ -32,6 +34,7 @@ import {
   Sparkles,
   Table,
   Terminal,
+  X,
   Zap,
 } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
@@ -44,6 +47,17 @@ interface DictionaryItem {
   Object_Type: string;
   DAX_Formula: string;
   Status: string;
+  Semantic_Model?: string;
+}
+
+interface SemanticModelInfo {
+  name: string;
+  total: number;
+  measures: number;
+  columns: number;
+  tableCount: number;
+  icon?: string;
+  color?: string;
 }
 
 export function DaxManagementPage() {
@@ -52,16 +66,23 @@ export function DaxManagementPage() {
   // Tab: dictionary | api-console
   const [activeTab, setActiveTab] = useState<"dictionary" | "api-console">("dictionary");
 
+  // Provenance Info Box Visibility
+  const [showProvenanceInfo, setShowProvenanceInfo] = useState(true);
+
+  // Selected Semantic Model
+  const [selectedModel, setSelectedModel] = useState<string>("all");
+
   // Dictionary state
   const [items, setItems] = useState<DictionaryItem[]>([]);
+  const [semanticModels, setSemanticModels] = useState<SemanticModelInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTable, setSelectedTable] = useState("all");
   const [selectedType, setSelectedType] = useState("all");
   const [meta, setMeta] = useState<any>({
+    total: 2483,
     totalMeasures: 843,
-    totalDataColumns: 1568,
-    totalCalcColumns: 72,
+    totalColumns: 1640,
     totalTables: 187,
     tables: [],
   });
@@ -79,22 +100,26 @@ export function DaxManagementPage() {
 
   useEffect(() => {
     void fetchDictionary();
-  }, [selectedTable, selectedType]);
+  }, [selectedModel, selectedTable, selectedType]);
 
   async function fetchDictionary() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      if (selectedModel !== "all") params.set("model", selectedModel);
       if (selectedTable !== "all") params.set("table", selectedTable);
       if (selectedType !== "all") params.set("type", selectedType);
-      params.set("limit", "100");
+      params.set("limit", "120");
 
       const res = await fetch(`/api/powerbi/dax?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
         setItems(json.items || []);
         if (json.meta) setMeta(json.meta);
+        if (json.semanticModels && json.semanticModels.length > 0) {
+          setSemanticModels(json.semanticModels);
+        }
         if (json.datasets) {
           setDatasets(json.datasets);
           if (json.datasets.length > 0 && !selectedDatasetId) {
@@ -149,8 +174,24 @@ export function DaxManagementPage() {
     }
   }
 
+  // Helper to get friendly badge color for models
+  function getModelBadge(name: string) {
+    if (name.includes("PKT-Imed_DB") || name.includes("Clinical")) {
+      return { bg: "#EEF2FF", text: "#4F46E5", border: "#C7D2FE", icon: "🏥" };
+    } else if (name.includes("PKT-D02") || name.includes("Revenue")) {
+      return { bg: "#FEF3C7", text: "#B45309", border: "#FDE68A", icon: "💰" };
+    } else if (name.includes("PKT-D01") || name.includes("Strategy")) {
+      return { bg: "#ECFDF5", text: "#047857", border: "#A7F3D0", icon: "🎯" };
+    } else if (name.includes("BSI-OPT") || name.includes("Pharmacy")) {
+      return { bg: "#EFF6FF", text: "#1D4ED8", border: "#BFDBFE", icon: "💊" };
+    } else if (name.includes("Cancer") || name.includes("F32")) {
+      return { bg: "#FDF2F8", text: "#BE185D", border: "#FBCFE8", icon: "🎗️" };
+    }
+    return { bg: "#F8FAFC", text: "#475569", border: "#E2E8F0", icon: "🏛️" };
+  }
+
   return (
-    <div className="space-y-7 pb-16 max-w-7xl mx-auto">
+    <div className="space-y-6 pb-16 max-w-7xl mx-auto">
       {/* 1. HERO HEADER */}
       <div className="squircle-card p-6 sm:p-8 bg-white space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
@@ -169,7 +210,7 @@ export function DaxManagementPage() {
                 DAX & Semantic Model Management
               </h1>
               <p className="text-xs text-slate-500">
-                Centralized metadata dictionary, business calculation logic, and direct Power BI REST API extractor
+                Data Dictionary & metric reference for hospital semantic models (187 tables &bull; 843 measures &bull; 1,640 columns)
               </p>
             </div>
           </div>
@@ -186,7 +227,7 @@ export function DaxManagementPage() {
               className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition shadow-xs"
             >
               <BookOpen className="h-3.5 w-3.5" />
-              <span>Measure Dictionary (2,483)</span>
+              <span>Semantic Models & Dictionary</span>
             </button>
 
             <button
@@ -204,12 +245,47 @@ export function DaxManagementPage() {
           </div>
         </div>
 
-        {/* 4 SUMMARY KPI CARDS */}
+        {/* 2. DATA SOURCE ORIGIN BANNER (ตอบข้อสงสัย: อันนี้เอามาจากไหน) */}
+        {showProvenanceInfo && (
+          <div className="rounded-2xl bg-amber-50/70 border border-amber-200/80 p-4 text-xs text-amber-900 flex items-start justify-between gap-3 animate-in fade-in">
+            <div className="flex items-start gap-2.5">
+              <Info className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-amber-950">
+                  ที่มาของข้อมูลชุดนี้ (Data Provenance & Source):
+                </p>
+                <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                  ข้อมูลชุดนี้มาจาก <strong>Master Data Dictionary ของระบบ Power BI โรงพยาบาล</strong> (ไฟล์ <code>Measure_column_dictionary_final.csv</code> ในโมเดลกลาง) ซึ่งรวบรวมและตรวจสอบความถูกต้องของสูตรคำนวณ DAX สำหรับ <strong>843 Measures</strong>, คอลัมน์ <strong>1,640 Columns</strong> บน <strong>187 Tables</strong> พร้อม <strong>หลักการทางธุรกิจและวิธีคำนวณภาษาไทย</strong> จากระบบ HIS iMed, การเงินการรักษา, และโมเดลกลยุทธ์ของโรงพยาบาลครับ
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowProvenanceInfo(false)}
+              className="h-6 w-6 rounded-full hover:bg-amber-100 flex items-center justify-center text-amber-700 shrink-0"
+              title="Close notification"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* 3. SUMMARY KPI STATS CARDS */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 pt-1">
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
             <div className="flex items-center justify-between text-slate-400 mb-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider">Total Objects</span>
+              <Database className="h-4 w-4" style={{ color: currentTheme.primary }} />
+            </div>
+            <p className="text-2xl font-black text-slate-900">{meta.total || 2483}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Measures & Columns in active filter</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+            <div className="flex items-center justify-between text-slate-400 mb-1">
               <span className="text-[11px] font-bold uppercase tracking-wider">Certified Measures</span>
-              <FunctionSquare className="h-4 w-4" style={{ color: currentTheme.primary }} />
+              <FunctionSquare className="h-4 w-4 text-purple-600" />
             </div>
             <p className="text-2xl font-black text-slate-900">{meta.totalMeasures || 843}</p>
             <p className="text-[10px] text-slate-400 mt-0.5">Verified DAX calculations</p>
@@ -217,36 +293,141 @@ export function DaxManagementPage() {
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
             <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Data Columns</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider">Columns</span>
               <Table className="h-4 w-4 text-sky-500" />
             </div>
-            <p className="text-2xl font-black text-slate-900">{meta.totalDataColumns || 1568}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Physical dataset fields</p>
+            <p className="text-2xl font-black text-slate-900">{meta.totalColumns || 1640}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Data & Calculated fields</p>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
             <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Tables in Model</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider">Tables in Filter</span>
               <Layers className="h-4 w-4 text-amber-500" />
             </div>
             <p className="text-2xl font-black text-slate-900">{meta.totalTables || 187}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Fact & Dim tables</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-            <div className="flex items-center justify-between text-slate-400 mb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Calculated Columns</span>
-              <Code2 className="h-4 w-4 text-emerald-500" />
-            </div>
-            <p className="text-2xl font-black text-slate-900">{meta.totalCalcColumns || 72}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Model-computed attributes</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Fact & Dimension tables</p>
           </div>
         </div>
       </div>
 
-      {/* TAB 1: MEASURE & COLUMN DICTIONARY */}
+      {/* 4. SEMANTIC MODEL SELECTOR CARDS (แยกตามชื่อ Semantic Model ทำเป็นปุ่มให้เลือก) */}
+      {activeTab === "dictionary" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FolderTree className="h-4 w-4" style={{ color: currentTheme.primary }} />
+              <h3 className="text-xs font-bold text-slate-800 tracking-wide uppercase">
+                เลือกดูตาม Semantic Model (Select Semantic Model)
+              </h3>
+            </div>
+            {selectedModel !== "all" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedModel("all");
+                  setSelectedTable("all");
+                }}
+                className="text-xs font-bold text-purple-600 hover:underline"
+              >
+                Reset to All Models (2,483)
+              </button>
+            )}
+          </div>
+
+          {/* Grid of Semantic Model Buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* All Models Button Card */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedModel("all");
+                setSelectedTable("all");
+              }}
+              className={`flex items-start justify-between p-4 rounded-2xl border-2 transition text-left ${
+                selectedModel === "all"
+                  ? "border-slate-800 bg-white shadow-md scale-[1.01]"
+                  : "border-slate-200 hover:border-slate-300 bg-white"
+              }`}
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🌐</span>
+                  <p className="text-xs font-bold text-slate-900">All Semantic Models</p>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  รวมข้อมูลโมเดลทั้งหมดในระบบโรงพยาบาล
+                </p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs font-extrabold text-slate-900">2,483</span>
+                <p className="text-[9px] text-slate-400">Total Items</p>
+              </div>
+            </button>
+
+            {/* Individual Semantic Models */}
+            {semanticModels.map((sm) => {
+              const isSelected = selectedModel.toLowerCase() === sm.name.toLowerCase();
+              const badge = getModelBadge(sm.name);
+
+              return (
+                <button
+                  key={sm.name}
+                  type="button"
+                  onClick={() => {
+                    setSelectedModel(sm.name);
+                    setSelectedTable("all");
+                  }}
+                  className={`flex items-start justify-between p-4 rounded-2xl border-2 transition text-left ${
+                    isSelected
+                      ? "border-slate-800 bg-white shadow-md scale-[1.01]"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                >
+                  <div className="space-y-1 min-w-0 pr-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{badge.icon}</span>
+                      <p className="text-xs font-bold text-slate-900 truncate">{sm.name}</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
+                      <span>{sm.tableCount} Tables</span>
+                      <span>&bull;</span>
+                      <span className="font-semibold text-purple-700">{sm.measures} Measures</span>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span
+                      style={{ backgroundColor: badge.bg, color: badge.text, borderColor: badge.border }}
+                      className="px-2 py-0.5 rounded-full text-[10px] font-extrabold border"
+                    >
+                      {sm.total}
+                    </span>
+                    <p className="text-[9px] text-slate-400 mt-1">Objects</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 5. TAB 1: MEASURE & COLUMN DICTIONARY */}
       {activeTab === "dictionary" && (
         <div className="squircle-card p-6 sm:p-8 bg-white space-y-6">
+          {/* Active Model Indicator Header */}
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 font-medium">Viewing Model:</span>
+              <span className="font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full">
+                {selectedModel === "all" ? "All Semantic Models (2,483 Objects)" : selectedModel}
+              </span>
+            </div>
+            <span className="text-[11px] text-slate-500 font-mono">
+              Found {meta.total} results
+            </span>
+          </div>
+
           {/* Search & Filter Bar */}
           <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
@@ -264,9 +445,9 @@ export function DaxManagementPage() {
             <select
               value={selectedTable}
               onChange={(e) => setSelectedTable(e.target.value)}
-              className="rounded-full bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-700 border border-slate-200 focus:outline-none"
+              className="rounded-full bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-700 border border-slate-200 focus:outline-none max-w-xs truncate"
             >
-              <option value="all">All Tables (187)</option>
+              <option value="all">All Tables ({meta.totalTables})</option>
               {(meta.tables || []).map((t: string) => (
                 <option key={t} value={t}>
                   {t}
@@ -282,7 +463,7 @@ export function DaxManagementPage() {
             >
               <option value="all">All Object Types</option>
               <option value="Measure">Measures Only</option>
-              <option value="Data Column">Data Columns Only</option>
+              <option value="Data Column">Data Columns</option>
               <option value="Calculated Column">Calculated Columns</option>
             </select>
 
@@ -343,6 +524,12 @@ export function DaxManagementPage() {
                       <span className="text-[11px] text-slate-400 font-mono">
                         in <span className="font-semibold text-slate-600">{item.Table_Name}</span>
                       </span>
+
+                      {item.Semantic_Model && (
+                        <span className="text-[10px] text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md font-sans">
+                          {item.Semantic_Model}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-auto">
@@ -419,7 +606,7 @@ export function DaxManagementPage() {
         </div>
       )}
 
-      {/* TAB 2: POWER BI REST API & LIVE QUERY CONSOLE */}
+      {/* 6. TAB 2: POWER BI REST API & LIVE QUERY CONSOLE */}
       {activeTab === "api-console" && (
         <div className="space-y-6">
           {/* TECHNICAL ANSWER & GUIDE CARD */}
