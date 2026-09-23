@@ -70,3 +70,51 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Signature Organic Curved Tab Cutout (Inverted Radius) */
+.curved-tab-active {
+  position: relative;
+  background-color: var(--theme-canvas, #F4F6FB);
+  border-top-left-radius: 1.5rem;
+  border-bottom-left-radius: 1.5rem;
+  color: var(--theme-primary, #6C5CE7) !important;
+}
+
+.curved-tab-active::before {
+  content: "";
+  position: absolute;
+  top: -24px;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  background-color: transparent;
+  border-bottom-right-radius: 24px;
+  box-shadow: 10px 10px 0 10px var(--theme-canvas, #F4F6FB);
+  pointer-events: none;
+}
+
+.curved-tab-active::after {
+  content: "";
+  position: absolute;
+  bottom: -24px;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  background-color: transparent;
+  border-top-right-radius: 24px;
+  box-shadow: 10px -10px 0 10px var(--theme-canvas, #F4F6FB);
+  pointer-events: none;
+}
+
+/* Soft modern squircle card */
+.squircle-card {
+  border-radius: var(--theme-radius, 1.75rem);
+  background-color: #ffffff;
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04), 0 4px 10px -2px rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.squircle-card:hover {
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.07), 0 6px 14px -3px rgba(0, 0, 0, 0.03);
+}

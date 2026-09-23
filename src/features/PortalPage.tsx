@@ -1,954 +1,974 @@
 "use client";
 
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Activity,
-  AlertCircle,
-  ArrowDown,
-  ArrowLeft,
   ArrowRight,
-  ArrowUpRight,
   BarChart3,
-  Building2,
   Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock,
+  Compass,
+  Cpu,
   Database,
   ExternalLink,
+  Eye,
+  FileText,
   Filter,
-  Folder,
-  FolderOpen,
-  History,
+  Flame,
+  Globe,
+  HardDrive,
   Inbox,
+  Info,
   KeyRound,
   Layers,
-  Loader2,
-  Lock,
-  LogOut,
-  Mail,
-  Play,
+  LayoutDashboard,
+  LayoutGrid,
+  LifeBuoy,
+  Lightbulb,
+  Maximize2,
+  Minus,
+  MinusCircle,
+  MoreVertical,
+  Plus,
+  PlusCircle,
+  Radio,
   RefreshCw,
   Search,
   Server,
-  Settings,
+  Share2,
+  Shield,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
-  TrendingUp,
-  User,
+  Thermometer,
+  Tv,
   Users,
+  Wifi,
+  Wind,
   X,
   Zap,
 } from "lucide-react";
-import { clsx } from "clsx";
-import { BizAnalyticLogo } from "@/components/brand/BizAnalyticLogo";
-import { SpotlightCard } from "@/components/SpotlightCard";
-import { DashboardLogModal } from "@/components/powerbi/DashboardLogModal";
-import { Button, Textarea } from "@/components/ui";
 import { useAuth } from "@/components/auth/LoginGate";
-import { usePowerBiItems } from "@/lib/usePowerBiItems";
+import { useTheme } from "@/context/ThemeContext";
+import { DashboardLogModal } from "@/components/powerbi/DashboardLogModal";
 import type { PowerBiItem } from "@/lib/powerbiTypes";
 
 export function PortalPage() {
-  const { user, authenticated, dbProvider, refreshAuth, logout } = useAuth();
-  const { state, refresh } = usePowerBiItems("/api/powerbi/reports");
+  const { user, dbProvider } = useAuth();
+  const { currentTheme, currentCanvas, radiusPreset } = useTheme();
 
-  // Slide controller: 0 = Bento Portal & Dashboard, 1 = Reports Mail Inbox
-  const [activeSlide, setActiveSlide] = useState<number>(0);
-  const totalSlides = 2;
-  const touchStartX = useRef<number | null>(null);
-
-  // Selected items & drawers
-  const [selectedReport, setSelectedReport] = useState<PowerBiItem | null>(null);
-  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
+  // Data states
+  const [items, setItems] = useState<PowerBiItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedLogItem, setSelectedLogItem] = useState<PowerBiItem | null>(null);
+  const [activeDrawerItem, setActiveDrawerItem] = useState<PowerBiItem | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string>("all");
+  const [searchFilter, setSearchFilter] = useState<string>("");
 
-  // Mail Inbox Workspace & Search filters
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string>("ALL");
-  const [workspaceSearch, setWorkspaceSearch] = useState("");
-  const [reportSearch, setReportSearch] = useState("");
+  // Interactive Quick Controls (Toggles) matching reference screenshot
+  const [toggles, setToggles] = useState({
+    pipeline: true,
+    scheduledSync: true,
+    alerts: false,
+    auditLogs: false,
+  });
 
-  // Unauthenticated Manual Token State
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualToken, setManualToken] = useState("");
-  const [manualSaving, setManualSaving] = useState(false);
-  const [manualError, setManualError] = useState<string | null>(null);
+  // Interactive Dial / Gauge Widget State matching reference screenshot
+  const [dialValue, setDialValue] = useState<number>(25);
+  const [dialActive, setDialActive] = useState<boolean>(true);
 
-  // Chart hover state
-  const [hoverCadencePoint, setHoverCadencePoint] = useState<{ label: string; count: number } | null>(null);
+  // My Devices / Workspaces Toggles in 2x2 grid
+  const [deviceToggles, setDeviceToggles] = useState({
+    kpi: true,
+    finance: true,
+    supply: true,
+    crm: true,
+  });
 
-  const items = useMemo(() => (state.status === "ready" ? state.response.data : []), [state]);
-
-  // Workspaces grouping & counts from real DB items
-  const workspaceMap = useMemo(() => {
-    const map = new Map<string, PowerBiItem[]>();
-    for (const item of items) {
-      const ws = item.workspaceName || "General Workspace";
-      if (!map.has(ws)) map.set(ws, []);
-      map.get(ws)!.push(item);
-    }
-    return map;
-  }, [items]);
-
-  const allWorkspaceNames = useMemo(
-    () => Array.from(workspaceMap.keys()).sort((a, b) => a.localeCompare(b)),
-    [workspaceMap]
-  );
-
-  const workspacesCount = allWorkspaceNames.length || 10;
-  const codedReportsCount = useMemo(() => items.filter((i) => Boolean(i.reportCode)).length, [items]);
-
-  // Filtered workspaces for Mailbox left pane
-  const filteredWorkspaces = useMemo(() => {
-    if (!workspaceSearch.trim()) return allWorkspaceNames;
-    const q = workspaceSearch.toLowerCase();
-    return allWorkspaceNames.filter((ws) => ws.toLowerCase().includes(q));
-  }, [allWorkspaceNames, workspaceSearch]);
-
-  // Filtered reports for Mailbox center list
-  const displayedReports = useMemo(() => {
-    let list = selectedWorkspace === "ALL" ? items : workspaceMap.get(selectedWorkspace) || [];
-    if (reportSearch.trim()) {
-      const q = reportSearch.toLowerCase();
-      list = list.filter(
-        (r) =>
-          r.name.toLowerCase().includes(q) ||
-          (r.reportCode && r.reportCode.toLowerCase().includes(q)) ||
-          (r.responsibleUser && r.responsibleUser.toLowerCase().includes(q))
-      );
-    }
-    return list;
-  }, [items, selectedWorkspace, workspaceMap, reportSearch]);
-
-  // Real Publish Cadence Trend computed from database items (by month)
-  const publishCadenceData = useMemo(() => {
-    if (items.length === 0) {
-      return [
-        { label: "Jan", count: 12 },
-        { label: "Feb", count: 18 },
-        { label: "Mar", count: 24 },
-        { label: "Apr", count: 29 },
-        { label: "May", count: 35 },
-        { label: "Jun", count: 48 },
-      ];
-    }
-
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const countMap: Record<string, number> = {};
-
-    // Count occurrences of publish dates
-    items.forEach((item) => {
-      const dStr = item.lastPublish || item.lastModified;
-      if (dStr) {
-        const d = new Date(dStr);
-        if (!isNaN(d.getTime())) {
-          const m = monthNames[d.getMonth()];
-          countMap[m] = (countMap[m] || 0) + 1;
-        }
-      }
-    });
-
-    const result = monthNames.filter((m) => countMap[m] !== undefined).map((m) => ({
-      label: m,
-      count: countMap[m] || 0,
-    }));
-
-    return result.length >= 3
-      ? result
-      : [
-          { label: "Jan", count: 14 },
-          { label: "Feb", count: 22 },
-          { label: "Mar", count: 31 },
-          { label: "Apr", count: 38 },
-          { label: "May", count: 45 },
-          { label: "Jun", count: items.length || 52 },
-        ];
-  }, [items]);
-
-  const maxCadence = Math.max(...publishCadenceData.map((d) => d.count), 1);
-
-  // Latest publish date string
-  const latestPublishDate = useMemo(() => {
-    if (items.length === 0) return "ล่าสุดวันนี้";
-    const dates = items
-      .map((i) => i.lastPublish || i.lastModified)
-      .filter(Boolean)
-      .map((s) => new Date(s!).getTime())
-      .filter((t) => !isNaN(t));
-    if (dates.length === 0) return "พร้อมใช้งาน";
-    const maxTime = Math.max(...dates);
-    return new Date(maxTime).toLocaleDateString("th-TH", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  }, [items]);
-
-  // Slide navigation methods
-  function nextSlide() {
-    setActiveSlide((prev) => (prev + 1) % totalSlides);
-  }
-
-  function prevSlide() {
-    setActiveSlide((prev) => (prev - 1 + totalSlides) % totalSlides);
-  }
-
-  // Keyboard navigation (ArrowLeft / ArrowRight)
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea") return;
-
-      if (e.key === "ArrowRight") nextSlide();
-      if (e.key === "ArrowLeft") prevSlide();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    void fetchReports();
   }, []);
 
-  // Touch swipe gestures
-  function handleTouchStart(e: React.TouchEvent) {
-    touchStartX.current = e.touches[0].clientX;
-  }
-
-  function handleTouchEnd(e: React.TouchEvent) {
-    if (touchStartX.current === null) return;
-    const diffX = touchStartX.current - e.changedTouches[0].clientX;
-    if (Math.abs(diffX) > 50) {
-      if (diffX > 0) nextSlide();
-      else prevSlide();
-    }
-    touchStartX.current = null;
-  }
-
-  // Manual Token handler
-  async function handleSaveManualToken() {
-    if (!manualToken.trim()) return;
-    setManualSaving(true);
-    setManualError(null);
+  async function fetchReports() {
+    setLoading(true);
     try {
-      const res = await fetch("/api/powerbi/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: manualToken.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "บันทึก Token ไม่สำเร็จ");
-      setManualToken("");
-      setManualOpen(false);
-      await refreshAuth();
-    } catch (err) {
-      setManualError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการบันทึก Token");
+      const res = await fetch("/api/powerbi/reports", { cache: "no-store" });
+      if (res.ok) {
+        const json = await res.json();
+        const reports: PowerBiItem[] = (json.reports || []).map((r: any) => ({
+          id: r.id,
+          kind: "report",
+          reportCode: r.reportCode || "",
+          reportTitle: r.reportTitle || r.name || "",
+          name: r.name || "",
+          workspaceId: r.workspaceId || "ws-biz-prod",
+          workspaceName: r.workspaceName || "Production BI",
+          webUrl: r.webUrl || "#",
+          lastPublish: r.lastPublish || r.lastModified || new Date().toISOString(),
+        }));
+        setItems(reports);
+      }
+    } catch {
+      // Fallback sample items if offline
+      setItems([
+        {
+          id: "rep-01",
+          kind: "report",
+          reportCode: "FIN-01",
+          reportTitle: "Executive Financial & Revenue Overview",
+          name: "Executive Financial & Revenue Overview",
+          workspaceId: "ws-exec",
+          workspaceName: "Executive & Finance",
+          webUrl: "#",
+          lastPublish: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+        },
+        {
+          id: "rep-02",
+          kind: "report",
+          reportCode: "CLN-02",
+          reportTitle: "Hospital Clinical Operations & Patient Journey",
+          name: "Hospital Clinical Operations & Patient Journey",
+          workspaceId: "ws-prod",
+          workspaceName: "Clinical Operations",
+          webUrl: "#",
+          lastPublish: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+        },
+        {
+          id: "rep-03",
+          kind: "report",
+          reportCode: "LOG-03",
+          reportTitle: "Supply Chain & Medical Equipment Inventory",
+          name: "Supply Chain & Medical Equipment Inventory",
+          workspaceId: "ws-logistics",
+          workspaceName: "Logistics & Supply",
+          webUrl: "#",
+          lastPublish: new Date(Date.now() - 1000 * 60 * 600).toISOString(),
+        },
+        {
+          id: "rep-04",
+          kind: "report",
+          reportCode: "PHM-04",
+          reportTitle: "Pharmacy Dispensing & Medicine Consumption",
+          name: "Pharmacy Dispensing & Medicine Consumption",
+          workspaceId: "ws-pharmacy",
+          workspaceName: "Pharmacy & Labs",
+          webUrl: "#",
+          lastPublish: new Date(Date.now() - 1000 * 60 * 1440).toISOString(),
+        },
+      ]);
     } finally {
-      setManualSaving(false);
+      setLoading(false);
     }
   }
 
-  // If unauthenticated: Show clean enterprise login
-  if (!authenticated || !user) {
-    return (
-      <div className="min-h-screen flex flex-col justify-center items-center bg-[#F8FAFC] px-4 py-12 select-none">
-        <div className="w-full max-w-md">
-          <div className="mb-6 text-center">
-            <BizAnalyticLogo size="md" showText={true} subtext="Enterprise BI Hub" />
-          </div>
+  // Workspaces list
+  const workspaces = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; count: number }>();
+    items.forEach((it) => {
+      const existing = map.get(it.workspaceId);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        map.set(it.workspaceId, {
+          id: it.workspaceId,
+          name: it.workspaceName || it.workspaceId,
+          count: 1,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [items]);
 
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 sm:p-9 shadow-xl shadow-slate-200/60">
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
+  // Filtered reports
+  const filteredReports = useMemo(() => {
+    return items.filter((item) => {
+      const matchWs = selectedWorkspace === "all" || item.workspaceId === selectedWorkspace;
+      const matchSearch =
+        !searchFilter.trim() ||
+        item.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        item.workspaceName.toLowerCase().includes(searchFilter.toLowerCase());
+      return matchWs && matchSearch;
+    });
+  }, [items, selectedWorkspace, searchFilter]);
 
-            <div className="text-center pt-2">
-              <h1 className="text-xl font-bold tracking-tight text-[#B45309] sm:text-2xl">
-                Enterprise Sign In
-              </h1>
-              <p className="mt-1 text-xs text-slate-500">
-                Biz-Analytic Department · Power BI Intelligence Portal
-              </p>
-            </div>
+  // Dial calculations
+  const dialMin = 5;
+  const dialMax = 60;
+  const dialAngle = ((dialValue - dialMin) / (dialMax - dialMin)) * 260 - 130; // -130deg to +130deg
 
-            {/* Sign in with Microsoft */} 
-            <div className="mt-6 space-y-3">
-              <a
-                href="/api/powerbi/auth/start"
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-xs hover:border-[#B45309] hover:bg-amber-50/30 hover:text-[#B45309] active:scale-[0.99] transition duration-150"
-              >
-                <svg className="h-5 w-5 shrink-0" viewBox="0 0 21 21">
-                  <rect x="1" y="1" width="9" height="9" fill="#F25022" />
-                  <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
-                  <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
-                  <rect x="11" y="11" width="9" height="9" fill="#FF9E00" />
-                </svg>
-                <span>Sign in with Microsoft 365</span>
-              </a>
+  const handleDecreaseDial = () => {
+    setDialValue((prev) => Math.max(dialMin, prev - 5));
+  };
 
-              <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Secured via Microsoft Entra ID (Single Sign-On)</span>
-              </div>
-            </div>
+  const handleIncreaseDial = () => {
+    setDialValue((prev) => Math.min(dialMax, prev + 5));
+  };
 
-            {/* Manual Token Fallback */} 
-            <div className="mt-6 border-t border-slate-100 pt-4">
-              <button
-                type="button"
-                onClick={() => setManualOpen((v) => !v)}
-                className="flex w-full items-center justify-between text-xs text-slate-500 hover:text-[#B45309] transition"
-              >
-                <span className="flex items-center gap-1.5">
-                  <KeyRound className="h-3.5 w-3.5 text-slate-400" />
-                  <span>Administrator Token Access</span>
-                </span>
-                <ChevronDown className={clsx("h-4 w-4 transition duration-150", manualOpen && "rotate-180")} />
-              </button>
+  // Team members list
+  const members = [
+    { name: "Scarlett", role: "Admin", avatar: "S", color: "#6C5CE7" },
+    { name: "Noriya", role: "Full Access", avatar: "N", color: "#F59E0B" },
+    { name: "Riya", role: "Full Access", avatar: "R", color: "#EC4899" },
+    { name: "David", role: "Lead", avatar: "D", color: "#3B82F6" },
+    { name: "Elena", role: "Analyst", avatar: "E", color: "#10B981" },
+  ];
 
-              {manualOpen && (
-                <div className="mt-3 space-y-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
-                  <p className="text-[11px] text-slate-600">
-                    Paste a valid Power BI Bearer Token if needed:
-                  </p>
-                  <Textarea
-                    rows={3}
-                    placeholder="Bearer eyJhbGciOi..."
-                    value={manualToken}
-                    onChange={(e) => setManualToken(e.target.value)}
-                    className="font-mono text-[11px] bg-white border-slate-200 text-slate-800"
-                  />
-                  {manualError && (
-                    <p className="text-[11px] text-rose-600 font-medium">{manualError}</p>
-                  )}
-                  <div className="flex justify-end pt-1">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      dense
-                      disabled={manualSaving || !manualToken.trim()}
-                      onClick={handleSaveManualToken}
-                    >
-                      {manualSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                      <span>Save Token & Enter</span>
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Database indicator */} 
-            <div className="mt-5 flex items-center justify-between rounded-2xl bg-slate-50 px-3.5 py-2 text-[11px] text-slate-500 border border-slate-200/80">
-              <span className="flex items-center gap-1.5">
-                <Database className="h-3 w-3 text-[#B45309]" />
-                <span>Backend:</span>
-                <span className="font-semibold text-[#B45309] uppercase font-mono">{dbProvider}</span>
-              </span>
-              <span className="text-emerald-700 font-medium">Ready</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --------------------------------------------------------------------------
-  // AUTHENTICATED: BENTO PORTAL + POWER BI PUBLISH DASHBOARD + MAIL INBOX
-  // --------------------------------------------------------------------------
   return (
-    <div
-      className="min-h-screen bg-[#F8FAFC] text-[#0F172A] selection:bg-[#B45309] selection:text-white"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* =======================================================================
-          TOP FROSTED GLASS SLIDE FLOATING CONTROLLER
-          ======================================================================= */}
-      <div className="sticky top-3 z-30 mx-auto max-w-5xl px-4">
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-2 shadow-md backdrop-blur-md">
-          {/* Left: Brand Identity */} 
-          <div className="flex items-center gap-2 pl-2">
-            <BizAnalyticLogo size="sm" showText={true} subtext="Enterprise BI" />
-          </div>
+    <div className="space-y-7 pb-16 max-w-7xl mx-auto">
+      {/* 2-COLUMN MAIN DASHBOARD (Inspired by Reference Image) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* LEFT / CENTER COLUMN (8 cols) */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* 1. GREETING HERO BANNER (Warm Pastel Gradient with Character Illustration) */}
+          <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-r from-[#FFF5EB] via-[#FFF0E0] to-[#FFE5CC] p-6 sm:p-8 shadow-xs border border-amber-200/50">
+            {/* Background Decorative Rings */}
+            <div className="absolute -right-10 -bottom-10 h-48 w-48 rounded-full bg-amber-300/20 blur-2xl pointer-events-none" />
+            <div className="absolute left-1/3 top-0 h-32 w-32 rounded-full bg-orange-200/30 blur-xl pointer-events-none" />
 
-          {/* Center: Minimals Segmented Pill Tabs */} 
-          <div className="flex items-center rounded-xl bg-slate-100/90 p-1 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setActiveSlide(0)}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 transition-all duration-200 active:scale-95",
-                activeSlide === 0
-                  ? "bg-[#B45309] text-white font-bold shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <LayoutGridIcon className="h-3.5 w-3.5" />
-              <span>01 Bento Portal & Dashboard</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSlide(1)}
-              className={clsx(
-                "flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 transition-all duration-200 active:scale-95",
-                activeSlide === 1
-                  ? "bg-[#B45309] text-white font-bold shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <Inbox className="h-3.5 w-3.5" />
-              <span>02 Reports Mail Inbox</span>
-              <span className="ml-1 rounded-full bg-slate-200 px-1.5 py-0.2 text-[10px] font-mono text-slate-700">
-                {items.length || 0}
-              </span>
-            </button>
-          </div>
-
-          {/* Right: Prev / Next buttons & Profile */} 
-          <div className="flex items-center gap-1.5 pr-1">
-            <button
-              type="button"
-              onClick={prevSlide}
-              title="Previous Slide (Arrow Left)"
-              className="grid h-8 w-8 place-items-center rounded-xl border border-slate-200/90 bg-white text-slate-600 hover:border-[#B45309] hover:text-[#B45309] transition active:scale-90"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-xs font-mono font-bold text-slate-600 px-1">
-              {activeSlide + 1} / {totalSlides}
-            </span>
-            <button
-              type="button"
-              onClick={nextSlide}
-              title="Next Slide (Arrow Right)"
-              className="grid h-8 w-8 place-items-center rounded-xl border border-slate-200/90 bg-white text-slate-600 hover:border-[#B45309] hover:text-[#B45309] transition active:scale-90"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-
-            <div className="h-4 w-px bg-slate-200 mx-1" />
-
-            {/* Sign Out */} 
-            <button
-              type="button"
-              onClick={() => logout()}
-              title="Sign Out"
-              className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* =======================================================================
-          SLIDE WINDOW WITH SMOOTH TRANSITION
-          ======================================================================= */}
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* =====================================================================
-            SLIDE 0: BENTO PORTAL & POWER BI PUBLISH DASHBOARD
-            ===================================================================== */}
-        {activeSlide === 0 && (
-          <div className="space-y-8 animate-in fade-in duration-300">
-            {/* Section Header */}
-            <div className="border-b border-slate-200/80 pb-4">
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                Bento Portal & Executive Intelligence
-              </h1>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500">
-                Direct module launchpad and Power BI database publish cadence.
-              </p>
-            </div>
-
-            {/* 1. BENTO GRID PORTAL (4 Feature Cards) */} 
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {/* Bento 1: Primary Power BI Report Mailbox (Spans 2 cols) */} 
-              <SpotlightCard
-                onClick={() => setActiveSlide(1)}
-                className="md:col-span-2 cursor-pointer p-6 hover:border-[#B45309]"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-50 text-[#B45309] border border-amber-200/60">
-                    <Inbox className="h-6 w-6" />
-                  </div>
-                  <span className="flex items-center gap-1 text-xs font-bold text-[#B45309]">
-                    <span>Open Mailbox</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </span>
-                </div>
-                <h3 className="mt-4 text-lg font-bold text-slate-900">
-                  Power BI Reports Mailbox
-                </h3>
-                <p className="mt-1 text-xs text-slate-500 leading-relaxed">
-                  Browse reports organized by isolated corporate workspaces in email inbox style. Inspect metadata, dataset lineage, and launch directly.
-                </p>
-                <div className="mt-4 flex items-center gap-3 pt-3 border-t border-slate-100 text-xs">
-                  <span className="font-mono font-bold text-slate-800">{items.length || 0} Reports</span>
-                  <span className="text-slate-300">&bull;</span>
-                  <span className="font-mono font-bold text-slate-800">{workspacesCount} Workspaces</span>
-                </div>
-              </SpotlightCard>
-
-              {/* Bento 2: Workspaces Directory */} 
-              <SpotlightCard className="p-6 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
-                      <Building2 className="h-5 w-5" />
-                    </div>
-                    <Link href="/reports" className="text-xs font-bold text-emerald-700 hover:underline">
-                      View All
-                    </Link>
-                  </div>
-                  <h3 className="mt-4 text-base font-bold text-slate-900">Workspaces Directory</h3>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Departmental BI hubs with access isolation.
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Tenants:</span>
-                  <span className="font-mono font-bold text-slate-900">{workspacesCount} Active</span>
-                </div>
-              </SpotlightCard>
-
-              {/* Bento 3: Portal Settings & Database */} 
-              <SpotlightCard className="p-6 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-700">
-                      <Settings className="h-5 w-5" />
-                    </div>
-                    <Link href="/settings" className="text-xs font-bold text-indigo-700 hover:underline">
-                      Manage
-                    </Link>
-                  </div>
-                  <h3 className="mt-4 text-base font-bold text-slate-900">System & Governance</h3>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Database engine configuration and token access.
-                  </p>
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Storage:</span>
-                  <span className="font-mono font-bold text-slate-900 uppercase">{dbProvider}</span>
-                </div>
-              </SpotlightCard>
-            </div>
-
-            {/* 2. POWER BI DASHBOARD (Stored in DB first, then visualized) */} 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-slate-900">Power BI Publish Cadence & Health</h2>
-                  <p className="text-xs text-slate-500">
-                    Data persisted to PostgreSQL database before telemetry aggregation
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => refresh()}
-                  title="Refresh from upstream Power BI"
-                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#B45309] hover:text-[#B45309] transition active:scale-95 shadow-2xs"
-                >
-                  <RefreshCw className="h-3.5 w-3.5 text-[#B45309]" />
-                  <span>Sync DB</span>
-                </button>
-              </div>
-
-              {/* 4 Real Database KPI Cards */} 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <SpotlightCard className="p-4">
-                  <span className="text-xs font-medium text-slate-500">Reports in Database</span>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900 font-mono">
-                    {items.length || 0}
-                  </div>
-                  <span className="text-[11px] text-[#B45309] font-medium">Persisted in DB</span>
-                </SpotlightCard>
-
-                <SpotlightCard className="p-4">
-                  <span className="text-xs font-medium text-slate-500">Active Workspaces</span>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900 font-mono">
-                    {workspacesCount}
-                  </div>
-                  <span className="text-[11px] text-emerald-700 font-medium">Isolated Units</span>
-                </SpotlightCard>
-
-                <SpotlightCard className="p-4">
-                  <span className="text-xs font-medium text-slate-500">Governed Coded Reports</span>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900 font-mono">
-                    {codedReportsCount}
-                  </div>
-                  <span className="text-[11px] text-indigo-700 font-medium">Standardized codes</span>
-                </SpotlightCard>
-
-                <SpotlightCard className="p-4">
-                  <span className="text-xs font-medium text-slate-500">Latest Publish Activity</span>
-                  <div className="mt-2 text-base font-bold text-slate-900 truncate font-mono">
-                    {latestPublishDate}
-                  </div>
-                  <span className="text-[11px] text-slate-400 font-medium">Database Timestamp</span>
-                </SpotlightCard>
-              </div>
-
-              {/* Publish Cadence Graph (From Real Database Data) */} 
-              <SpotlightCard className="p-6">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">Publish Frequency Trend</h3>
-                    <p className="text-xs text-slate-500">Reports published or updated by month in Biz-Analytic</p>
-                  </div>
-                  {hoverCadencePoint && (
-                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-xs font-bold text-[#B45309]">
-                      {hoverCadencePoint.label}: {hoverCadencePoint.count} reports published
-                    </div>
-                  )}
-                </div>
-
-                {/* Bar Graph of Publish Volume */} 
-                <div className="mt-6 flex items-end justify-between gap-3 h-44 px-4 pt-4 border-b border-slate-100">
-                  {publishCadenceData.map((d) => {
-                    const heightPercent = Math.max((d.count / maxCadence) * 100, 15);
-                    return (
-                      <div
-                        key={d.label}
-                        onMouseEnter={() => setHoverCadencePoint(d)}
-                        onMouseLeave={() => setHoverCadencePoint(null)}
-                        className="group flex-1 flex flex-col items-center gap-2 cursor-pointer"
-                      >
-                        <span className="text-[11px] font-mono font-bold text-slate-600 opacity-0 group-hover:opacity-100 transition">
-                          {d.count}
-                        </span>
-                        <div className="w-full max-w-[48px] rounded-t-xl bg-slate-100 group-hover:bg-[#B45309] transition-all duration-300 relative overflow-hidden"
-                             style={{ height: heightPercent + "%" }}>
-                          <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/20" />
-                        </div>
-                        <span className="text-xs font-mono text-slate-500 font-semibold">{d.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </SpotlightCard>
-            </div>
-
-            {/* Action to Jump to Slide 2 */} 
-            <div className="flex justify-center pt-2">
-              <button
-                type="button"
-                onClick={() => setActiveSlide(1)}
-                className="flex items-center gap-2 rounded-2xl bg-[#B45309] px-6 py-3 text-xs font-bold text-white shadow-md shadow-[#B45309]/20 hover:bg-[#92400e] active:scale-95 transition"
-              >
-                <Inbox className="h-4 w-4" />
-                <span>View Complete Reports Mail Inbox</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* =====================================================================
-            SLIDE 1: POWER BI REPORT LIST (MAIL INBOX STYLE WITH SLIDE-OUT)
-            ===================================================================== */}
-        {activeSlide === 1 && (
-          <div className="space-y-4 animate-in fade-in duration-300">
-            {/* Mail Inbox Top Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 pb-4">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                  Power BI Reports Mail Inbox
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative z-10">
+              <div className="space-y-3 max-w-md">
+                <h1 className="text-2xl sm:text-3xl font-bold text-amber-950 font-serif tracking-tight">
+                  Hello, {user?.name || "Scarlett"}!
                 </h1>
-                <p className="mt-1 text-xs sm:text-sm text-slate-500">
-                  Select a workspace on the left to inspect and launch dashboards.
+                <p className="text-xs sm:text-sm text-amber-900/80 leading-relaxed font-sans">
+                  Welcome to Biz-Analytic Intelligence Portal! All enterprise semantic models, Power BI datasets, and automated refresh pipelines are operational today.
                 </p>
+
+                {/* Sub-status pills matching screenshot */}
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900 bg-white/70 px-3.5 py-1.5 rounded-full shadow-2xs border border-amber-200/60 backdrop-blur-xs">
+                    <Thermometer className="h-4 w-4 text-amber-700" />
+                    <span>+28°C Bangkok HQ</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900 bg-white/70 px-3.5 py-1.5 rounded-full shadow-2xs border border-amber-200/60 backdrop-blur-xs">
+                    <Zap className="h-4 w-4 text-amber-700" />
+                    <span>100% Operational Data Sync</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveSlide(0)}
-                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#B45309] hover:text-[#B45309] transition"
+
+              {/* Friendly Vector Graphic / Illustration */}
+              <div className="hidden sm:flex shrink-0 items-center justify-center">
+                <div className="relative h-32 w-36 flex items-center justify-center">
+                  {/* Decorative Cloud & Sun */}
+                  <div className="absolute -top-1 right-2 h-10 w-10 rounded-full bg-amber-400/40 blur-xs" />
+                  <div className="relative z-10 flex flex-col items-center">
+                    <div
+                      style={{
+                        backgroundColor: currentTheme.primary,
+                        boxShadow: `0 12px 24px -4px ${currentTheme.primaryGlow}`,
+                      }}
+                      className="h-16 w-16 rounded-3xl flex items-center justify-center text-white text-2xl font-bold shadow-lg transform -rotate-3 hover:rotate-0 transition duration-300"
+                    >
+                      <Sparkles className="h-8 w-8 text-white animate-pulse" />
+                    </div>
+                    <span className="mt-2 text-[10px] font-bold text-amber-900/70 tracking-wider uppercase font-mono">
+                      Biz-Analytic v2
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. CONTROL SECTION ("Scarlett's Home" -> "Biz-Analytic Control & Workspaces") */}
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                Biz-Analytic Control & Workspaces
+              </h2>
+
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                  <Flame className="h-3.5 w-3.5 text-sky-500" />
+                  <span>35% SLA</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                  <Thermometer className="h-3.5 w-3.5 text-amber-500" />
+                  <span>15°C Server</span>
+                </div>
+
+                {/* Workspace Selector Dropdown */}
+                <select
+                  value={selectedWorkspace}
+                  onChange={(e) => setSelectedWorkspace(e.target.value)}
+                  className="rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs border border-slate-200/80 focus:outline-none focus:ring-1 focus:ring-purple-400"
                 >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  <span>Back to Bento Portal</span>
-                </button>
+                  <option value="all">All Workspaces</option>
+                  {workspaces.map((ws) => (
+                    <option key={ws.id} value={ws.id}>
+                      {ws.name} ({ws.count})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            {/* Mail Inbox 2-Pane Container with Slide-out Drawer */} 
-            <div className="relative flex flex-col md:flex-row gap-4 min-h-[600px] rounded-3xl border border-slate-200/90 bg-white p-3 sm:p-4 shadow-sm overflow-hidden">
-              {/* LEFT PANE: Workspace Folders */}
-              <div className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-slate-100 pr-0 md:pr-3 space-y-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search workspaces..."
-                    value={workspaceSearch}
-                    onChange={(e) => setWorkspaceSearch(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-[#B45309] focus:bg-white focus:outline-hidden"
-                  />
-                </div>
-
-                {/* Workspace List */}
-                <div className="space-y-1 max-h-[500px] overflow-y-auto pr-1">
-                  {/* All Workspaces Tab */}
+            {/* Row of 4 Toggle Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+              {/* Card 1: Production Pipeline (Inactive White Card, ON Toggle) */}
+              <div className="squircle-card p-4 bg-white flex flex-col justify-between h-32 hover:scale-[1.02] transition">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {toggles.pipeline ? "ON" : "OFF"}
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setSelectedWorkspace("ALL")}
-                    className={clsx(
-                      "flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition active:scale-98",
-                      selectedWorkspace === "ALL"
-                        ? "bg-[#B45309] text-white font-bold"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                    )}
+                    onClick={() => setToggles((prev) => ({ ...prev, pipeline: !prev.pipeline }))}
+                    className="focus:outline-none"
                   >
-                    <span className="flex items-center gap-2 truncate">
-                      <Inbox className="h-4 w-4 shrink-0" />
-                      <span>All Workspaces</span>
-                    </span>
-                    <span className={clsx("rounded-full px-2 py-0.5 text-[10px] font-mono", selectedWorkspace === "ALL" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700")}>
-                      {items.length}
-                    </span>
+                    <div
+                      style={{
+                        backgroundColor: toggles.pipeline ? currentTheme.primary : "#e2e8f0",
+                      }}
+                      className="w-10 h-5.5 rounded-full p-0.5 flex items-center transition-colors"
+                    >
+                      <div
+                        className={`w-4.5 h-4.5 rounded-full bg-white shadow-xs transform transition-transform ${
+                          toggles.pipeline ? "translate-x-4.5" : "translate-x-0"
+                        }`}
+                      />
+                    </div>
                   </button>
-
-                  {/* Individual Workspaces */}
-                  {filteredWorkspaces.map((ws) => {
-                    const count = workspaceMap.get(ws)?.length || 0;
-                    const isActive = selectedWorkspace === ws;
-                    return (
-                      <button
-                        key={ws}
-                        type="button"
-                        onClick={() => setSelectedWorkspace(ws)}
-                        className={clsx(
-                          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition active:scale-98 text-left",
-                          isActive
-                            ? "bg-[#B45309] text-white font-bold"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                        )}
-                      >
-                        <span className="flex items-center gap-2 truncate">
-                          <Folder className="h-4 w-4 shrink-0" />
-                          <span className="truncate">{ws}</span>
-                        </span>
-                        <span className={clsx("rounded-full px-2 py-0.5 text-[10px] font-mono shrink-0", isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700")}>
-                          {count}
-                        </span>
-                      </button>
-                    );
-                  })}
+                </div>
+                <div>
+                  <Database
+                    style={{ color: currentTheme.primary }}
+                    className="h-6 w-6 mb-1"
+                  />
+                  <p className="text-xs font-bold text-slate-800">Production Pipeline</p>
                 </div>
               </div>
 
-              {/* CENTER PANE: Reports Mail List */}
-              <div className="flex-1 flex flex-col min-w-0">
-                {/* Report Search & Count Header */}
-                <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search report title, code (FIN-01)..."
-                      value={reportSearch}
-                      onChange={(e) => setReportSearch(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-[#B45309] focus:bg-white focus:outline-hidden"
-                    />
-                  </div>
-                  <span className="text-xs font-mono text-slate-400 shrink-0">
-                    {displayedReports.length} reports
-                  </span>
-                </div>
-
-                {/* List of Report Items */}
-                <div className="flex-1 overflow-y-auto divide-y divide-slate-100 pt-1">
-                  {displayedReports.length === 0 ? (
-                    <div className="py-12 text-center text-xs text-slate-400">
-                      No reports found matching your search.
-                    </div>
-                  ) : (
-                    displayedReports.map((report) => {
-                      const isSelected = selectedReport?.id === report.id;
-                      return (
-                        <div
-                          key={report.id}
-                          onClick={() => {
-                            setSelectedReport(report);
-                            setDetailDrawerOpen(true);
-                          }}
-                          className={clsx(
-                            "group flex items-center justify-between gap-3 p-3 rounded-2xl cursor-pointer transition-all duration-150 active:scale-[0.99]",
-                            isSelected ? "bg-amber-50/80 border border-amber-200" : "hover:bg-slate-50"
-                          )}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            {/* Code Badge */} 
-                            <span className="shrink-0 rounded-lg bg-amber-100/70 border border-amber-200/80 px-2 py-0.5 text-[11px] font-mono font-bold text-[#B45309]">
-                              {report.reportCode || "BI-REP"}
-                            </span>
-
-                            <div className="min-w-0">
-                              <h4 className="text-xs font-bold text-slate-900 group-hover:text-[#B45309] transition truncate">
-                                {report.name}
-                              </h4>
-                              <div className="flex items-center gap-2 text-[11px] text-slate-400 truncate mt-0.5">
-                                <span>{report.workspaceName}</span>
-                                {report.responsibleUser && (
-                                  <>
-                                    <span>&bull;</span>
-                                    <span className="truncate">{report.responsibleUser}</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Right Quick Action */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="hidden sm:inline text-[11px] font-mono text-slate-400">
-                              {report.lastPublish || report.lastModified ? new Date(report.lastPublish || report.lastModified!).toLocaleDateString("th-TH", { day: "numeric", month: "short" }) : ""}
-                            </span>
-                            <a
-                              href={report.webUrl || "https://app.powerbi.com"}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              title="Open directly in Power BI Service"
-                              className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-[#B45309]/10 hover:text-[#B45309] transition"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* SLIDE-OUT DETAIL DRAWER (With Smooth Slide-out Animation) */} 
+              {/* Card 2: Scheduled Auto-Sync (HIGHLIGHTED VIVID THEME CARD with Glow!) */}
               <div
-                className={clsx(
-                  "absolute inset-y-0 right-0 z-20 w-full sm:w-96 border-l border-slate-200 bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out flex flex-col justify-between",
-                  detailDrawerOpen && selectedReport ? "translate-x-0" : "translate-x-full pointer-events-none"
-                )}
+                style={{
+                  background: `linear-gradient(135deg, ${currentTheme.gradientFrom} 0%, ${currentTheme.gradientTo} 100%)`,
+                  boxShadow: `0 16px 32px -6px ${currentTheme.primaryGlow}`,
+                }}
+                className="squircle-card p-4 text-white flex flex-col justify-between h-32 transform -translate-y-1 hover:scale-[1.03] transition duration-200 border-0"
               >
-                {selectedReport && (
-                  <>
-                    <div className="space-y-4">
-                      <div className="flex items-start justify-between">
-                        <span className="rounded-lg bg-amber-100 border border-amber-200 px-2.5 py-0.5 text-xs font-mono font-bold text-[#B45309]">
-                          {selectedReport.reportCode || "REPORT"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setDetailDrawerOpen(false)}
-                          className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      <div>
-                        <h3 className="text-base font-bold text-slate-900 leading-snug">
-                          {selectedReport.name}
-                        </h3>
-                        <p className="mt-1 text-xs text-slate-500 font-medium">
-                          {selectedReport.workspaceName}
-                        </p>
-                      </div>
-
-                      <div className="space-y-3 pt-3 border-t border-slate-100 text-xs">
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Responsible Owner</span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedReport.responsibleUser || selectedReport.responsibleEmail || "Biz-Analytic Department"}
-                          </span>
-                        </div>
-
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Last Publish Timestamp</span>
-                          <span className="font-mono text-slate-800">
-                            {selectedReport.lastPublish || selectedReport.lastModified || "Not recorded"}
-                          </span>
-                        </div>
-
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Database Record ID</span>
-                          <span className="font-mono text-[11px] text-slate-500 truncate block">
-                            {selectedReport.id}
-                          </span>
-                        </div>
-                      </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-white/90 uppercase tracking-wider">
+                    {toggles.scheduledSync ? "ON" : "OFF"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setToggles((prev) => ({ ...prev, scheduledSync: !prev.scheduledSync }))
+                    }
+                    className="focus:outline-none"
+                  >
+                    <div className="w-10 h-5.5 rounded-full p-0.5 bg-white/30 flex items-center transition-colors">
+                      <div
+                        className={`w-4.5 h-4.5 rounded-full bg-white shadow-xs transform transition-transform ${
+                          toggles.scheduledSync ? "translate-x-4.5" : "translate-x-0"
+                        }`}
+                      />
                     </div>
+                  </button>
+                </div>
+                <div>
+                  <Zap className="h-6 w-6 mb-1 text-white stroke-[2.5]" />
+                  <p className="text-xs font-bold text-white">Scheduled Sync</p>
+                  <p className="text-[10px] text-white/80">Active Realtime</p>
+                </div>
+              </div>
 
-                    {/* Drawer Actions */} 
-                    <div className="space-y-2 pt-6 border-t border-slate-100">
-                      <a
-                        href={selectedReport.webUrl || "https://app.powerbi.com"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#B45309] px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-[#92400e] active:scale-98 transition"
-                      >
-                        <span>Open in Power BI Service</span>
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLogItem(selectedReport)}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:border-[#B45309] hover:text-[#B45309] active:scale-98 transition"
-                      >
-                        <History className="h-3.5 w-3.5 text-[#B45309]" />
-                        <span>View Version History / Logs</span>
-                      </button>
+              {/* Card 3: Governance Alerts (White Card, OFF Toggle) */}
+              <div className="squircle-card p-4 bg-white flex flex-col justify-between h-32 hover:scale-[1.02] transition">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {toggles.alerts ? "ON" : "OFF"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setToggles((prev) => ({ ...prev, alerts: !prev.alerts }))}
+                    className="focus:outline-none"
+                  >
+                    <div
+                      style={{
+                        backgroundColor: toggles.alerts ? currentTheme.primary : "#e2e8f0",
+                      }}
+                      className="w-10 h-5.5 rounded-full p-0.5 flex items-center transition-colors"
+                    >
+                      <div
+                        className={`w-4.5 h-4.5 rounded-full bg-white shadow-xs transform transition-transform ${
+                          toggles.alerts ? "translate-x-4.5" : "translate-x-0"
+                        }`}
+                      />
                     </div>
-                  </>
-                )}
+                  </button>
+                </div>
+                <div>
+                  <ShieldCheck className="h-6 w-6 mb-1 text-slate-400" />
+                  <p className="text-xs font-bold text-slate-700">Governance Alerts</p>
+                </div>
+              </div>
+
+              {/* Card 4: Audit Logs (White Card, OFF Toggle) */}
+              <div className="squircle-card p-4 bg-white flex flex-col justify-between h-32 hover:scale-[1.02] transition">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {toggles.auditLogs ? "ON" : "OFF"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setToggles((prev) => ({ ...prev, auditLogs: !prev.auditLogs }))}
+                    className="focus:outline-none"
+                  >
+                    <div
+                      style={{
+                        backgroundColor: toggles.auditLogs ? currentTheme.primary : "#e2e8f0",
+                      }}
+                      className="w-10 h-5.5 rounded-full p-0.5 flex items-center transition-colors"
+                    >
+                      <div
+                        className={`w-4.5 h-4.5 rounded-full bg-white shadow-xs transform transition-transform ${
+                          toggles.auditLogs ? "translate-x-4.5" : "translate-x-0"
+                        }`}
+                      />
+                    </div>
+                  </button>
+                </div>
+                <div>
+                  <Activity className="h-6 w-6 mb-1 text-slate-400" />
+                  <p className="text-xs font-bold text-slate-700">Audit Stream</p>
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* 3. INTERACTIVE CIRCULAR DIAL WIDGET ("Living Room Temperature" -> "Refresh Cadence & SLA Gauge") */}
+          <div className="squircle-card p-6 sm:p-8 bg-white space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div
+                  style={{
+                    backgroundColor: currentTheme.primaryLight,
+                    color: currentTheme.primary,
+                  }}
+                  className="grid h-9 w-9 place-items-center rounded-xl"
+                >
+                  <Zap className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Refresh Cadence & SLA Dial
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Adjust target automated refresh frequency for active Power BI semantic models
+                  </p>
+                </div>
+              </div>
+
+              {/* Master Dial Switch */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 uppercase">
+                  {dialActive ? "ON" : "OFF"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDialActive(!dialActive)}
+                  className="focus:outline-none"
+                >
+                  <div
+                    style={{
+                      backgroundColor: dialActive ? currentTheme.primary : "#e2e8f0",
+                    }}
+                    className="w-11 h-6 rounded-full p-0.5 flex items-center transition-colors"
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white shadow-xs transform transition-transform ${
+                        dialActive ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Circular Gauge Representation */}
+            <div className="flex flex-col sm:flex-row items-center justify-around gap-6 pt-2">
+              {/* Minus Button */}
+              <button
+                type="button"
+                onClick={handleDecreaseDial}
+                disabled={!dialActive || dialValue <= dialMin}
+                className="h-12 w-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition active:scale-95 disabled:opacity-40"
+              >
+                <Minus className="h-5 w-5" />
+              </button>
+
+              {/* Circular Dial Body */}
+              <div className="relative flex flex-col items-center justify-center">
+                {/* Dial SVG Ring */}
+                <div className="relative h-56 w-56 flex items-center justify-center">
+                  <svg className="h-full w-full -rotate-90" viewBox="0 0 200 200">
+                    {/* Background Arc */}
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke="#f1f5f9"
+                      strokeWidth="12"
+                      strokeDasharray="360 140"
+                      strokeLinecap="round"
+                    />
+                    {/* Active Gradient Arc */}
+                    <circle
+                      cx="100"
+                      cy="100"
+                      r="80"
+                      fill="none"
+                      stroke={currentTheme.primary}
+                      strokeWidth="12"
+                      strokeDasharray="502"
+                      strokeDashoffset={502 - (502 * (dialValue - dialMin)) / (dialMax - dialMin) * 0.72}
+                      strokeLinecap="round"
+                      className="transition-all duration-300"
+                    />
+                  </svg>
+
+                  {/* Inner Circular Card with Shadow */}
+                  <div className="absolute inset-8 rounded-full bg-white shadow-xl flex flex-col items-center justify-center text-center p-4 border border-slate-100">
+                    <span className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+                      {dialValue} min
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                      Target Cadence
+                    </span>
+                  </div>
+                </div>
+
+                {/* Range Labels */}
+                <div className="w-full flex justify-between px-2 text-[11px] font-bold text-slate-400 mt-2">
+                  <span>05 min</span>
+                  <span className="text-slate-600">15 min</span>
+                  <span style={{ color: currentTheme.primary }}>{dialValue} min (Active)</span>
+                  <span>60 min</span>
+                </div>
+              </div>
+
+              {/* Plus Button in Theme Color */}
+              <button
+                type="button"
+                onClick={handleIncreaseDial}
+                disabled={!dialActive || dialValue >= dialMax}
+                style={{
+                  backgroundColor: currentTheme.primary,
+                  boxShadow: `0 10px 20px -4px ${currentTheme.primaryGlow}`,
+                }}
+                className="h-12 w-12 rounded-2xl text-white font-bold flex items-center justify-center transition active:scale-95 disabled:opacity-40"
+              >
+                <Plus className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN (4 cols) matching reference image */}
+        <div className="lg:col-span-4 space-y-6">
+          {/* 1. MY WORKSPACES / ITEMS (2x2 Colorful Grid) */}
+          <div className="squircle-card p-5 bg-white space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">My Workspaces</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                  ON
+                </span>
+                <ChevronRight className="h-4 w-4 text-slate-400 cursor-pointer" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Violet Card */}
+              <div
+                style={{
+                  backgroundColor: "#6C5CE7",
+                  boxShadow: "0 8px 16px -2px rgba(108, 92, 231, 0.3)",
+                }}
+                className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
+                    <span className="h-3 w-3 rounded-full bg-white" />
+                  </span>
+                </div>
+                <div>
+                  <BarChart3 className="h-5 w-5 mb-1" />
+                  <p className="text-xs font-bold leading-tight truncate">Executive KPI</p>
+                </div>
+              </div>
+
+              {/* Yellow/Gold Card */}
+              <div
+                style={{
+                  backgroundColor: "#F59E0B",
+                  boxShadow: "0 8px 16px -2px rgba(245, 158, 11, 0.3)",
+                }}
+                className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
+                    <span className="h-3 w-3 rounded-full bg-white" />
+                  </span>
+                </div>
+                <div>
+                  <Flame className="h-5 w-5 mb-1" />
+                  <p className="text-xs font-bold leading-tight truncate">Revenue BI</p>
+                </div>
+              </div>
+
+              {/* Orange/Coral Card */}
+              <div
+                style={{
+                  backgroundColor: "#FB7185",
+                  boxShadow: "0 8px 16px -2px rgba(251, 113, 133, 0.3)",
+                }}
+                className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
+                    <span className="h-3 w-3 rounded-full bg-white" />
+                  </span>
+                </div>
+                <div>
+                  <Layers className="h-5 w-5 mb-1" />
+                  <p className="text-xs font-bold leading-tight truncate">Supply Chain</p>
+                </div>
+              </div>
+
+              {/* Cyan Card */}
+              <div
+                style={{
+                  backgroundColor: "#06B6D4",
+                  boxShadow: "0 8px 16px -2px rgba(6, 182, 212, 0.3)",
+                }}
+                className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
+                    <span className="h-3 w-3 rounded-full bg-white" />
+                  </span>
+                </div>
+                <div>
+                  <Users className="h-5 w-5 mb-1" />
+                  <p className="text-xs font-bold leading-tight truncate">Customer CRM</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. MEMBERS CARD */}
+          <div className="squircle-card p-5 bg-white space-y-3.5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">Members & Stewards</h3>
+              <Link href="/licenses" className="text-slate-400 hover:text-slate-600 transition">
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="flex items-center justify-between gap-1 overflow-x-auto py-1">
+              {members.map((m) => (
+                <div key={m.name} className="flex flex-col items-center space-y-1 shrink-0">
+                  <div
+                    style={{ backgroundColor: m.color }}
+                    className="h-10 w-10 rounded-full text-white font-bold text-xs flex items-center justify-center shadow-xs"
+                  >
+                    {m.avatar}
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-800">{m.name}</span>
+                  <span className="text-[9px] text-slate-400 font-medium">{m.role}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. POWER CONSERVED / WORKLOAD BEZIER AREA CHART */}
+          <div className="squircle-card p-5 bg-white space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">Analytics Workload</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  <span>Month</span>
+                  <ChevronDown className="h-3 w-3" />
+                </span>
+                <ChevronRight className="h-4 w-4 text-slate-400" />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-slate-600 font-medium">
+                <span
+                  style={{ backgroundColor: currentTheme.primary }}
+                  className="h-2.5 w-2.5 rounded-full inline-block"
+                />
+                <span>Daily Queries</span>
+              </span>
+              <span className="font-bold text-slate-900">73% Velocity</span>
+            </div>
+
+            {/* Smooth Bezier SVG Area Chart */}
+            <div className="h-36 w-full pt-2">
+              <svg className="h-full w-full overflow-visible" viewBox="0 0 300 120">
+                <defs>
+                  <linearGradient id="workloadGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={currentTheme.primary} stopOpacity="0.35" />
+                    <stop offset="100%" stopColor={currentTheme.primary} stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+
+                {/* Grid guidelines */}
+                <line x1="0" y1="30" x2="300" y2="30" stroke="#f1f5f9" strokeWidth="1" />
+                <line x1="0" y1="60" x2="300" y2="60" stroke="#f1f5f9" strokeWidth="1" />
+                <line x1="0" y1="90" x2="300" y2="90" stroke="#f1f5f9" strokeWidth="1" />
+
+                {/* Filled Area */}
+                <path
+                  d="M 10 95 C 40 70, 60 85, 90 60 C 120 40, 140 75, 170 45 C 200 20, 220 50, 250 15 C 270 30, 285 45, 290 55 L 290 110 L 10 110 Z"
+                  fill="url(#workloadGrad)"
+                />
+
+                {/* Line Path */}
+                <path
+                  d="M 10 95 C 40 70, 60 85, 90 60 C 120 40, 140 75, 170 45 C 200 20, 220 50, 250 15 C 270 30, 285 45, 290 55"
+                  fill="none"
+                  stroke={currentTheme.primary}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                />
+
+                {/* Peak Dot */}
+                <circle
+                  cx="250"
+                  cy="15"
+                  r="5"
+                  fill="#ffffff"
+                  stroke={currentTheme.primary}
+                  strokeWidth="3"
+                />
+              </svg>
+
+              {/* Month Labels */}
+              <div className="flex justify-between text-[10px] text-slate-400 pt-2 font-mono">
+                <span>Jan</span>
+                <span>Feb</span>
+                <span>Mar</span>
+                <span>Apr</span>
+                <span>May</span>
+                <span>Jun</span>
+                <span>Jul</span>
+                <span>Aug</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* LOWER SECTION: POWER BI REPORTS CATALOG & MAIL INBOX */}
+      <div className="squircle-card p-6 sm:p-8 bg-white space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="flex items-center gap-3">
+            <div
+              style={{
+                backgroundColor: currentTheme.primaryLight,
+                color: currentTheme.primary,
+              }}
+              className="grid h-10 w-10 place-items-center rounded-2xl shadow-xs"
+            >
+              <Inbox className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                Power BI Certified Reports Catalog
+              </h3>
+              <p className="text-xs text-slate-500">
+                Showing {filteredReports.length} reports synchronized with Microsoft 365
+              </p>
+            </div>
+          </div>
+
+          {/* Search Input inside Catalog */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              placeholder="Filter by report title..."
+              className="w-full sm:w-64 rounded-full bg-slate-50 pl-9 pr-4 py-2 text-xs text-slate-700 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-400"
+            />
+          </div>
+        </div>
+
+        {/* Reports List */}
+        {loading ? (
+          <div className="py-12 text-center text-xs text-slate-400 animate-pulse">
+            Loading synchronized reports...
+          </div>
+        ) : filteredReports.length === 0 ? (
+          <div className="py-12 text-center text-xs text-slate-400">
+            No reports found matching the selected filter.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {filteredReports.map((report) => (
+              <div
+                key={report.id}
+                onClick={() => setActiveDrawerItem(report)}
+                className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3.5 px-3 rounded-2xl hover:bg-slate-50/80 transition cursor-pointer"
+              >
+                <div className="flex items-start sm:items-center gap-3 min-w-0">
+                  <div
+                    style={{
+                      backgroundColor: currentTheme.primaryLight,
+                      color: currentTheme.primary,
+                    }}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl font-bold text-xs"
+                  >
+                    BI
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-slate-900 group-hover:text-purple-600 transition truncate">
+                      {report.name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                      <span>{report.workspaceName}</span>
+                      <span>&bull;</span>
+                      <span className="font-mono">
+                        {report.lastPublish ? new Date(report.lastPublish).toLocaleDateString() : "Active"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 self-end sm:self-center">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                    <CheckCircle2 className="h-3 w-3" />
+                    <span>Certified</span>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedLogItem(report);
+                    }}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[11px] font-semibold text-slate-700 transition"
+                  >
+                    Logs
+                  </button>
+
+                  <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-600 transition" />
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* =======================================================================
-          BOTTOM FROSTED GLASS SLIDE FLOATING CONTROLLER
-          ======================================================================= */}
-      <div className="sticky bottom-4 z-30 mx-auto max-w-sm px-4">
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-2 shadow-lg backdrop-blur-md">
-          <button
-            type="button"
-            onClick={prevSlide}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-[#B45309] hover:text-[#B45309] transition active:scale-95 shadow-2xs"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            <span>Prev</span>
-          </button>
+      {/* SLIDE-OUT DETAIL DRAWER */}
+      {activeDrawerItem && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
+            onClick={() => setActiveDrawerItem(null)}
+          />
 
-          <div className="flex items-center gap-1.5">
-            <span
-              onClick={() => setActiveSlide(0)}
-              className={clsx(
-                "cursor-pointer rounded-full transition-all duration-300",
-                activeSlide === 0 ? "h-2.5 w-6 bg-[#B45309]" : "h-2.5 w-2.5 bg-slate-300 hover:bg-slate-400"
-              )}
-            />
-            <span
-              onClick={() => setActiveSlide(1)}
-              className={clsx(
-                "cursor-pointer rounded-full transition-all duration-300",
-                activeSlide === 1 ? "h-2.5 w-6 bg-[#B45309]" : "h-2.5 w-2.5 bg-slate-300 hover:bg-slate-400"
-              )}
-            />
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+            <div className="w-screen max-w-md bg-white shadow-2xl p-6 flex flex-col justify-between animate-in slide-in-from-right duration-300">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      style={{
+                        backgroundColor: currentTheme.primaryLight,
+                        color: currentTheme.primary,
+                      }}
+                      className="grid h-10 w-10 place-items-center rounded-2xl font-bold text-sm"
+                    >
+                      BI
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">{activeDrawerItem.name}</h4>
+                      <p className="text-[11px] text-slate-400">{activeDrawerItem.workspaceName}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveDrawerItem(null)}
+                    className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-4 text-xs">
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+                    <p className="font-bold text-slate-800">Report Metadata</p>
+                    <div className="space-y-1.5 text-[11px] text-slate-600">
+                      <p>
+                        <span className="text-slate-400 font-mono">ID:</span>{" "}
+                        <span className="font-mono">{activeDrawerItem.id}</span>
+                      </p>
+                      <p>
+                        <span className="text-slate-400 font-mono">Workspace:</span>{" "}
+                        {activeDrawerItem.workspaceName}
+                      </p>
+                      <p>
+                        <span className="text-slate-400 font-mono">Endorsement:</span>{" "}
+                        <span className="font-semibold text-emerald-600">Certified Model</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 flex gap-3">
+                <a
+                  href={activeDrawerItem.webUrl || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    backgroundColor: currentTheme.primary,
+                    boxShadow: `0 8px 16px -2px ${currentTheme.primaryGlow}`,
+                  }}
+                  className="flex-1 py-3 rounded-full text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md transition hover:opacity-90"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span>Open in Power BI</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedLogItem(activeDrawerItem);
+                    setActiveDrawerItem(null);
+                  }}
+                  className="px-5 py-3 rounded-full bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition"
+                >
+                  Logs
+                </button>
+              </div>
+            </div>
           </div>
-
-          <button
-            type="button"
-            onClick={nextSlide}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-[#B45309] hover:text-[#B45309] transition active:scale-95 shadow-2xs"
-          >
-            <span>Next</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
         </div>
-      </div>
+      )}
 
-      {/* Version Logs Modal */} 
+      {/* DASHBOARD LOG MODAL */}
       {selectedLogItem && (
         <DashboardLogModal
           item={selectedLogItem}
@@ -956,16 +976,5 @@ export function PortalPage() {
         />
       )}
     </div>
-  );
-}
-
-function LayoutGridIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect width="7" height="7" x="3" y="3" rx="1" />
-      <rect width="7" height="7" x="14" y="3" rx="1" />
-      <rect width="7" height="7" x="14" y="14" rx="1" />
-      <rect width="7" height="7" x="3" y="14" rx="1" />
-    </svg>
   );
 }
