@@ -286,8 +286,10 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
   const nodes: DiagramNode[] = [];
   const text = formula;
 
-  // 1. EXTRACT CALLED MEASURES (e.g. [_hn_count], [_net_revenue], [_ipd_admit])
-  const measureMatches = Array.from(new Set(Array.from(text.matchAll(/\[([_a-zA-Z0-9% -]+)\]/g)).map((m) => m[1])));
+  // 1. EXTRACT STANDALONE CALLED MEASURES (e.g. [_hn_count], [_net_revenue] - not preceded by table name)
+  const standaloneMeasureRegex = /(?:^|[^\w'"])\s*\[([_a-zA-Z0-9% -]+)\]/g;
+  const rawMeasureMatches = Array.from(text.matchAll(standaloneMeasureRegex)).map((m) => m[1]);
+  const measureMatches = Array.from(new Set(rawMeasureMatches));
   const calledMeasures = measureMatches.filter((m) => m !== measureName && !m.toLowerCase().includes("date"));
 
   // 2. EXTRACT REFERENCED TABLES (e.g. 'fact_patient_visit', 'fact_refer_out')
@@ -295,14 +297,18 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
   const primaryTable = tableMatches[0] || tableName || "fact_table";
 
   // 3. EXTRACT EXCLUDE / FILTER CONDITIONS
-  // Matches e.g.: NOT 'fact_patient_visit'[visit_type_id] IN { 3, 5 } or NOT( ISBLANK(...) )
+  // Matches e.g.:
+  // - fact_patient_visit[is_evening_visit] = 1 or 'dim'[col] = 'val'
+  // - NOT 'fact_patient_visit'[visit_type_id] IN { 3, 5 }
+  // - NOT( ISBLANK(...) )
+  // - FILTER(...)
   const excludeMatches: string[] = [];
-  const notInRegex = /NOT\s*(?:'[^']+'\[[^\]]+\]|[a-zA-Z0-9_]+)s*INs*\{[^\}]+\}/gi;
+  const equalityRegex = /(?:(?:'[^']+'|[a-zA-Z0-9_]+)\[[^\]]+\]|\[[^\]]+\])\s*(?:=|<>|!=|>=|<=|>|<|IN)\s*(?:\{[^\}]+\}|[0-9.]+|"[^"]*"|'[^']*')/gi;
   const notBlankRegex = /NOT\s*\(\s*ISBLANK\([^\)]+\)\s*\)/gi;
   const filterRegex = /FILTER\s*\([^,]+,[^\)]+\)/gi;
 
   let mMatch;
-  while ((mMatch = notInRegex.exec(text)) !== null) {
+  while ((mMatch = equalityRegex.exec(text)) !== null) {
     excludeMatches.push(mMatch[0]);
   }
   while ((mMatch = notBlankRegex.exec(text)) !== null) {
@@ -371,14 +377,23 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
   let yFilter = 40;
   const filterNodeIds: string[] = [];
 
-  // Exclude / Not IN filters
+  // Exclude / Not IN / Equality filters
   excludeMatches.forEach((ex, idx) => {
     const fId = `flt_ex_${idx}`;
+    let role = "Context Filter";
+    let title = "FILTER PREDICATE";
+    if (ex.toUpperCase().startsWith("NOT")) {
+      title = "EXCLUDE CONDITION";
+      role = "Exclusion Logic";
+    } else if (ex.includes("=") || ex.includes("<>") || ex.includes("IN") || ex.includes(">") || ex.includes("<")) {
+      title = ex.length > 28 ? ex.slice(0, 25) + "..." : ex;
+      role = "Filter Predicate";
+    }
     nodes.push({
       id: fId,
-      title: ex.startsWith("NOT") ? "EXCLUDE CONDITION" : "FILTER PREDICATE",
+      title,
       category: "filter",
-      role: "Context Filter",
+      role,
       detail: ex,
       codeSnippet: ex,
       x: 340,
@@ -499,19 +514,15 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
   });
 
   // WIRE LOGICAL CONNECTIONS:
-  // 1. Connect Input Nodes to Filters or Engine
+  // 1. Connect Input Nodes (Called Measures & Tables) to Engine
   inputNodeIds.forEach((inpId) => {
     const inpNode = nodes.find((n) => n.id === inpId);
     if (inpNode) {
-      if (filterNodeIds.length > 0) {
-        inpNode.connections = [filterNodeIds[0]];
-      } else {
-        inpNode.connections = [coreNodeId];
-      }
+      inpNode.connections = [coreNodeId];
     }
   });
 
-  // 2. Connect Filter Nodes to Core Engine
+  // 2. Connect Filter & Predicate Nodes to Core Engine
   filterNodeIds.forEach((fltId) => {
     const fltNode = nodes.find((n) => n.id === fltId);
     if (fltNode) {
@@ -537,6 +548,13 @@ export function DaxManagementPage() {
   // Items & Metadata State
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [models, setModels] = useState<ModelMeta[]>([
+    {
+      code: "ALL",
+      name: "All Semantic Models (Global)",
+      id: "all-models",
+      totalMeasures: 1455,
+      totalColumns: 3336,
+    },
     {
       code: "PKT-D01",
       name: "PKT-D01 Strategy Semantic Model",
@@ -604,7 +622,7 @@ export function DaxManagementPage() {
   const [diagramTarget, setDiagramTarget] = useState<ItemRecord | null>(null);
   const [diagramNodes, setDiagramNodes] = useState<DiagramNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [diagramZoom, setDiagramZoom] = useState(1);
+  const [diagramZoom, setDiagramZoom] = useState(0.8);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [connectingSourceId, setConnectingSourceId] = useState<string | null>(null);
@@ -820,7 +838,7 @@ export function DaxManagementPage() {
     const parsed = parseDaxToProgrammingAst(item.name, item.expression, item.tableName);
     setDiagramNodes(parsed);
     setSelectedNodeId(parsed[0]?.id || null);
-    setDiagramZoom(1);
+    setDiagramZoom(0.8);
     setConnectingSourceId(null);
     setDiagramSaveSuccess(false);
     setDiagramModalOpen(true);
@@ -936,15 +954,17 @@ export function DaxManagementPage() {
     if (!diagramTarget) return;
     const parsed = parseDaxToProgrammingAst(diagramTarget.name, diagramTarget.expression, diagramTarget.tableName);
     setDiagramNodes(parsed);
-    setDiagramZoom(1);
+    setDiagramZoom(0.8);
     setConnectingSourceId(null);
   }
 
   // Handle Search Input Change with Table Auto-unlock
   function handleSearchInputChange(val: string) {
     setSearchQuery(val);
-    if (val.trim() && selectedTable !== "all") {
-      setSelectedTable("all");
+    if (val.trim()) {
+      if (selectedTable !== "all") setSelectedTable("all");
+      if (activeModel !== "ALL") setActiveModel("ALL");
+      if (selectedType !== "all") setSelectedType("all");
     }
   }
 
@@ -1593,7 +1613,7 @@ export function DaxManagementPage() {
                         </td>
                         <td className="py-2 px-3 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
-                            {it.type === "Measure" && (
+                            {(it.type === "Measure" || it.isCustom) && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenDiagram(it)}
@@ -1911,9 +1931,33 @@ export function DaxManagementPage() {
                       {/* DAX Formula */}
                       {selectedItem.isCustom ? (
                         <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">
-                            Custom DAX Expression
-                          </label>
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">
+                              Custom DAX Expression
+                            </label>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDiagram(selectedItem)}
+                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
+                              >
+                                <Workflow className="h-2.5 w-2.5" />
+                                <span>Diagram</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => copyText(selectedItem.id, sideboxForm.expression)}
+                                className="text-[9px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
+                              >
+                                {copiedId === selectedItem.id ? (
+                                  <Check className="h-2.5 w-2.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="h-2.5 w-2.5" />
+                                )}
+                                <span>{copiedId === selectedItem.id ? "Copied" : "Copy DAX"}</span>
+                              </button>
+                            </div>
+                          </div>
                           <textarea
                             rows={3}
                             value={sideboxForm.expression}
@@ -2031,7 +2075,21 @@ export function DaxManagementPage() {
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {it.type === "Measure" && (
+                        {it.expression && (
+                          <button
+                            type="button"
+                            onClick={() => copyText(it.id, it.expression!)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-white text-blue-700 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
+                          >
+                            {copiedId === it.id ? (
+                              <Check className="h-3 w-3 text-emerald-600" />
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                            <span>{copiedId === it.id ? "Copied" : "Copy DAX"}</span>
+                          </button>
+                        )}
+                        {(it.type === "Measure" || it.isCustom) && (
                           <button
                             type="button"
                             onClick={() => handleOpenDiagram(it)}

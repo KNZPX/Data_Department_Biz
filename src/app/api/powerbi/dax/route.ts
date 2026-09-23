@@ -53,10 +53,25 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "150", 10);
 
     const store = loadModels();
-    const activeModelKey = store[modelCode] ? modelCode : (store["PKT-D01"] ? "PKT-D01" : Object.keys(store)[0]);
-    const activeModel = store[activeModelKey];
+    const isAllModels = modelCode === "ALL";
+    const activeModelKey = isAllModels
+      ? "ALL"
+      : store[modelCode]
+      ? modelCode
+      : store["PKT-D01"]
+      ? "PKT-D01"
+      : Object.keys(store)[0];
+    const activeModel = isAllModels
+      ? {
+          code: "ALL",
+          name: "All Semantic Models",
+          id: "all-models",
+          measures: Object.values(store).flatMap((m: any) => m.measures || []),
+          columns: Object.values(store).flatMap((m: any) => m.columns || []),
+        }
+      : store[activeModelKey];
 
-    if (!activeModel) {
+    if (!activeModel && !isAllModels) {
       return NextResponse.json({
         items: [],
         meta: { total: 0, totalMeasures: 0, totalColumns: 0, totalTables: 0, tables: [] },
@@ -89,10 +104,22 @@ export async function GET(request: NextRequest) {
     ])) as [Record<string, any>, any[], Record<string, any[]>];
 
     // Build unified measures list
-    const measures = (activeModel.measures || []).map((m: any) => {
+    const rawMeasures = isAllModels
+      ? Object.entries(store).flatMap(([k, m]: [string, any]) =>
+          (m.measures || []).map((meas: any) => ({ ...meas, _modelCode: m.code, _modelName: m.name }))
+        )
+      : (activeModel.measures || []).map((meas: any) => ({
+          ...meas,
+          _modelCode: activeModel.code,
+          _modelName: activeModel.name,
+        }));
+
+    const measures = rawMeasures.map((m: any) => {
       const name = m["[Name]"] || "Unnamed Measure";
       const tableName = m["[Table]"] || "Unknown Table";
-      const id = String(m["[ID]"] || `${activeModel.code}_ms_${tableName}_${name}`.replace(/[^a-zA-Z0-9_-]/g, "_"));
+      const mCode = m._modelCode || activeModel.code;
+      const mName = m._modelName || activeModel.name;
+      const id = String(m["[ID]"] || `${mCode}_ms_${tableName}_${name}`.replace(/[^a-zA-Z0-9_-]/g, "_"));
       const saved = annotationsMap[id];
 
       return {
@@ -105,27 +132,39 @@ export async function GET(request: NextRequest) {
         expression: m["[Expression]"] || `CALCULATE([${name}])`,
         formatString: m["[FormatString]"] || null,
         isHidden: Boolean(m["[IsHidden]"]),
-        modelCode: activeModel.code,
-        modelName: activeModel.name,
+        modelCode: mCode,
+        modelName: mName,
         mathDefinition: saved?.mathDefinition || "",
         businessDefinition: saved?.businessDefinition || "",
-        notes: saved?.notes || "",
+        notes: saved?.notes || m["[Notes]"] || "",
         isCustom: false,
         sampleValues: sampleValuesMap[id] || null,
       };
     });
 
     // Build unified columns list (All column types: Data, Calculated, CalculatedTableColumn, RowNumber)
-    const columns = (activeModel.columns || []).map((c: any) => {
+    const rawColumns = isAllModels
+      ? Object.entries(store).flatMap(([k, m]: [string, any]) =>
+          (m.columns || []).map((col: any) => ({ ...col, _modelCode: m.code, _modelName: m.name }))
+        )
+      : (activeModel.columns || []).map((col: any) => ({
+          ...col,
+          _modelCode: activeModel.code,
+          _modelName: activeModel.name,
+        }));
+
+    const columns = rawColumns.map((c: any) => {
       const name = c["[Name]"] || "Unnamed Column";
       const tableName = c["[Table]"] || "Unknown Table";
+      const mCode = c._modelCode || activeModel.code;
+      const mName = c._modelName || activeModel.name;
       const rawType = c["[Type]"] || "";
       let colType = "Data Column";
       if (rawType === "Calculated") colType = "Calculated Column";
       else if (rawType === "CalculatedTableColumn") colType = "Calculated Table Column";
       else if (rawType === "RowNumber") colType = "System Row Column";
 
-      const id = String(c["[ID]"] || `${activeModel.code}_col_${tableName}_${name}`.replace(/[^a-zA-Z0-9_-]/g, "_"));
+      const id = String(c["[ID]"] || `${mCode}_col_${tableName}_${name}`.replace(/[^a-zA-Z0-9_-]/g, "_"));
       const saved = annotationsMap[id];
 
       return {
@@ -138,11 +177,11 @@ export async function GET(request: NextRequest) {
         expression: c["[Expression]"] || null,
         formatString: c["[FormatString]"] || null,
         isHidden: Boolean(c["[IsHidden]"]),
-        modelCode: activeModel.code,
-        modelName: activeModel.name,
+        modelCode: mCode,
+        modelName: mName,
         mathDefinition: saved?.mathDefinition || "",
         businessDefinition: saved?.businessDefinition || "",
-        notes: saved?.notes || "",
+        notes: saved?.notes || c["[Notes]"] || "",
         isCustom: false,
         sampleValues: sampleValuesMap[id] || null,
       };

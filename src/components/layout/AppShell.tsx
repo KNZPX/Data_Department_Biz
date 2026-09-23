@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
+  Workflow,
   X,
   Zap,
 } from "lucide-react";
@@ -143,6 +144,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/reports", label: "Power BI Catalog", sub: "465 Workspaces & Reports", icon: LayoutGrid },
     { href: "/dax", label: "DAX Management", sub: "D01 & D02 Semantic Models", icon: FunctionSquare },
+    { href: "/whiteboard", label: "Whiteboard", sub: "Miro-Style Workflow Canvas", icon: Workflow },
     { href: "/licenses", label: "Team & Licenses", sub: "Capacity & Group Governance", icon: Users },
     { href: "/users", label: "User Management", sub: "Login Activity & Audit Logs", icon: ShieldCheck },
     { href: "/settings", label: "System Settings", sub: "Database & OAuth Config", icon: Settings },
