@@ -201,32 +201,72 @@ export async function GET(request: NextRequest) {
       allItems = allItems.filter((i) => i.tableName.toLowerCase() === table);
     }
 
-    // Filter by search query (Partial vs Exact match)
+    // Filter by search query with relevance ranking (Name matches prioritized over formula/descriptions)
     if (q) {
-      if (searchMode === "exact") {
-        const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const exactRegex = new RegExp(`\\b${escaped}\\b`, "i");
-        allItems = allItems.filter((i) => {
-          return (
-            exactRegex.test(i.name) ||
-            exactRegex.test(i.tableName) ||
-            (i.expression && exactRegex.test(i.expression)) ||
-            (i.mathDefinition && exactRegex.test(i.mathDefinition)) ||
-            (i.businessDefinition && exactRegex.test(i.businessDefinition))
-          );
-        });
-      } else {
-        const lowerQ = q.toLowerCase();
-        allItems = allItems.filter((i) => {
-          return (
-            i.name.toLowerCase().includes(lowerQ) ||
-            i.tableName.toLowerCase().includes(lowerQ) ||
-            (i.expression && i.expression.toLowerCase().includes(lowerQ)) ||
-            (i.mathDefinition && i.mathDefinition.toLowerCase().includes(lowerQ)) ||
-            (i.businessDefinition && i.businessDefinition.toLowerCase().includes(lowerQ))
-          );
-        });
+      const lowerQ = q.toLowerCase();
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const wordRegex = new RegExp(`\\b${escaped}\\b`, "i");
+
+      const scoredItems: { item: any; score: number; matchReason?: string }[] = [];
+
+      for (const it of allItems) {
+        let score = 0;
+        let matchReason = "";
+
+        const nameLower = it.name.toLowerCase();
+        const tableLower = it.tableName.toLowerCase();
+        const exprLower = it.expression ? it.expression.toLowerCase() : "";
+        const defLower = ((it.mathDefinition || "") + " " + (it.businessDefinition || "")).toLowerCase();
+
+        // 1. Exact name match
+        if (nameLower === lowerQ) {
+          score += 1000;
+          matchReason = "Exact Name Match";
+        } else if (nameLower.startsWith(lowerQ) || nameLower.startsWith(`_${lowerQ}`) || nameLower.startsWith(`%${lowerQ}`)) {
+          score += 800;
+          matchReason = "Name Prefix Match";
+        } else if (nameLower.includes(lowerQ)) {
+          score += 500;
+          matchReason = "Name Match";
+        }
+
+        // 2. Table match
+        if (tableLower === lowerQ) {
+          score += 300;
+          if (!matchReason) matchReason = "Table Match";
+        } else if (tableLower.includes(lowerQ)) {
+          score += 150;
+          if (!matchReason) matchReason = "Table Match";
+        }
+
+        // 3. Expression match
+        if (exprLower.includes(lowerQ)) {
+          // If searchMode is exact, must match word boundary
+          if (searchMode === "exact") {
+            if (wordRegex.test(it.expression || "")) {
+              score += 100;
+              if (!matchReason) matchReason = "Formula Reference";
+            }
+          } else {
+            score += 100;
+            if (!matchReason) matchReason = "Formula Reference";
+          }
+        }
+
+        // 4. Definitions / notes match
+        if (defLower.includes(lowerQ)) {
+          score += 50;
+          if (!matchReason) matchReason = "Definition Match";
+        }
+
+        if (score > 0) {
+          scoredItems.push({ item: { ...it, matchReason }, score });
+        }
       }
+
+      // Sort by score descending (highest relevance first)
+      scoredItems.sort((a, b) => b.score - a.score);
+      allItems = scoredItems.map((s) => s.item);
     }
 
     const total = allItems.length;
