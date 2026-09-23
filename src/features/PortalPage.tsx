@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { BizAnalyticLogo } from "@/components/brand/BizAnalyticLogo";
+import { InteractiveCharacter } from "@/components/character/InteractiveCharacter";
 import { DashboardLogModal } from "@/components/powerbi/DashboardLogModal";
 import { Button, Textarea } from "@/components/ui";
 import { useAuth } from "@/components/auth/LoginGate";
@@ -253,68 +254,6 @@ export function PortalPage() {
       ref={containerRef}
       className="relative h-screen h-[100dvh] w-full overflow-hidden bg-[#F4F6F8] text-[#1C252E] select-none"
     >
-      {/* Top Floating Sleek Header Bar */}
-      <header className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-5 sm:px-10 py-3.5 backdrop-blur-md bg-white/70 border-b border-slate-200/60 shadow-2xs">
-        <div
-          onClick={() => goToSection(0)}
-          className="cursor-pointer transition hover:opacity-90"
-          title="Biz-Analytic Enterprise Portal"
-        >
-          <BizAnalyticLogo size="sm" showText={true} subtext="Enterprise BI Hub" />
-        </div>
-
-        {/* Header Right: Navigation Links & Auth Status */}
-        <div className="flex items-center gap-2 sm:gap-4">
-          <Link
-            href="/reports"
-            className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100/80 hover:text-[#B45309] transition active:scale-95"
-          >
-            <Inbox className="h-4 w-4 text-[#B45309]" />
-            <span className="hidden sm:inline">Reports & Workspaces</span>
-            <span className="sm:hidden">Reports</span>
-          </Link>
-
-          <Link
-            href="/settings"
-            className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100/80 hover:text-[#B45309] transition active:scale-95"
-          >
-            <Settings className="h-4 w-4 text-[#B45309]" />
-            <span className="hidden sm:inline">Settings</span>
-          </Link>
-
-          <div className="h-4 w-px bg-slate-200" />
-
-          {/* Dynamic Auth Status Button */}
-          {authenticated && user ? (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200/80 px-2.5 py-1 text-xs font-semibold text-[#B45309]">
-                <div className="grid h-5 w-5 place-items-center rounded-lg bg-[#B45309] text-[10px] text-white">
-                  {user.name.slice(0, 1).toUpperCase()}
-                </div>
-                <span className="max-w-[100px] truncate hidden md:inline">{user.name}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => logout()}
-                title="Sign Out"
-                className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => goToSection(0)}
-              className="flex items-center gap-1.5 rounded-xl bg-[#B45309] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#92400e] active:scale-95 transition"
-            >
-              <Lock className="h-3.5 w-3.5" />
-              <span>Sign In</span>
-            </button>
-          )}
-        </div>
-      </header>
-
       {/* Side Vertical Pagination Dots */}
       <nav
         aria-label="Section navigation"
@@ -361,10 +300,15 @@ export function PortalPage() {
           <div className="pointer-events-none absolute top-1/2 -right-32 h-96 w-96 rounded-full bg-[#D97706]/5 blur-3xl" />
 
           {/* Section 0 Center Content */}
-          <div className="my-auto mx-auto w-full max-w-lg">
+          <div className="my-auto mx-auto w-full max-w-md flex flex-col items-center">
+            {/* Interactive Mouse & Cursor Tracking 3D Chibi Mascot */}
+            <div className="mb-2.5">
+              <InteractiveCharacter size={160} showCardBadge={true} />
+            </div>
+
             {!authenticated || !user ? (
               /* Unauthenticated: Enterprise Sign-In Card */
-              <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 shadow-xl shadow-slate-200/70 sm:p-9 minimals-card">
+              <div className="w-full relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-6 shadow-xl shadow-slate-200/70 sm:p-7 minimals-card">
                 <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
 
                 <div className="text-center pt-2">
@@ -466,7 +410,7 @@ export function PortalPage() {
               </div>
             ) : (
               /* Authenticated: Personalized Welcome Card */
-              <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 sm:p-9 shadow-xl shadow-slate-200/70 minimals-card text-center">
+              <div className="w-full relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 sm:p-9 shadow-xl shadow-slate-200/70 minimals-card text-center">
                 <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
 
                 <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-3xl bg-[#B45309] text-xl font-bold text-white shadow-lg shadow-[#B45309]/30">
