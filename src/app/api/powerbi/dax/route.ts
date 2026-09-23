@@ -64,11 +64,29 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Load saved database annotations and custom DAX
-    const [annotationsMap, customDaxList] = (await Promise.all([
+    // Load saved database annotations, custom DAX, and sample values from Supabase
+    const [annotationsMap, customDaxList, sampleValuesMap] = (await Promise.all([
       getAllDaxAnnotations().catch(() => ({} as Record<string, any>)),
       getAllCustomDaxItems().catch(() => [] as any[]),
-    ])) as [Record<string, any>, any[]];
+      (async () => {
+        try {
+          const supabase = getSupabaseClient();
+          const { data } = await supabase
+            .from("dax_dictionary_items")
+            .select("id, sample_values")
+            .not("sample_values", "is", null);
+          const map: Record<string, any[]> = {};
+          if (data) {
+            for (const r of data) {
+              if (r.sample_values) map[r.id] = r.sample_values;
+            }
+          }
+          return map;
+        } catch {
+          return {};
+        }
+      })(),
+    ])) as [Record<string, any>, any[], Record<string, any[]>];
 
     // Build unified measures list
     const measures = (activeModel.measures || []).map((m: any) => {
@@ -93,6 +111,7 @@ export async function GET(request: NextRequest) {
         businessDefinition: saved?.businessDefinition || "",
         notes: saved?.notes || "",
         isCustom: false,
+        sampleValues: sampleValuesMap[id] || null,
       };
     });
 
@@ -125,6 +144,7 @@ export async function GET(request: NextRequest) {
         businessDefinition: saved?.businessDefinition || "",
         notes: saved?.notes || "",
         isCustom: false,
+        sampleValues: sampleValuesMap[id] || null,
       };
     });
 
@@ -138,7 +158,7 @@ export async function GET(request: NextRequest) {
           name: c.name,
           tableName: c.tableName,
           type: "Custom DAX",
-          dataType: "Custom",
+          dataType: c.dataType || "Custom",
           description: "Manually registered calculation measure.",
           expression: c.expression,
           formatString: c.formatString || null,
@@ -150,6 +170,7 @@ export async function GET(request: NextRequest) {
           notes: c.notes || saved?.notes || "",
           isCustom: true,
           createdBy: c.createdBy,
+          sampleValues: sampleValuesMap[c.id] || null,
         };
       });
 
@@ -159,16 +180,18 @@ export async function GET(request: NextRequest) {
     columns.forEach((c) => tablesSet.add(c.tableName));
     customItems.forEach((ci) => tablesSet.add(ci.tableName));
 
-    // Filter by type
+    // Filter by type (including Semantic Model and Custom by User)
     let allItems: any[] = [];
-    if (type === "measure" || type === "measures") {
+    if (type === "semantic" || type === "semantic_model") {
+      allItems = [...measures, ...columns];
+    } else if (type === "custom" || type === "custom_by_user" || type === "custom dax") {
+      allItems = customItems;
+    } else if (type === "measure" || type === "measures") {
       allItems = [...measures, ...customItems];
     } else if (type === "column" || type === "columns" || type === "data column") {
       allItems = columns.filter((c) => c.type === "Data Column");
     } else if (type === "calculated column" || type === "calc_column") {
       allItems = columns.filter((c) => c.type === "Calculated Column" || c.type === "Calculated Table Column");
-    } else if (type === "custom" || type === "custom dax") {
-      allItems = customItems;
     } else {
       allItems = [...measures, ...customItems, ...columns];
     }
@@ -231,6 +254,7 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit),
         totalMeasures: measures.length,
         totalColumns: columns.length,
+        totalSemantic: measures.length + columns.length,
         totalCustom: customItems.length,
         totalTables: tablesSet.size,
         tables: Array.from(tablesSet).sort(),

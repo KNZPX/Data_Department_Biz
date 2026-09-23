@@ -42,6 +42,7 @@ import {
   Table as TableIcon,
   Terminal,
   Trash2,
+  User,
   X,
   Zap,
 } from "lucide-react";
@@ -64,6 +65,7 @@ interface ItemRecord {
   businessDefinition?: string;
   notes?: string;
   isCustom?: boolean;
+  sampleValues?: any[] | null;
 }
 
 interface ModelMeta {
@@ -94,7 +96,7 @@ function HighlightText({
         part.toLowerCase() === query.toLowerCase() ? (
           <mark
             key={i}
-            className="bg-blue-100 text-blue-900 font-bold px-1 rounded-xs"
+            className="bg-amber-200 text-slate-900 font-bold px-1 rounded-xs"
           >
             {part}
           </mark>
@@ -141,8 +143,9 @@ export function DaxManagementPage() {
   ]);
   const [loading, setLoading] = useState(true);
 
-  // Search & Filters
+  // Real-time Instant Search with Debounce
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchMode, setSearchMode] = useState<"partial" | "exact">("partial");
   const [selectedTable, setSelectedTable] = useState("all");
   const [tableSearchQuery, setTableSearchQuery] = useState("");
@@ -152,6 +155,8 @@ export function DaxManagementPage() {
     total: 0,
     totalMeasures: 0,
     totalColumns: 0,
+    totalSemantic: 0,
+    totalCustom: 0,
     totalTables: 0,
     tables: [],
     activeModelCode: "PKT-D01",
@@ -195,16 +200,24 @@ export function DaxManagementPage() {
   const [isSavingCustom, setIsSavingCustom] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
 
+  // Instant Search Debounce Effect (250ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     void fetchItems();
-  }, [activeModel, selectedTable, selectedType, searchMode]);
+  }, [activeModel, selectedTable, selectedType, searchMode, debouncedQuery]);
 
   async function fetchItems() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("model", activeModel);
-      if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
       params.set("searchMode", searchMode);
       if (selectedTable !== "all") params.set("table", selectedTable);
       if (selectedType !== "all") params.set("type", selectedType);
@@ -213,10 +226,19 @@ export function DaxManagementPage() {
       const res = await fetch(`/api/powerbi/dax?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
-        const loadedItems = json.items || [];
+        const loadedItems: ItemRecord[] = json.items || [];
         setItems(loadedItems);
         if (json.meta) setMeta(json.meta);
         if (json.models && json.models.length > 0) setModels(json.models);
+
+        // Pre-populate sample values from Supabase cache
+        const sMap: Record<string, any[]> = {};
+        for (const it of loadedItems) {
+          if (it.sampleValues && it.sampleValues.length > 0) {
+            sMap[it.id] = it.sampleValues;
+          }
+        }
+        setSampleValuesMap((prev) => ({ ...prev, ...sMap }));
 
         // Keep or select first item for sidebox view
         if (loadedItems.length > 0) {
@@ -236,21 +258,20 @@ export function DaxManagementPage() {
     }
   }
 
-  // When searching, ALWAYS unlock table filter to "all" as requested
+  // Real-time Search Input Change (Unlocks table to ALL immediately)
+  function handleSearchInputChange(val: string) {
+    setSearchQuery(val);
+    if (val.trim() && selectedTable !== "all") {
+      setSelectedTable("all");
+    }
+  }
+
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (searchQuery.trim() && selectedTable !== "all") {
       setSelectedTable("all");
     }
-    void fetchItems();
-  }
-
-  function handleSearchQueryChange(val: string) {
-    setSearchQuery(val);
-    if (val.trim() && selectedTable !== "all") {
-      // Auto-unlock table filter when user searches
-      setSelectedTable("all");
-    }
+    setDebouncedQuery(searchQuery);
   }
 
   function copyText(id: string, text: string) {
@@ -499,7 +520,7 @@ export function DaxManagementPage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Synced to Supabase DB &bull; Active Model: {currentModelMeta.name}
+              Synced to Supabase DB &bull; Active: {currentModelMeta.name}
             </p>
           </div>
         </div>
@@ -578,7 +599,7 @@ export function DaxManagementPage() {
               type="button"
               onClick={() => setActiveTab("explorer")}
               className={clsx(
-                "flex items-center gap-1.5 px-3.5 py-1 rounded-full font-bold transition",
+                "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-bold transition",
                 activeTab === "explorer"
                   ? "bg-blue-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -592,7 +613,7 @@ export function DaxManagementPage() {
               type="button"
               onClick={() => setActiveTab("api-console")}
               className={clsx(
-                "flex items-center gap-1.5 px-3.5 py-1 rounded-full font-bold transition",
+                "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-bold transition",
                 activeTab === "api-console"
                   ? "bg-blue-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -760,7 +781,7 @@ export function DaxManagementPage() {
         <div className="flex-1 h-full min-w-0 bg-white rounded-3xl p-5 shadow-xs border border-slate-200/80 flex flex-col overflow-hidden">
           {activeTab === "explorer" ? (
             <div className="h-full flex flex-col space-y-3 overflow-hidden">
-              {/* Filter & Search Header */}
+              {/* Filter & Real-Time Instant Search Header */}
               <div className="shrink-0 flex flex-col lg:flex-row gap-3">
                 {/* Search Input with Partial vs Exact Toggle */}
                 <form onSubmit={handleSearchSubmit} className="relative flex-1 flex items-center gap-2">
@@ -769,10 +790,19 @@ export function DaxManagementPage() {
                     <input
                       type="text"
                       value={searchQuery}
-                      onChange={(e) => handleSearchQueryChange(e.target.value)}
-                      placeholder="Search measures, columns, expressions, definitions..."
+                      onChange={(e) => handleSearchInputChange(e.target.value)}
+                      placeholder="Instant search measures, columns, expressions, definitions..."
                       className="w-full rounded-full bg-slate-50 pl-10 pr-4 py-2 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-400"
                     />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => handleSearchInputChange("")}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Partial vs Exact Toggle */}
@@ -805,26 +835,23 @@ export function DaxManagementPage() {
                 </form>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Type Filter Pills */}
+                  {/* Source & Type Filter Dropdown (Includes Semantic Model and Custom by User) */}
                   <select
                     value={selectedType}
                     onChange={(e) => setSelectedType(e.target.value)}
                     className="rounded-full bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 border border-slate-200 focus:outline-none"
                   >
-                    <option value="all">All Types ({meta.total})</option>
+                    <option value="all">All Items ({meta.total})</option>
+                    <option value="semantic">
+                      Semantic Model ({meta.totalSemantic || meta.totalMeasures + meta.totalColumns})
+                    </option>
+                    <option value="custom">
+                      Custom by User ({meta.totalCustom || 0})
+                    </option>
                     <option value="measure">Measures Only ({meta.totalMeasures})</option>
                     <option value="column">Columns Only ({meta.totalColumns})</option>
                     <option value="calculated_column">Calculated Columns</option>
-                    <option value="custom">Custom DAX</option>
                   </select>
-
-                  <button
-                    type="button"
-                    onClick={handleSearchSubmit}
-                    className="px-5 py-2 rounded-full text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition"
-                  >
-                    Search
-                  </button>
                 </div>
               </div>
 
@@ -837,7 +864,7 @@ export function DaxManagementPage() {
                   </span>
                   {searchQuery && (
                     <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full font-semibold">
-                      Unlocked All Tables Search: "{searchQuery}" ({searchMode})
+                      Instant Search: "{searchQuery}" ({searchMode})
                     </span>
                   )}
                 </div>
@@ -852,7 +879,7 @@ export function DaxManagementPage() {
                   </div>
                 ) : items.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                    No matching measures or columns found.
+                    No matching measures or columns found for "{searchQuery}".
                   </div>
                 ) : viewMode === "table" ? (
                   /* ================= 1. TABLE VIEW ================= */
@@ -860,7 +887,7 @@ export function DaxManagementPage() {
                     <table className="w-full text-left text-xs text-slate-700 border-collapse">
                       <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80 z-10">
                         <tr>
-                          <th className="py-2.5 px-3">Type</th>
+                          <th className="py-2.5 px-3">Origin & Type</th>
                           <th className="py-2.5 px-3">Name</th>
                           <th className="py-2.5 px-3">Table</th>
                           <th className="py-2.5 px-3">Data Type</th>
@@ -877,33 +904,45 @@ export function DaxManagementPage() {
                             className="hover:bg-blue-50/30 transition group"
                           >
                             <td className="py-2.5 px-3 whitespace-nowrap">
-                              <span
-                                className={clsx(
-                                  "px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase",
-                                  it.isCustom
-                                    ? "bg-purple-100 text-purple-800"
-                                    : it.type === "Measure"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : it.type.includes("Calculated")
-                                    ? "bg-amber-100 text-amber-800"
-                                    : "bg-emerald-100 text-emerald-800"
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {it.isCustom ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                                    <User className="h-2.5 w-2.5" />
+                                    <span>Custom by User</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                                    <Database className="h-2.5 w-2.5" />
+                                    <span>Semantic Model</span>
+                                  </span>
                                 )}
-                              >
-                                {it.isCustom ? "Custom DAX" : it.type}
-                              </span>
+
+                                <span
+                                  className={clsx(
+                                    "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                                    it.type === "Measure"
+                                      ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                      : it.type.includes("Calculated")
+                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                      : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  )}
+                                >
+                                  {it.type}
+                                </span>
+                              </div>
                             </td>
                             <td className="py-2.5 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
                               <HighlightText
                                 text={it.name}
                                 match={searchQuery}
-                                active={searchMode === "partial" || searchMode === "exact"}
+                                active={Boolean(searchQuery.trim())}
                               />
                             </td>
                             <td className="py-2.5 px-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
                               <HighlightText
                                 text={it.tableName}
                                 match={searchQuery}
-                                active={searchMode === "partial" || searchMode === "exact"}
+                                active={Boolean(searchQuery.trim())}
                               />
                             </td>
                             <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
@@ -935,22 +974,27 @@ export function DaxManagementPage() {
                               ) : it.type.includes("Column") ? (
                                 <div className="flex items-center gap-1.5">
                                   {sampleValuesMap[it.id] ? (
-                                    <span className="text-[10px] font-mono text-emerald-700 truncate">
-                                      [{sampleValuesMap[it.id].slice(0, 3).join(", ")}]
-                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] font-mono text-emerald-700 truncate">
+                                        [{sampleValuesMap[it.id].slice(0, 3).join(", ")}]
+                                      </span>
+                                      <span className="text-[9px] px-1 bg-emerald-100 text-emerald-800 rounded font-sans font-bold">
+                                        DB Saved
+                                      </span>
+                                    </div>
                                   ) : (
                                     <button
                                       type="button"
                                       onClick={() => handleFetchColumnSamples(it)}
                                       disabled={loadingSamplesId === it.id}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition"
                                     >
                                       {loadingSamplesId === it.id ? (
                                         <RefreshCw className="h-2.5 w-2.5 animate-spin" />
                                       ) : (
                                         <Zap className="h-2.5 w-2.5" />
                                       )}
-                                      <span>Sample</span>
+                                      <span>Fetch Samples</span>
                                     </button>
                                   )}
                                 </div>
@@ -1029,24 +1073,35 @@ export function DaxManagementPage() {
                             )}
                           >
                             <div className="min-w-0 space-y-1">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {it.isCustom ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                                    <User className="h-2 w-2" />
+                                    <span>Custom</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                                    <Database className="h-2 w-2" />
+                                    <span>Semantic</span>
+                                  </span>
+                                )}
+
                                 <span
                                   className={clsx(
-                                    "px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase",
-                                    it.isCustom
-                                      ? "bg-purple-100 text-purple-800"
-                                      : it.type === "Measure"
-                                      ? "bg-blue-100 text-blue-800"
-                                      : "bg-emerald-100 text-emerald-800"
+                                    "px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase",
+                                    it.type === "Measure"
+                                      ? "bg-blue-50 text-blue-700"
+                                      : "bg-emerald-50 text-emerald-700"
                                   )}
                                 >
-                                  {it.isCustom ? "Custom" : it.type}
+                                  {it.type}
                                 </span>
+
                                 <h4 className="font-mono text-xs font-bold text-slate-900 truncate">
                                   <HighlightText
                                     text={it.name}
                                     match={searchQuery}
-                                    active={searchMode === "partial" || searchMode === "exact"}
+                                    active={Boolean(searchQuery.trim())}
                                   />
                                 </h4>
                               </div>
@@ -1072,19 +1127,23 @@ export function DaxManagementPage() {
                         <div className="space-y-4">
                           <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                             <div>
-                              <span
-                                className={clsx(
-                                  "px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase",
-                                  selectedItem.isCustom
-                                    ? "bg-purple-100 text-purple-800"
-                                    : selectedItem.type === "Measure"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : "bg-emerald-100 text-emerald-800"
+                              <div className="flex items-center gap-1.5 mb-1">
+                                {selectedItem.isCustom ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                                    <User className="h-2.5 w-2.5" />
+                                    <span>Custom by User</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                                    <Database className="h-2.5 w-2.5" />
+                                    <span>Semantic Model</span>
+                                  </span>
                                 )}
-                              >
-                                {selectedItem.isCustom ? "Custom DAX" : selectedItem.type}
-                              </span>
-                              <h3 className="font-mono text-sm font-bold text-slate-900 mt-1">
+                                <span className="text-[10px] font-bold text-slate-600 uppercase bg-slate-200/70 px-2 py-0.5 rounded-full">
+                                  {selectedItem.type}
+                                </span>
+                              </div>
+                              <h3 className="font-mono text-sm font-bold text-slate-900">
                                 {selectedItem.name}
                               </h3>
                             </div>
@@ -1140,23 +1199,28 @@ export function DaxManagementPage() {
                               </div>
 
                               {sampleValuesMap[selectedItem.id] ? (
-                                <div className="flex flex-wrap gap-1.5 pt-1">
-                                  {sampleValuesMap[selectedItem.id].length > 0 ? (
-                                    sampleValuesMap[selectedItem.id].map((val, idx) => (
-                                      <span
-                                        key={idx}
-                                        className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-mono"
-                                      >
-                                        {String(val)}
-                                      </span>
-                                    ))
-                                  ) : (
-                                    <span className="text-[11px] text-slate-400 italic">No values found in model</span>
-                                  )}
+                                <div className="space-y-1.5 pt-1">
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {sampleValuesMap[selectedItem.id].length > 0 ? (
+                                      sampleValuesMap[selectedItem.id].map((val, idx) => (
+                                        <span
+                                          key={idx}
+                                          className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-mono"
+                                        >
+                                          {String(val)}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[11px] text-slate-400 italic">No values returned</span>
+                                    )}
+                                  </div>
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                    <Check className="h-2.5 w-2.5" /> Persisted in Supabase
+                                  </span>
                                 </div>
                               ) : (
                                 <p className="text-[10px] text-slate-400 leading-relaxed">
-                                  Executes live DAX query (<code className="text-blue-600">VALUES</code>) against Power BI REST API to display distinct column values.
+                                  Click "Fetch Samples" to execute live DAX query against Power BI REST API and store distinct samples in Supabase.
                                 </p>
                               )}
                             </div>
@@ -1258,25 +1322,35 @@ export function DaxManagementPage() {
                         className="p-4 rounded-2xl border border-slate-200/80 hover:border-slate-300 hover:shadow-xs transition bg-slate-50/30 space-y-3"
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="flex items-center gap-2.5 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {it.isCustom ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                                <User className="h-2.5 w-2.5" />
+                                <span>Custom by User</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                                <Database className="h-2.5 w-2.5" />
+                                <span>Semantic Model</span>
+                              </span>
+                            )}
+
                             <span
                               className={clsx(
-                                "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase",
-                                it.isCustom
-                                  ? "bg-purple-100 text-purple-800"
-                                  : it.type === "Measure"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-emerald-100 text-emerald-800"
+                                "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                                it.type === "Measure"
+                                  ? "bg-blue-50 text-blue-700"
+                                  : "bg-emerald-50 text-emerald-700"
                               )}
                             >
-                              {it.isCustom ? "Custom DAX" : it.type}
+                              {it.type}
                             </span>
 
                             <span className="font-mono text-xs font-bold text-slate-900">
                               <HighlightText
                                 text={it.name}
                                 match={searchQuery}
-                                active={searchMode === "partial" || searchMode === "exact"}
+                                active={Boolean(searchQuery.trim())}
                               />
                             </span>
 
@@ -1357,6 +1431,9 @@ export function DaxManagementPage() {
                                 {String(v)}
                               </span>
                             ))}
+                            <span className="text-[9px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">
+                              Saved in DB
+                            </span>
                           </div>
                         )}
 
