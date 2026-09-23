@@ -367,8 +367,8 @@ export function DashboardLogModal({
             </div>
           ) : viewMode === "table" ? (
             <div className="mt-2 overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50/90 text-slate-700 font-bold border-b border-slate-200/90">
+              <table className="table table-zebra table-sm w-full text-left text-xs">
+                <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3 whitespace-nowrap">ครั้งที่</th>
                     <th className="py-2.5 px-3 whitespace-nowrap">วันและเวลาที่ Publish</th>

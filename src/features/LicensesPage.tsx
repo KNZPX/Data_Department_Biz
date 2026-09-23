@@ -326,8 +326,8 @@ export function LicensesPage() {
       ) : pageViewMode === "table" ? (
         /* Table View */
         <div className="overflow-x-auto rounded-3xl border border-slate-200/90 bg-white shadow-xs">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+          <table className="table table-zebra table-xs w-full text-left">
+            <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-3 whitespace-nowrap">#</th>
                 {activeColumns.map((col) => (

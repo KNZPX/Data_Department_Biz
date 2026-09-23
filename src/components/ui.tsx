@@ -1,8 +1,8 @@
 "use client";
 
 import { clsx } from "clsx";
-import { AlertCircle, Minus, Search, TrendingDown, TrendingUp, X, type LucideIcon } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { AlertCircle, Search, X, type LucideIcon } from "lucide-react";
+import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
@@ -20,19 +20,15 @@ export function Button({
   return (
     <button
       className={clsx(
-        "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold transition duration-150 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40",
-        size === "iconWide"
-          ? "h-9 w-9 px-0 sm:h-10 sm:w-auto sm:px-4"
-          : size === "icon"
-            ? "h-9 w-9 px-0 sm:h-10 sm:w-10"
-            : dense
-              ? "h-8 px-3.5 text-xs"
-              : "h-10 px-5 text-sm",
-        variant === "primary" && "bg-slate-900 text-white shadow-xs hover:bg-slate-800 active:bg-slate-950",
-        variant === "secondary" && "border border-slate-200/90 bg-white text-slate-800 shadow-xs hover:bg-slate-50 active:bg-slate-100",
-        variant === "danger" && "bg-rose-600 text-white shadow-xs hover:bg-rose-700 active:bg-rose-800",
-        variant === "gold" && "bg-amber-500 text-slate-950 shadow-xs hover:bg-amber-400 active:bg-amber-600",
-        variant === "ghost" && "text-slate-600 hover:bg-slate-200/60 hover:text-slate-900",
+        "btn rounded-full font-semibold transition duration-150 active:scale-[0.98]",
+        dense ? "btn-sm text-xs px-3.5" : "text-sm px-5",
+        size === "iconWide" && "h-9 w-9 p-0 sm:h-10 sm:w-auto sm:px-4",
+        size === "icon" && "h-9 w-9 p-0 sm:h-10 sm:w-10",
+        variant === "primary" && "btn-neutral text-white shadow-xs hover:bg-slate-800",
+        variant === "secondary" && "btn-outline border-slate-200 bg-white text-slate-800 hover:bg-slate-100 hover:border-slate-300",
+        variant === "danger" && "btn-error text-white shadow-xs hover:opacity-90",
+        variant === "gold" && "btn-warning text-slate-950 font-bold shadow-xs",
+        variant === "ghost" && "btn-ghost text-slate-600 hover:bg-slate-100 hover:text-slate-900",
         className,
       )}
       {...props}
@@ -50,11 +46,11 @@ export function IconButton({
     <button
       type="button"
       className={clsx(
-        "grid h-8 w-8 shrink-0 place-items-center rounded-full border shadow-xs transition duration-150 active:scale-[0.94]",
-        tone === "danger" && "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300",
-        tone === "edit" && "border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 hover:border-blue-300",
-        tone === "gold" && "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100",
-        tone === "default" && "border-slate-200/90 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900",
+        "btn btn-circle btn-sm shrink-0 shadow-2xs transition duration-150 active:scale-95",
+        tone === "danger" && "btn-error btn-soft text-rose-600 border border-rose-200",
+        tone === "edit" && "btn-info btn-soft text-blue-600 border border-blue-200",
+        tone === "gold" && "btn-warning btn-soft text-amber-700 border border-amber-300",
+        tone === "default" && "btn-ghost border border-slate-200 bg-white text-slate-500 hover:text-slate-900",
         className,
       )}
       {...props}
@@ -76,7 +72,7 @@ export function ViewToggle<T extends string>({
   compact?: boolean;
 }) {
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-full p-0.5 bg-slate-100">
+    <div className="inline-flex items-center gap-1 rounded-full p-1 bg-slate-100 border border-slate-200/60">
       {options.map((option) => {
         const Icon = option.icon;
         const active = option.value === value;
@@ -87,19 +83,19 @@ export function ViewToggle<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={clsx(
-              "inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition duration-150 active:scale-[0.96]",
+              "btn btn-sm rounded-full px-3.5 text-xs font-semibold border-none transition duration-150",
               active
-                ? "bg-slate-900 text-white shadow-xs"
-                : "text-slate-600 hover:bg-white/60 hover:text-slate-900",
+                ? "btn-neutral text-white shadow-xs"
+                : "btn-ghost text-slate-600 hover:bg-white/80 hover:text-slate-900",
             )}
           >
-            {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+            {Icon ? <Icon className="h-3.5 w-3.5 mr-1" /> : null}
             <span className={compact && Icon ? "hidden sm:inline" : undefined}>{option.label}</span>
             {option.count !== undefined ? (
               <span
                 className={clsx(
-                  "ml-1 inline-block rounded-full px-1.5 py-0.2 text-[10px]",
-                  active ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600",
+                  "badge badge-xs ml-1 font-mono font-bold",
+                  active ? "badge-primary text-white" : "badge-ghost text-slate-600",
                 )}
               >
                 {option.count}
@@ -130,11 +126,11 @@ export function Field({
   required?: boolean;
 }) {
   return (
-    <label className={clsx("grid min-w-0 font-medium text-slate-800", dense ? "gap-1 text-xs" : "gap-1.5 text-sm", className)}>
-      <span className="flex items-center gap-1 font-semibold text-slate-800">
-        <span>{label}</span>
+    <div className={clsx("form-control w-full min-w-0 font-medium text-slate-800", dense ? "gap-1 text-xs" : "gap-1.5 text-sm", className)}>
+      <label className="label py-0 justify-start gap-1 font-semibold text-slate-800">
+        <span className="label-text font-semibold text-slate-800">{label}</span>
         {required ? <span className="text-rose-500 font-bold">*</span> : null}
-      </span>
+      </label>
       {children}
       {hint && !error ? (
         <span className="text-[11px] font-normal text-slate-500 leading-tight">
@@ -147,7 +143,7 @@ export function Field({
           {error}
         </span>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -171,33 +167,31 @@ export function Input({
 
   if (Icon || rightElement || clearable) {
     return (
-      <div
+      <label
         className={clsx(
-          "relative flex items-center w-full min-w-0 rounded-full border border-slate-200/90 bg-white text-slate-900 shadow-xs transition duration-150 focus-within:border-slate-900 focus-within:ring-2 focus-within:ring-slate-900/5",
-          dense ? "h-8 px-3 text-xs" : "h-10 px-4 text-sm",
+          "input input-bordered flex items-center gap-2 rounded-full bg-white border-slate-200 text-slate-900 shadow-2xs transition focus-within:border-slate-800 focus-within:ring-2 focus-within:ring-slate-800/10",
+          dense ? "input-sm h-8 px-3 text-xs" : "h-10 px-4 text-sm",
           className,
         )}
       >
-        {Icon ? (
-          <Icon className={clsx("shrink-0 text-slate-400 mr-2", dense ? "h-3.5 w-3.5" : "h-4 w-4")} />
-        ) : null}
+        {Icon ? <Icon className={clsx("shrink-0 text-slate-400", dense ? "h-3.5 w-3.5" : "h-4 w-4")} /> : null}
         <input
           {...props}
           value={value}
-          className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400 text-slate-900 text-xs sm:text-sm"
+          className="grow bg-transparent text-slate-900 placeholder:text-slate-400 text-xs sm:text-sm outline-none"
         />
         {clearable && hasValue && onClear ? (
           <button
             type="button"
             onClick={onClear}
-            className="shrink-0 p-0.5 text-slate-400 hover:text-slate-700 rounded-full transition"
+            className="btn btn-ghost btn-circle btn-xs text-slate-400 hover:text-slate-700"
             title="Clear"
           >
-            <X className={dense ? "h-3 w-3" : "h-3.5 w-3.5"} />
+            <X className="h-3.5 w-3.5" />
           </button>
         ) : null}
-        {rightElement ? <div className="shrink-0 ml-1.5">{rightElement}</div> : null}
-      </div>
+        {rightElement ? <div className="shrink-0">{rightElement}</div> : null}
+      </label>
     );
   }
 
@@ -206,8 +200,8 @@ export function Input({
       {...props}
       value={value}
       className={clsx(
-        "w-full min-w-0 rounded-full border border-slate-200/90 bg-white text-slate-900 placeholder:text-slate-400 outline-none shadow-xs transition duration-150 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/5",
-        dense ? "h-8 px-3 text-xs" : "h-10 px-4 text-sm",
+        "input input-bordered w-full rounded-full bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 shadow-2xs transition focus:border-slate-800 focus:ring-2 focus:ring-slate-800/10",
+        dense ? "input-sm h-8 px-3 text-xs" : "h-10 px-4 text-sm",
         className,
       )}
     />
@@ -250,8 +244,8 @@ export function Select({
     <select
       {...props}
       className={clsx(
-        "w-full min-w-0 rounded-full border border-slate-200/90 bg-white text-slate-900 outline-none shadow-xs transition duration-150 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/5",
-        dense ? "h-8 px-2.5 text-xs" : "h-10 px-3.5 text-sm",
+        "select select-bordered w-full rounded-full bg-white border-slate-200 text-slate-900 shadow-2xs transition focus:border-slate-800",
+        dense ? "select-sm h-8 px-2.5 text-xs" : "h-10 px-3.5 text-sm",
         className,
       )}
     />
@@ -263,7 +257,7 @@ export function Textarea({ dense = false, ...props }: TextareaHTMLAttributes<HTM
     <textarea
       {...props}
       className={clsx(
-        "rounded-2xl border border-slate-200/90 bg-white text-slate-900 placeholder:text-slate-400 outline-none shadow-xs transition duration-150 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/5",
+        "textarea textarea-bordered w-full rounded-2xl bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 shadow-2xs transition focus:border-slate-800",
         dense ? "min-h-12 px-3 py-2 text-xs" : "min-h-24 px-3.5 py-2.5 text-sm",
         props.className,
       )}
@@ -272,7 +266,11 @@ export function Textarea({ dense = false, ...props }: TextareaHTMLAttributes<HTM
 }
 
 export function Panel({ children, className, dense = false }: { children: ReactNode; className?: string; dense?: boolean }) {
-  return <section className={clsx("rounded-3xl border border-slate-200/80 bg-white shadow-xs", dense ? "p-4 sm:p-5" : "p-5 sm:p-6", className)}>{children}</section>;
+  return (
+    <div className={clsx("card bg-white border border-slate-200/80 shadow-xs rounded-3xl", dense ? "p-4 sm:p-5" : "p-5 sm:p-6", className)}>
+      {children}
+    </div>
+  );
 }
 
 const subscribeNoop = () => () => {};
@@ -281,7 +279,7 @@ export function Modal({ className, children }: { className?: string; children: R
   const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
   if (!mounted) return null;
   return createPortal(
-    <div className={clsx("fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-900/50 p-2.5 backdrop-blur-xs transition-all sm:p-4", className)}>
+    <div className={clsx("modal modal-open fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-900/60 p-2.5 backdrop-blur-xs transition-all sm:p-4", className)}>
       {children}
     </div>,
     document.body
@@ -311,23 +309,27 @@ export function StatCard({
   return (
     <div
       className={clsx(
-        "grid gap-1.5 rounded-3xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-xs transition duration-200 hover:border-slate-300",
+        "card bg-white border border-slate-200/80 p-4 sm:p-5 shadow-2xs rounded-3xl transition duration-200 hover:border-slate-300 hover:shadow-xs",
         className,
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs sm:text-sm font-medium text-slate-500">{label}</div>
         {Icon ? (
-          <div className={clsx("grid h-8 w-8 shrink-0 place-items-center rounded-xl", toneBg[tone])}>
-            <Icon className="h-4 w-4" />
+          <div className={clsx("grid h-9 w-9 shrink-0 place-items-center rounded-2xl shadow-2xs", toneBg[tone])}>
+            <Icon className="h-4.5 w-4.5" />
           </div>
         ) : null}
       </div>
-      <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900">{value}</div>
+      <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 mt-1">{value}</div>
     </div>
   );
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{children}</div>;
+  return (
+    <div className="card border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center text-sm text-slate-500 rounded-3xl">
+      {children}
+    </div>
+  );
 }

@@ -138,7 +138,7 @@ export function LicenseImportModal({
                 </div>
 
                 <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-100 text-xs">
-                  <table className="w-full text-left">
+                  <table className="table table-zebra table-xs w-full text-left">
                     <thead className="sticky top-0 bg-slate-100 text-[11px] font-semibold text-slate-600">
                       <tr>
                         <th className="p-2">Name</th>
