@@ -11,7 +11,7 @@ export function BangkokHospitalLogo({
   className = "",
   size = "md",
   showText = true,
-  subtext = "Data Department · Power BI Portal",
+  subtext = "Enterprise Analytics Portal",
 }: LogoProps) {
   const iconSize = size === "sm" ? 28 : size === "lg" ? 44 : 36;
 

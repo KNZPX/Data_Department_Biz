@@ -246,9 +246,9 @@ export function DashboardLogModal({
           <div className="flex items-center gap-2 text-slate-700">
             <User className="h-4 w-4 shrink-0 text-slate-400" />
             <div className="min-w-0 truncate">
-              <span className="text-slate-400">ผู้รับผิดชอบ: </span>
+              <span className="text-slate-400">Responsible Owner: </span>
               <span className="font-semibold text-slate-800">
-                {item.responsibleUser || "ไม่ได้ระบุ"}
+                {item.responsibleUser || "Unassigned"}
               </span>
             </div>
           </div>
@@ -256,7 +256,7 @@ export function DashboardLogModal({
           <div className="flex items-center gap-2 text-slate-700">
             <Mail className="h-4 w-4 shrink-0 text-slate-400" />
             <div className="min-w-0 truncate font-mono text-[11px]">
-              <span className="text-slate-400 font-sans">อีเมล: </span>
+              <span className="text-slate-400 font-sans">Email: </span>
               <span className="text-slate-700">{item.responsibleEmail || "-"}</span>
             </div>
           </div>
@@ -264,7 +264,7 @@ export function DashboardLogModal({
           <div className="flex items-center gap-2 text-slate-700">
             <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
             <div className="min-w-0 truncate">
-              <span className="text-slate-400">วันที่ Publish ล่าสุด: </span>
+              <span className="text-slate-400">Last Published: </span>
               <span className="font-semibold text-slate-800">
                 {publishDateStr}
               </span>
@@ -274,7 +274,7 @@ export function DashboardLogModal({
           <div className="flex items-center gap-2 text-slate-700">
             <FileCode className="h-4 w-4 shrink-0 text-slate-400" />
             <div className="min-w-0 truncate font-mono text-[11px] text-slate-500" title={item.id}>
-              <span className="text-slate-400 font-sans">ID: </span>
+              <span className="text-slate-400 font-sans">Report ID: </span>
               <span>{item.id}</span>
             </div>
           </div>
@@ -283,19 +283,19 @@ export function DashboardLogModal({
         {/* Quick KPI Stats Summary */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
           <div className="rounded-2xl border border-[#002D72]/20 bg-[#002D72]/5 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-[#002D72] uppercase">เผยแพร่ทั้งหมด</div>
-            <div className="mt-0.5 text-base font-black text-[#002D72]">{totalPublishes} ครั้ง</div>
+            <div className="text-[10px] font-bold text-[#002D72] uppercase">Total Publishes</div>
+            <div className="mt-0.5 text-base font-black text-[#002D72]">{totalPublishes} times</div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-slate-500 uppercase">เผยแพร่ครั้งแรก</div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase">First Published</div>
             <div className="mt-0.5 text-[11px] font-bold text-slate-800 truncate">{firstPublishDateStr}</div>
           </div>
           <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/40 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-emerald-600 uppercase">เวอร์ชันล่าสุด</div>
+            <div className="text-[10px] font-bold text-emerald-600 uppercase">Latest Version</div>
             <div className="mt-0.5 text-[11px] font-bold text-emerald-900 truncate">{latestPublishDateStr}</div>
           </div>
           <div className="rounded-2xl border border-[#AB2328]/20 bg-[#AB2328]/5 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-[#AB2328] uppercase">ระบบบันทึก</div>
+            <div className="text-[10px] font-bold text-[#AB2328] uppercase">Audit Database</div>
             <div className="mt-0.5 text-[11px] font-bold text-[#AB2328]">Bangkok Hospital Cloud</div>
           </div>
         </div>
@@ -305,7 +305,7 @@ export function DashboardLogModal({
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-slate-500" />
-              <span>ประวัติการเผยแพร่ (Publish Version History)</span>
+              <span>Publish Version History</span>
             </h3>
 
             <div className="flex items-center gap-1 rounded-full bg-slate-100 p-0.5 border border-slate-200/80">
@@ -320,7 +320,7 @@ export function DashboardLogModal({
                 )}
               >
                 <Table className="h-3 w-3" />
-                <span>ตาราง (Table)</span>
+                <span>Table</span>
               </button>
               <button
                 type="button"
@@ -333,7 +333,7 @@ export function DashboardLogModal({
                 )}
               >
                 <List className="h-3 w-3" />
-                <span>ไทม์ไลน์ (Timeline)</span>
+                <span>Timeline</span>
               </button>
             </div>
           </div>
@@ -341,7 +341,7 @@ export function DashboardLogModal({
           {loading ? (
             <div className="grid place-items-center py-8 text-slate-400">
               <Loader2 className="h-5 w-5 animate-spin mb-1 text-slate-500" />
-              <span className="text-xs">กำลังโหลดบันทึกการเปลี่ยนแปลง...</span>
+              <span className="text-xs">Loading version changes...</span>
             </div>
           ) : logs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-amber-200 bg-amber-50/40 p-5 text-xs text-slate-600 space-y-2">
@@ -349,20 +349,20 @@ export function DashboardLogModal({
                 <span className="inline-flex items-center justify-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200">
                   CURRENT VERSION
                 </span>
-                <span>เวอร์ชันที่ใช้งานปัจจุบัน (Active Version)</span>
+                <span>Active Production Version</span>
               </div>
               <div className="grid grid-cols-1 gap-1 text-[11px] sm:grid-cols-2 text-slate-600 bg-white/70 p-3 rounded-2xl border border-slate-200/60">
                 <div>
-                  <span className="text-slate-400">เผยแพร่ล่าสุด: </span>
+                  <span className="text-slate-400">Last Published: </span>
                   <span className="font-semibold text-slate-900">{publishDateStr}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400">โดย: </span>
-                  <span className="font-semibold text-slate-900">{item.responsibleUser || "ไม่ได้ระบุ"}</span>
+                  <span className="text-slate-400">By: </span>
+                  <span className="font-semibold text-slate-900">{item.responsibleUser || "Unassigned"}</span>
                 </div>
               </div>
               <p className="text-[11px] text-slate-400">
-                บันทึกประวัติจะถูกสร้างขึ้นอัตโนมัติเมื่อตรวจพบการ Publish เวอร์ชันใหม่
+                Audit logs are recorded automatically when new report publishes are detected.
               </p>
             </div>
           ) : viewMode === "table" ? (
@@ -370,11 +370,11 @@ export function DashboardLogModal({
               <table className="table table-zebra table-sm w-full text-left text-xs">
                 <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
-                    <th className="py-2.5 px-3 whitespace-nowrap">ครั้งที่</th>
-                    <th className="py-2.5 px-3 whitespace-nowrap">วันและเวลาที่ Publish</th>
-                    <th className="py-2.5 px-3 whitespace-nowrap">ผู้เผยแพร่ (By)</th>
-                    <th className="py-2.5 px-3 whitespace-nowrap">กิจกรรม</th>
-                    <th className="py-2.5 px-3">รายละเอียดการเปลี่ยนแปลง</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Version</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Publish Timestamp</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Published By</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Activity</th>
+                    <th className="py-2.5 px-3">Summary of Changes</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -466,7 +466,7 @@ export function DashboardLogModal({
                       {v.author ? (
                         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
                           <User className="h-3 w-3 text-slate-400" />
-                          <span>เผยแพร่ / ดำเนินการโดย:</span>
+                          <span>Published / Action By:</span>
                           <span className="font-semibold text-slate-700">{v.author}</span>
                         </div>
                       ) : null}
@@ -481,7 +481,7 @@ export function DashboardLogModal({
         {/* Footer Actions */}
         <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-3.5">
           <Button type="button" variant="ghost" onClick={onClose}>
-            ปิดหน้าต่าง
+            Close
           </Button>
 
           {item.webUrl ? (
@@ -489,11 +489,11 @@ export function DashboardLogModal({
               href={item.webUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-amber-400/80 bg-amber-50 px-4 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100 shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-[#002D72] text-white px-4 py-2 text-xs font-bold hover:bg-[#001f52] transition shadow-xs"
             >
-              <Ticket className="h-4 w-4 text-amber-600" />
-              <span>เปิดดูบน Power BI</span>
-              <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+              <Ticket className="h-4 w-4 text-[#AB2328]" />
+              <span>Open on Power BI Service</span>
+              <ExternalLink className="h-3.5 w-3.5 opacity-90" />
             </a>
           ) : null}
         </div>

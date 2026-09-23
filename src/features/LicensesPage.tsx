@@ -168,12 +168,12 @@ export function LicensesPage() {
     return [
       { key: "site", header: "Site" },
       { key: "display_name", header: "Display Name" },
-      { key: "name_th", header: "ชื่อ (ไทย)" },
+      { key: "name_th", header: "Name (TH)" },
       { key: "ad_account", header: "AD Account" },
-      { key: "department_name", header: "แผนก" },
-      { key: "position_en", header: "ตำแหน่ง" },
-      { key: "license_type", header: "License" },
-      { key: "status", header: "สถานะ" },
+      { key: "department_name", header: "Department" },
+      { key: "position_en", header: "Position" },
+      { key: "license_type", header: "License Type" },
+      { key: "status", header: "Status" },
     ];
   }, [activeGroup]);
 
@@ -181,10 +181,10 @@ export function LicensesPage() {
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="ผู้ถือครอง License ทั้งหมด" value={stats.total} icon={Users} tone="gold" />
+        <StatCard label="Total License Holders" value={stats.total} icon={Users} tone="blue" />
         <StatCard label="Active Licenses" value={stats.active} icon={UserCheck} tone="emerald" />
-        <StatCard label="Premium Capacity" value={stats.capacityUsers} icon={ShieldCheck} tone="blue" />
-        <StatCard label="มี Security Groups" value={stats.phuketSecGroupUsers} icon={Lock} tone="default" />
+        <StatCard label="Premium Capacity Users" value={stats.capacityUsers} icon={ShieldCheck} tone="gold" />
+        <StatCard label="With Security Groups" value={stats.phuketSecGroupUsers} icon={Lock} tone="default" />
       </div>
 
       {/* Main Filter & Action Toolbar */}
@@ -200,7 +200,7 @@ export function LicensesPage() {
                 pageViewMode === "table" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
-              ตารางสิทธิ์ (32 Columns)
+              License Table (32 Columns)
             </button>
             <button
               type="button"
@@ -210,7 +210,7 @@ export function LicensesPage() {
                 pageViewMode === "permissions" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
-              วิเคราะห์สิทธิ์ (Permission Matrix)
+              Permission Matrix Analysis
             </button>
           </div>
 
@@ -221,8 +221,8 @@ export function LicensesPage() {
               dense
               onClick={() => setImportOpen(true)}
             >
-              <Upload className="h-3.5 w-3.5 text-blue-600" />
-              <span>นำเข้า Excel</span>
+              <Upload className="h-3.5 w-3.5 text-[#002D72]" />
+              <span>Import Excel</span>
             </Button>
             <Button
               type="button"
@@ -232,7 +232,7 @@ export function LicensesPage() {
               disabled={exporting || filteredLicenses.length === 0}
             >
               <Download className="h-3.5 w-3.5 text-emerald-600" />
-              <span>ส่งออก 32 Columns</span>
+              <span>Export 32 Columns</span>
             </Button>
             <Button
               type="button"
@@ -244,7 +244,7 @@ export function LicensesPage() {
               }}
             >
               <Plus className="h-3.5 w-3.5" />
-              <span>เพิ่มผู้ใช้ใหม่</span>
+              <span>Add User</span>
             </Button>
           </div>
         </div>
@@ -258,12 +258,12 @@ export function LicensesPage() {
               onClear={() => setSearch("")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="ค้นหาชื่อ, AD Account, อีเมล, แผนก, Person ID..."
+              placeholder="Search by name, AD account, email, department, person ID..."
             />
           </div>
           <div>
             <Select value={hospitalFilter} onChange={(e) => setHospitalFilter(e.target.value)}>
-              <option value="All">ทุกสาขา / Site (ทั้งหมด)</option>
+              <option value="All">All Hospital Sites / Branches</option>
               {COMMON_HOSPITALS.map((h) => (
                 <option key={h} value={h}>
                   {h}
@@ -273,7 +273,7 @@ export function LicensesPage() {
           </div>
           <div>
             <Select value={licenseTypeFilter} onChange={(e) => setLicenseTypeFilter(e.target.value)}>
-              <option value="All">ทุกประเภท License</option>
+              <option value="All">All License Types</option>
               {COMMON_LICENSE_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -286,14 +286,14 @@ export function LicensesPage() {
         {/* 32-Column Category Selector (Only in table mode) */}
         {pageViewMode === "table" ? (
           <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3 text-xs">
-            <span className="font-semibold text-slate-500 mr-1">มุมมองคอลัมน์:</span>
+            <span className="font-semibold text-slate-500 mr-1">Column Groups:</span>
             {[
-              { key: "overview", label: "ภาพรวม (Overview)" },
-              { key: "all", label: "ครบ 32 คอลัมน์ (All 32)" },
-              { key: "org", label: "1. โปรไฟล์พนักงาน (General)" },
-              { key: "creator", label: "2. ข้อมูลผู้ขอ (Creator)" },
-              { key: "license", label: "3. ประเภท License & Capacity" },
-              { key: "security", label: "4. กลุ่มความปลอดภัย (Security)" },
+              { key: "overview", label: "Overview" },
+              { key: "all", label: "All 32 Columns" },
+              { key: "org", label: "1. Profile (General)" },
+              { key: "creator", label: "2. Requestor (Creator)" },
+              { key: "license", label: "3. License & Capacity" },
+              { key: "security", label: "4. Security Groups" },
             ].map((g) => (
               <button
                 key={g.key}
@@ -316,12 +316,12 @@ export function LicensesPage() {
       {/* Main Content Area */}
       {loading ? (
         <div className="grid place-items-center py-16 text-slate-400">
-          <p className="text-sm font-medium">กำลังโหลดข้อมูลสิทธิ์ Power BI Licenses...</p>
+          <p className="text-sm font-medium">Loading Power BI License dataset...</p>
         </div>
       ) : filteredLicenses.length === 0 ? (
         <EmptyState>
-          <p className="text-base font-semibold text-slate-800">ไม่พบรายการสิทธิ์ License ที่ตรงกับเงื่อนไข</p>
-          <p className="mt-1 text-xs text-slate-500">สามารถคลิกปุ่ม &quot;นำเข้า Excel&quot; หรือ &quot;เพิ่มผู้ใช้ใหม่&quot; เพื่อเริ่มต้น</p>
+          <p className="text-base font-semibold text-slate-800">No license records match your criteria</p>
+          <p className="mt-1 text-xs text-slate-500">Click &quot;Import Excel&quot; or &quot;Add User&quot; to manage licenses</p>
         </EmptyState>
       ) : pageViewMode === "table" ? (
         /* Table View */
@@ -335,7 +335,7 @@ export function LicensesPage() {
                     {col.header}
                   </th>
                 ))}
-                <th className="py-3 px-3 text-right whitespace-nowrap">จัดการ</th>
+                <th className="py-3 px-3 text-right whitespace-nowrap">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -385,19 +385,19 @@ export function LicensesPage() {
                           setFormOpen(true);
                         }}
                         className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        title="แก้ไขสิทธิ์"
+                        title="Edit license"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm(`คุณแน่ใจว่าต้องการลบสิทธิ์ของ ${row.display_name}?`)) {
+                          if (confirm(`Are you sure you want to delete license for ${row.display_name}?`)) {
                             void handleDelete(row.id);
                           }
                         }}
                         className="rounded-full p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                        title="ลบรายการ"
+                        title="Delete user"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -434,7 +434,7 @@ export function LicensesPage() {
 
                   {/* Permissions Chips */}
                   <div className="mt-3 space-y-1.5">
-                    <span className="text-[10px] font-bold uppercase text-slate-400">Security Groups ที่ได้รับ:</span>
+                    <span className="text-[10px] font-bold uppercase text-slate-400">Assigned Security Groups:</span>
                     <div className="flex flex-wrap gap-1">
                       {perms.length > 0 ? (
                         perms.map((p) => (
@@ -449,14 +449,14 @@ export function LicensesPage() {
                           </span>
                         ))
                       ) : (
-                        <span className="text-xs text-slate-400 italic">ไม่มีกลุ่มความปลอดภัยพิเศษ</span>
+                        <span className="text-xs text-slate-400 italic">No specific security groups</span>
                       )}
                     </div>
                   </div>
 
                   {/* Workspaces accessible */}
                   <div className="mt-3 space-y-1.5">
-                    <span className="text-[10px] font-bold uppercase text-slate-400">Workspaces ที่เข้าถึงได้:</span>
+                    <span className="text-[10px] font-bold uppercase text-slate-400">Accessible Workspaces:</span>
                     <div className="flex flex-wrap gap-1">
                       {workspaces.map((w) => (
                         <span
@@ -478,9 +478,9 @@ export function LicensesPage() {
                       setEditingLicense(lic);
                       setFormOpen(true);
                     }}
-                    className="text-xs font-semibold text-blue-600 hover:underline"
+                    className="text-xs font-semibold text-[#002D72] hover:underline"
                   >
-                    แก้ไข
+                    Edit
                   </button>
                 </div>
               </Panel>

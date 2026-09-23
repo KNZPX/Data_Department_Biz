@@ -2,144 +2,117 @@
 
 import { useMemo, useState } from "react";
 import {
-  AlertTriangle,
+  AlertCircle,
   BarChart3,
   Calendar,
   Check,
+  Clock,
   Download,
   ExternalLink,
+  Folder,
+  FolderOpen,
   History,
+  Inbox,
   LayoutGrid,
-  List,
   Loader2,
+  Mail,
   RefreshCw,
   Search,
   Sparkles,
-  Table,
+  Ticket,
   User,
   X,
 } from "lucide-react";
 import { clsx } from "clsx";
-import { Button, EmptyState, Input, Modal, Panel, Select, StatCard } from "@/components/ui";
+import { Button, EmptyState, Input, Modal, Panel } from "@/components/ui";
 import { DashboardLogModal } from "@/components/powerbi/DashboardLogModal";
 import { TicketLinkButton } from "@/components/powerbi/TicketLinkButton";
 import { usePowerBiItems } from "@/lib/usePowerBiItems";
 import type { PowerBiItem } from "@/lib/powerbiTypes";
 import {
-  formatNumberRanges,
   groupByCodeSeries,
   groupBySiteGroup,
   groupByWorkspace,
   padCodeNumber,
-  siteGroupKeyForWorkspace,
   SITE_GROUP_KEYS,
+  siteGroupKeyForWorkspace,
   type CodeSeriesGroup,
   type SiteGroupKey,
 } from "@/lib/reportCodeSeries";
-
-function SeriesAvailabilityLine({
-  series,
-  onShowAvailable,
-}: {
-  series: CodeSeriesGroup;
-  onShowAvailable: (series: CodeSeriesGroup) => void;
-}) {
-  const tailFrom = series.max + 1;
-  const hasTail = tailFrom <= series.rangeMax;
-  return (
-    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed text-slate-500">
-      <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 font-mono font-semibold text-[#002D72] border border-[#002D72]/20">
-        {series.prefix}
-      </span>
-      <span>
-        last <span className="font-mono font-semibold text-slate-900">{padCodeNumber(series.max, series.numberWidth)}</span>
-      </span>
-      {series.gaps.length ? (
-        <>
-          <span>&middot;</span>
-          <button
-            type="button"
-            onClick={() => onShowAvailable(series)}
-            className="rounded-full bg-[#AB2328]/10 px-2 py-0.5 font-semibold text-[#AB2328] border border-[#AB2328]/20 underline decoration-dotted transition hover:bg-[#AB2328]/20"
-          >
-            ว่าง ({series.gaps.length})
-          </button>
-        </>
-      ) : null}
-      {hasTail ? (
-        <>
-          <span>&middot;</span>
-          <span className="font-semibold text-emerald-700">
-            ยังไม่ใช้ {padCodeNumber(tailFrom, series.numberWidth)}
-          </span>
-        </>
-      ) : null}
-    </div>
-  );
-}
 
 export function ReportsPage() {
   const [kind, setKind] = useState<"report" | "dashboard">("report");
   const endpoint = kind === "report" ? "/api/powerbi/reports" : "/api/powerbi/dashboards";
   const { state, refresh } = usePowerBiItems(endpoint);
 
-  const [query, setQuery] = useState("");
-  const [siteFilter, setSiteFilter] = useState<SiteGroupKey | "All">("All");
-  const [workspaceFilter, setWorkspaceFilter] = useState("All");
-  const [viewMode, setViewMode] = useState<"grouped" | "table">("grouped");
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
+  const [siteFilter, setSiteFilter] = useState<string>("All");
+  const [itemSearch, setItemSearch] = useState("");
   const [selectedLogItem, setSelectedLogItem] = useState<PowerBiItem | null>(null);
-  const [availablePopupSeries, setAvailablePopupSeries] = useState<CodeSeriesGroup | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const items = useMemo(() => (state.status === "ready" ? state.response.data : []), [state]);
 
-  const workspaces = useMemo(
-    () => Array.from(new Set(items.map((i) => i.workspaceName))).sort((a, b) => a.localeCompare(b)),
-    [items]
-  );
-
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items.filter((item) => {
-      if (siteFilter !== "All" && siteGroupKeyForWorkspace(item.workspaceName) !== siteFilter) return false;
-      if (workspaceFilter !== "All" && item.workspaceName !== workspaceFilter) return false;
-      if (!q) return true;
-      return (
-        item.name.toLowerCase().includes(q) ||
-        item.reportCode.toLowerCase().includes(q) ||
-        item.reportTitle.toLowerCase().includes(q) ||
-        item.workspaceName.toLowerCase().includes(q) ||
-        (item.responsibleUser && item.responsibleUser.toLowerCase().includes(q))
-      );
-    });
-  }, [items, query, siteFilter, workspaceFilter]);
-
-  const siteCounts = useMemo(() => {
-    const counts = new Map<SiteGroupKey, number>();
+  // Extract all distinct workspaces with counts
+  const workspaceMap = useMemo(() => {
+    const map = new Map<string, PowerBiItem[]>();
     for (const item of items) {
-      const key = siteGroupKeyForWorkspace(item.workspaceName);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const ws = item.workspaceName || "Default Workspace";
+      if (!map.has(ws)) map.set(ws, []);
+      map.get(ws)!.push(item);
     }
-    return counts;
+    return map;
   }, [items]);
 
-  const workspaceGroups = useMemo(() => groupByWorkspace(filteredItems), [filteredItems]);
-  const siteGroups = useMemo(() => groupBySiteGroup(workspaceGroups), [workspaceGroups]);
+  const allWorkspaceNames = useMemo(
+    () => Array.from(workspaceMap.keys()).sort((a, b) => a.localeCompare(b)),
+    [workspaceMap]
+  );
+
+  // Filter workspaces in left pane
+  const filteredWorkspaces = useMemo(() => {
+    const q = workspaceSearch.trim().toLowerCase();
+    return allWorkspaceNames.filter((ws) => {
+      const matchQuery = !q || ws.toLowerCase().includes(q);
+      if (!matchQuery) return false;
+      if (siteFilter === "All") return true;
+      const key = siteGroupKeyForWorkspace(ws);
+      if (siteFilter === "Other") return key === "Other";
+      return key === siteFilter || ws.toUpperCase().includes(siteFilter);
+    });
+  }, [allWorkspaceNames, workspaceSearch, siteFilter]);
+
+  // Selected workspace items filtered by query
+  const workspaceItems = useMemo(() => {
+    if (!selectedWorkspace) return [];
+    const list = workspaceMap.get(selectedWorkspace) || [];
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (i) =>
+        i.reportTitle.toLowerCase().includes(q) ||
+        (i.reportCode && i.reportCode.toLowerCase().includes(q)) ||
+        (i.responsibleUser && i.responsibleUser.toLowerCase().includes(q))
+    );
+  }, [workspaceMap, selectedWorkspace, itemSearch]);
 
   async function handleExport() {
+    if (!selectedWorkspace || workspaceItems.length === 0) return;
     setExporting(true);
     try {
       const res = await fetch("/api/powerbi/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, items: filteredItems }),
+        body: JSON.stringify({ kind, items: workspaceItems }),
       });
       if (!res.ok) throw new Error("Failed to export");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `powerbi-${kind}s-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const sanitized = selectedWorkspace.replace(/[^a-zA-Z0-9_-]/g, "_");
+      a.download = `powerbi-${sanitized}-${kind}s-${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -151,38 +124,10 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner / KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard
-          label="รายการทั้งหมด"
-          value={state.status === "loading" ? "..." : items.length}
-          icon={BarChart3}
-          tone="gold"
-        />
-        <StatCard
-          label="มีรหัสมาตรฐาน (Code)"
-          value={state.status === "loading" ? "..." : items.filter((i) => i.reportCode).length}
-          icon={Sparkles}
-          tone="blue"
-        />
-        <StatCard
-          label="จำนวน Workspaces"
-          value={state.status === "loading" ? "..." : workspaces.length}
-          icon={LayoutGrid}
-          tone="default"
-        />
-        <StatCard
-          label="แสดงอยู่บนหน้าจอ"
-          value={filteredItems.length}
-          icon={List}
-          tone="emerald"
-        />
-      </div>
-
-      {/* Main Filter & Action Controls */}
-      <Panel className="p-4 sm:p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-4">
+      {/* Top Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-3xl border border-slate-200/80 shadow-2xs">
+        <div className="flex items-center gap-2">
           {/* Entity Kind Toggle */}
           <div className="inline-flex rounded-full bg-slate-100 p-1 border border-slate-200">
             <button
@@ -193,7 +138,7 @@ export function ReportsPage() {
                 kind === "report" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
-              รายงาน (Reports)
+              Reports ({items.length})
             </button>
             <button
               type="button"
@@ -203,247 +148,263 @@ export function ReportsPage() {
                 kind === "dashboard" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
-              แดชบอร์ด (Dashboards)
+              Dashboards
             </button>
           </div>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              dense
-              onClick={() => refresh()}
-              disabled={state.status === "loading"}
-            >
-              <RefreshCw className={clsx("h-3.5 w-3.5", state.status === "loading" && "animate-spin text-[#002D72]")} />
-              <span>ซิงค์ข้อมูลสด (Sync)</span>
-            </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            dense
+            onClick={() => refresh()}
+            disabled={state.status === "loading"}
+          >
+            <RefreshCw className={clsx("h-3.5 w-3.5", state.status === "loading" && "animate-spin text-[#002D72]")} />
+            <span>Sync Catalog</span>
+          </Button>
+
+          {selectedWorkspace && (
             <Button
               type="button"
               variant="secondary"
               dense
               onClick={handleExport}
-              disabled={exporting || filteredItems.length === 0}
+              disabled={exporting || workspaceItems.length === 0}
             >
               <Download className="h-3.5 w-3.5 text-emerald-600" />
-              <span>ส่งออก Excel</span>
+              <span>Export Workspace Excel</span>
             </Button>
-          </div>
+          )}
         </div>
+      </div>
 
-        {/* Site Group Filter Pills */}
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
-          <span className="text-xs font-semibold text-slate-500 mr-1">กลุ่มสาขา (Sites):</span>
-          <button
-            type="button"
-            onClick={() => setSiteFilter("All")}
-            className={clsx(
-              "rounded-full px-3 py-1 text-xs font-semibold transition border",
-              siteFilter === "All"
-                ? "bg-[#002D72] text-white border-[#002D72] shadow-2xs"
-                : "bg-white text-slate-600 border-slate-200 hover:bg-[#002D72]/5 hover:text-[#002D72]"
-            )}
-          >
-            ทั้งหมด ({items.length})
-          </button>
-          {SITE_GROUP_KEYS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setSiteFilter(k)}
-              className={clsx(
-                "rounded-full px-3 py-1 text-xs font-semibold transition border",
-                siteFilter === k
-                  ? "bg-[#002D72] text-white border-[#002D72] shadow-2xs"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-[#002D72]/5 hover:text-[#002D72]"
+      {/* Main Mail Inbox 2-Pane Container */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 min-h-[680px]">
+        {/* LEFT PANE: Workspace Mailbox Folders (4 Cols) */}
+        <div className="md:col-span-4 lg:col-span-4 flex flex-col rounded-3xl border border-slate-200/90 bg-white p-4 shadow-xs">
+          {/* Folder Header */}
+          <div className="pb-3 border-b border-slate-100 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <Folder className="h-4 w-4 text-[#002D72]" />
+                <span>Workspaces ({allWorkspaceNames.length})</span>
+              </h2>
+              <span className="text-[11px] text-slate-400 font-mono">
+                {items.length} items
+              </span>
+            </div>
+
+            {/* Search Workspace Input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={workspaceSearch}
+                onChange={(e) => setWorkspaceSearch(e.target.value)}
+                placeholder="Filter workspaces..."
+                className="w-full rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-[#002D72] focus:ring-1 focus:ring-[#002D72]/20 outline-none"
+              />
+              {workspaceSearch && (
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceSearch("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               )}
-            >
-              {k} ({siteCounts.get(k) || 0})
-            </button>
-          ))}
-        </div>
+            </div>
 
-        {/* Search & Workspace Filter */}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <Input
-              icon={Search}
-              clearable
-              onClear={() => setQuery("")}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="ค้นหาตามรหัส (เช่น PKT-STG-001), ชื่อรายงาน, หรือชื่อผู้รับผิดชอบ..."
-            />
-          </div>
-          <div>
-            <Select value={workspaceFilter} onChange={(e) => setWorkspaceFilter(e.target.value)}>
-              <option value="All">ทุก Workspaces ({workspaces.length})</option>
-              {workspaces.map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
+            {/* Quick Site Filter Chips */}
+            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+              {(["All", "PKT", "BPK", "BSI", "DBK", "Other"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setSiteFilter(k)}
+                  className={clsx(
+                    "rounded-full px-2.5 py-0.5 text-[10px] font-bold transition border",
+                    siteFilter === k
+                      ? "bg-[#002D72] text-white border-[#002D72]"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  )}
+                >
+                  {k}
+                </button>
               ))}
-            </Select>
+            </div>
+          </div>
+
+          {/* Workspace Folders List */}
+          <div className="flex-1 overflow-y-auto mt-2 space-y-1 pr-1 max-h-[560px]">
+            {filteredWorkspaces.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400">
+                No matching workspace found
+              </div>
+            ) : (
+              filteredWorkspaces.map((ws) => {
+                const count = (workspaceMap.get(ws) || []).length;
+                const isSelected = selectedWorkspace === ws;
+                return (
+                  <button
+                    key={ws}
+                    type="button"
+                    onClick={() => setSelectedWorkspace(ws)}
+                    className={clsx(
+                      "w-full flex items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-xs transition duration-150 active:scale-[0.99]",
+                      isSelected
+                        ? "bg-[#002D72] text-white font-bold shadow-xs"
+                        : "text-slate-700 hover:bg-slate-100 hover:text-[#002D72]"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isSelected ? (
+                        <FolderOpen className="h-4 w-4 shrink-0 text-white" />
+                      ) : (
+                        <Folder className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-[#002D72]" />
+                      )}
+                      <span className="truncate">{ws}</span>
+                    </div>
+                    <span
+                      className={clsx(
+                        "rounded-full px-2 py-0.2 text-[10px] font-mono font-bold shrink-0",
+                        isSelected
+                          ? "bg-[#AB2328] text-white"
+                          : "bg-slate-100 text-slate-500"
+                      )}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
-      </Panel>
 
-      {/* Content Rendering */}
-      {state.status === "loading" ? (
-        <div className="grid place-items-center py-16 text-slate-400">
-          <Loader2 className="h-8 w-8 animate-spin text-amber-500 mb-2" />
-          <p className="text-sm font-medium">กำลังโหลดข้อมูลแคตตาล็อก Power BI...</p>
-        </div>
-      ) : filteredItems.length === 0 ? (
-        <EmptyState>
-          <p className="text-base font-semibold text-slate-800">ไม่พบรายงานที่ตรงกับเงื่อนไขการค้นหา</p>
-          <p className="mt-1 text-xs text-slate-500">ลองล้างตัวกรองหรือคำค้นหาเพื่อดูข้อมูลทั้งหมด</p>
-        </EmptyState>
-      ) : (
-        <div className="space-y-6">
-          {siteGroups.map((site) => (
-            <div key={site.key} className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[#002D72] text-white px-3 py-0.5 text-xs font-bold font-mono shadow-2xs">
-                  {site.key}
-                </span>
-                <h3 className="text-sm font-bold text-slate-800">
-                  {site.key === "Other" ? "Workspaces อื่นๆ" : `กลุ่มรายงานสาขา ${site.key}`}
-                </h3>
-                <span className="text-xs text-slate-400">({site.itemCount} รายการ)</span>
+        {/* RIGHT PANE: Mail Inbox Reports List (8 Cols) */}
+        <div className="md:col-span-8 lg:col-span-8 flex flex-col rounded-3xl border border-slate-200/90 bg-white p-5 shadow-xs">
+          {!selectedWorkspace ? (
+            /* Empty State: Prompt User to Select Workspace */
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center my-auto min-h-[400px]">
+              <div className="grid h-16 w-16 place-items-center rounded-3xl bg-[#002D72]/5 border border-[#002D72]/15 text-[#002D72] mb-4 shadow-sm">
+                <Inbox className="h-8 w-8" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">
+                Select a Workspace to view reports
+              </h3>
+              <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-slate-400">
+                Please select a hospital department or branch workspace from the left pane folder list to display its reports and dashboards in inbox view.
+              </p>
+            </div>
+          ) : (
+            /* Selected Workspace Content */
+            <div className="flex flex-col h-full space-y-4">
+              {/* Inbox Workspace Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-[#002D72] truncate max-w-md">
+                      {selectedWorkspace}
+                    </h3>
+                    <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 text-[10px] font-bold text-[#002D72] border border-[#002D72]/20">
+                      {workspaceItems.length} {kind === "report" ? "reports" : "dashboards"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Viewing certified analytics inside workspace
+                  </p>
+                </div>
+
+                {/* Filter within workspace */}
+                <div className="w-full sm:w-64">
+                  <Input
+                    icon={Search}
+                    clearable
+                    onClear={() => setItemSearch("")}
+                    value={itemSearch}
+                    onChange={(e) => setItemSearch(e.target.value)}
+                    placeholder="Search in this workspace..."
+                    dense
+                  />
+                </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                {site.workspaces.map((wg) => (
-                  <Panel key={wg.workspaceId} className="p-4 sm:p-5 flex flex-col justify-between">
-                    <div>
-                      {/* Workspace Header */}
-                      <div className="border-b border-slate-100 pb-2.5">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-bold text-[#002D72] truncate" title={wg.workspaceName}>
-                            {wg.workspaceName}
-                          </h4>
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                            {wg.items.length} รายการ
-                          </span>
+              {/* Mail Thread Style Report Items */}
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                {workspaceItems.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-slate-400">
+                    No reports match your search in this workspace.
+                  </div>
+                ) : (
+                  workspaceItems.map((item) => {
+                    const pubDate = item.lastPublish || item.lastModified;
+                    const dateFormatted = pubDate
+                      ? new Date(pubDate).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })
+                      : "-";
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="py-3 px-2 flex items-start sm:items-center justify-between gap-3 group hover:bg-[#002D72]/5 rounded-2xl transition duration-150"
+                      >
+                        {/* Left: Code badge & Subject/Title */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {item.reportCode ? (
+                              <span className="rounded-full bg-[#002D72]/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-[#002D72] border border-[#002D72]/20">
+                                {item.reportCode}
+                              </span>
+                            ) : null}
+                            <span className="text-xs sm:text-sm font-semibold text-slate-900 group-hover:text-[#002D72] transition">
+                              {item.reportTitle}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                            {item.responsibleUser ? (
+                              <span className="flex items-center gap-1">
+                                <User className="h-3 w-3 text-slate-400" />
+                                <span>{item.responsibleUser}</span>
+                              </span>
+                            ) : null}
+                            {pubDate ? (
+                              <span className="flex items-center gap-1 font-mono text-[10px] text-slate-400">
+                                <Calendar className="h-3 w-3 text-slate-400" />
+                                <span>{dateFormatted}</span>
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
 
-                        {/* Series Gap Analysis summary */}
-                        {wg.seriesGroups.length > 0 ? (
-                          <div className="mt-2 space-y-1">
-                            {wg.seriesGroups.map((sg) => (
-                              <SeriesAvailabilityLine
-                                key={sg.prefix}
-                                series={sg}
-                                onShowAvailable={(series) => setAvailablePopupSeries(series)}
-                              />
-                            ))}
-                          </div>
-                        ) : null}
+                        {/* Right: Quick Launch & Version History Actions */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLogItem(item)}
+                            title="View Publish Version History"
+                            className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-slate-200/60 hover:text-slate-800 transition"
+                          >
+                            <History className="h-4 w-4" />
+                          </button>
+
+                          <TicketLinkButton url={item.webUrl} dense />
+                        </div>
                       </div>
-
-                      {/* Items List */}
-                      <div className="mt-3 divide-y divide-slate-100">
-                        {wg.items.map((item) => {
-                          const pubDate = item.lastPublish || item.lastModified;
-                          return (
-                            <div
-                              key={item.id}
-                              className="py-2.5 flex items-start justify-between gap-2 group hover:bg-[#002D72]/5 rounded-xl px-2 -mx-2 transition"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  {item.reportCode ? (
-                                    <span className="rounded-full bg-[#002D72]/10 px-2 py-0.2 font-mono text-[11px] font-bold text-[#002D72] border border-[#002D72]/20">
-                                      {item.reportCode}
-                                    </span>
-                                  ) : null}
-                                  <span className="text-xs font-semibold text-slate-900 leading-snug">
-                                    {item.reportTitle}
-                                  </span>
-                                </div>
-
-                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
-                                  {item.responsibleUser ? (
-                                    <span className="flex items-center gap-1">
-                                      <User className="h-3 w-3 text-slate-400" />
-                                      <span>{item.responsibleUser}</span>
-                                    </span>
-                                  ) : null}
-                                  {pubDate ? (
-                                    <span className="flex items-center gap-1 font-mono text-[10px]">
-                                      <Calendar className="h-3 w-3 text-slate-400" />
-                                      <span>{new Date(pubDate).toLocaleDateString("th-TH")}</span>
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0 self-center">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedLogItem(item)}
-                                  className="grid h-7 w-7 place-items-center rounded-full text-slate-400 hover:bg-slate-200/60 hover:text-slate-800 transition"
-                                  title="ดูประวัติการ Publish / Version History"
-                                >
-                                  <History className="h-3.5 w-3.5" />
-                                </button>
-                                <TicketLinkButton url={item.webUrl} dense />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </Panel>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </div>
-          ))}
+          )}
         </div>
-      )}
-
-      {/* Available Codes Gap Popup Modal */}
-      {availablePopupSeries ? (
-        <Modal className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4 backdrop-blur-xs">
-          <Panel className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  รหัสที่ยังว่าง ({availablePopupSeries.prefix})
-                </h3>
-                <p className="text-xs text-slate-500">
-                  สามารถนำรหัสเหล่านี้ไปตั้งชื่อรายงานใหม่ได้
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAvailablePopupSeries(null)}
-                className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="mt-4 max-h-60 overflow-y-auto font-mono text-xs">
-              <div className="flex flex-wrap gap-1.5">
-                {availablePopupSeries.gaps.map((n) => (
-                  <span
-                    key={n}
-                    className="rounded-full bg-[#AB2328]/10 px-2.5 py-1 text-[#AB2328] font-bold border border-[#AB2328]/20"
-                  >
-                    {availablePopupSeries.prefix}-{padCodeNumber(n, availablePopupSeries.numberWidth)}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4 flex justify-end">
-              <Button type="button" variant="secondary" dense onClick={() => setAvailablePopupSeries(null)}>
-                ปิด
-              </Button>
-            </div>
-          </Panel>
-        </Modal>
-      ) : null}
+      </div>
 
       {/* Item Publish Version Log Modal */}
       {selectedLogItem ? (

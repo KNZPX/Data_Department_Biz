@@ -4,14 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import {
-  BarChart3,
+  ChevronLeft,
+  ChevronRight,
   Database,
   History,
+  Inbox,
   KeyRound,
+  LayoutDashboard,
   LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   ShieldCheck,
   User,
+  X,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { BangkokHospitalLogo } from "@/components/brand/BangkokHospitalLogo";
@@ -23,6 +30,24 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const { user, dbProvider, logout, refreshAuth } = useAuth();
   const [tokenOpen, setTokenOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [collapsed, setCollapsed] = useState<boolean>(false);
+  const [mobileOpen, setMobileOpen] = useState<boolean>(false);
+
+  // Load saved sidebar state
+  useEffect(() => {
+    const saved = localStorage.getItem("portal_sidebar_collapsed");
+    if (saved !== null) {
+      setCollapsed(saved === "true");
+    }
+  }, []);
+
+  function toggleSidebar() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("portal_sidebar_collapsed", String(next));
+      return next;
+    });
+  }
 
   useEffect(() => {
     void checkUnreadLogs();
@@ -45,106 +70,71 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }
 
   const navItems = [
-    { href: "/", label: "รายงาน & แดชบอร์ด", icon: BarChart3, exact: true },
-    { href: "/licenses", label: "จัดการไลเซนส์ (32 Columns)", icon: ShieldCheck },
-    { href: "/changelog", label: "ประวัติการเผยแพร่", icon: History, count: unreadCount },
-    { href: "/settings", label: "ตั้งค่า & ฐานข้อมูล", icon: Settings },
+    { href: "/", label: "Portal Hub", icon: LayoutDashboard, exact: true },
+    { href: "/reports", label: "Workspaces & Reports", icon: Inbox },
+    { href: "/licenses", label: "License Manager (32 Col)", icon: ShieldCheck },
+    { href: "/changelog", label: "Publish History", icon: History, count: unreadCount },
+    { href: "/settings", label: "Settings & DB", icon: Settings },
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
-      {/* Brand CI Top Accent Bar */}
-      <div className="h-1 bg-gradient-to-r from-[#002D72] via-[#002D72] to-[#AB2328]" />
+    <div className="flex min-h-screen bg-slate-50 text-slate-900 selection:bg-[#002D72] selection:text-white">
+      {/* Mobile Drawer Backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
 
-      {/* Top Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2.5 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="group transition hover:opacity-90">
-              <BangkokHospitalLogo size="md" subtext="Data Department · Power BI Portal" />
-            </Link>
-          </div>
+      {/* Sidebar Navigation */}
+      <aside
+        className={clsx(
+          "fixed top-0 bottom-0 left-0 z-50 flex flex-col border-r border-slate-200/80 bg-white transition-all duration-300 ease-in-out md:translate-x-0",
+          collapsed ? "w-20" : "w-64",
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        )}
+      >
+        {/* Brand Top Accent Stripe */}
+        <div className="h-1 w-full bg-gradient-to-r from-[#002D72] via-[#002D72] to-[#AB2328]" />
 
-          {/* Navigation Links */}
-          <nav className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
-              const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={clsx(
-                    "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition duration-150 active:scale-95",
-                    active
-                      ? "bg-[#002D72] text-white shadow-xs"
-                      : "text-slate-600 hover:bg-[#002D72]/5 hover:text-[#002D72]"
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span>{item.label}</span>
-                  {item.count && item.count > 0 ? (
-                    <span className="ml-1 rounded-full bg-[#AB2328] px-1.5 py-0.2 text-[10px] font-bold text-white shadow-2xs">
-                      {item.count}
-                    </span>
-                  ) : null}
-                </Link>
-              );
-            })}
-          </nav>
+        {/* Sidebar Header & Brand */}
+        <div className="flex h-16 items-center justify-between px-4 border-b border-slate-100">
+          <Link
+            href="/"
+            onClick={() => setMobileOpen(false)}
+            className="flex items-center gap-2 overflow-hidden py-1 transition hover:opacity-90"
+            title="Bangkok Hospital Enterprise Analytics Portal"
+          >
+            {collapsed ? (
+              <BangkokHospitalLogo size="md" showText={false} />
+            ) : (
+              <BangkokHospitalLogo size="sm" showText={true} subtext="Enterprise Analytics Portal" />
+            )}
+          </Link>
 
-          {/* User Profile & Quick Status Tools */}
-          <div className="flex items-center gap-2">
-            {/* Database Engine Pill */}
-            <div className="hidden lg:flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600 border border-slate-200/80">
-              <Database className="h-3 w-3 text-[#002D72]" />
-              <span>DB:</span>
-              <span className="font-bold text-[#002D72] uppercase font-mono">
-                {dbProvider === "supabase" ? "Supabase (Cloud)" : "SQLite (Local)"}
-              </span>
-            </div>
+          {/* Expand / Collapse Button for Desktop */}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            title={collapsed ? "Expand sidebar" : "Hide / Collapse sidebar"}
+            className="hidden md:grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-[#002D72] transition"
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
 
-            {/* Authenticated Microsoft User Badge */}
-            {user ? (
-              <div
-                title={user.email}
-                className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 shadow-2xs"
-              >
-                <div className="grid h-5 w-5 place-items-center rounded-full bg-[#002D72] text-[10px] font-bold text-white">
-                  {user.name ? user.name.slice(0, 1).toUpperCase() : <User className="h-3 w-3" />}
-                </div>
-                <div className="flex flex-col text-left leading-tight">
-                  <span className="font-bold text-[#002D72] max-w-[140px] truncate">{user.name}</span>
-                  <span className="text-[9px] text-slate-400 max-w-[140px] truncate font-mono">{user.email}</span>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Token details button */}
-            <button
-              type="button"
-              onClick={() => setTokenOpen(true)}
-              title="ตรวจสอบหรือคัดลอก Access Token"
-              className="grid h-8 w-8 place-items-center rounded-full text-slate-500 hover:bg-[#002D72]/10 hover:text-[#002D72] transition border border-transparent hover:border-slate-200"
-            >
-              <KeyRound className="h-4 w-4" />
-            </button>
-
-            {/* Sign Out Button */}
-            <button
-              type="button"
-              onClick={() => logout()}
-              title="ออกจากระบบ"
-              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 hover:border-[#AB2328]/40 hover:bg-[#AB2328]/5 hover:text-[#AB2328] transition shadow-2xs active:scale-95"
-            >
-              <LogOut className="h-3.5 w-3.5 text-slate-400 group-hover:text-[#AB2328]" />
-              <span className="hidden sm:inline">ออกจากระบบ</span>
-            </button>
-          </div>
+          {/* Close Button for Mobile */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="grid md:hidden h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        {/* Mobile Navigation bar */}
-        <div className="flex md:hidden border-t border-slate-100 px-4 py-2 gap-1 overflow-x-auto bg-white">
+        {/* Navigation Items */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
           {navItems.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
             const Icon = item.icon;
@@ -152,44 +142,158 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setMobileOpen(false)}
+                title={collapsed ? item.label : undefined}
                 className={clsx(
-                  "flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold whitespace-nowrap transition",
+                  "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-xs font-semibold transition duration-150 active:scale-[0.98]",
                   active
-                    ? "bg-[#002D72] text-white"
-                    : "text-slate-600 hover:bg-[#002D72]/5 hover:text-[#002D72]"
+                    ? "bg-[#002D72] text-white shadow-xs"
+                    : "text-slate-600 hover:bg-[#002D72]/5 hover:text-[#002D72]",
+                  collapsed && "justify-center px-0"
                 )}
               >
-                <Icon className="h-3 w-3" />
-                <span>{item.label}</span>
+                <Icon className={clsx("h-4 w-4 shrink-0 transition-transform group-hover:scale-110", active ? "text-white" : "text-slate-500 group-hover:text-[#002D72]")} />
+                {!collapsed && <span className="truncate">{item.label}</span>}
                 {item.count && item.count > 0 ? (
-                  <span className="rounded-full bg-[#AB2328] px-1.5 py-0.2 text-[9px] font-bold text-white">
+                  <span
+                    className={clsx(
+                      "rounded-full bg-[#AB2328] px-1.5 py-0.2 text-[10px] font-bold text-white shadow-2xs",
+                      collapsed ? "absolute top-1 right-2" : "ml-auto"
+                    )}
+                  >
                     {item.count}
                   </span>
                 ) : null}
               </Link>
             );
           })}
+        </nav>
+
+        {/* Sidebar Footer: User profile, DB Indicator, Sign Out */}
+        <div className="border-t border-slate-100 bg-slate-50/60 p-3 space-y-2">
+          {/* User Profile Card */}
+          {user ? (
+            <div
+              title={user.email}
+              className={clsx(
+                "flex items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-2 text-xs shadow-2xs",
+                collapsed ? "justify-center p-1.5" : ""
+              )}
+            >
+              <div className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-[#002D72] text-xs font-bold text-white shadow-xs">
+                {user.name ? user.name.slice(0, 1).toUpperCase() : <User className="h-3.5 w-3.5" />}
+              </div>
+              {!collapsed && (
+                <div className="flex flex-col min-w-0 flex-1 leading-tight">
+                  <span className="font-bold text-[#002D72] truncate">{user.name}</span>
+                  <span className="text-[10px] text-slate-400 truncate font-mono">{user.email}</span>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {/* Database & Quick Action Buttons */}
+          <div className={clsx("flex items-center gap-1.5", collapsed ? "flex-col" : "justify-between")}>
+            {/* DB Indicator */}
+            {!collapsed && (
+              <div className="flex items-center gap-1.5 px-1 text-[10px] font-mono text-slate-500">
+                <Database className="h-3 w-3 text-[#002D72]" />
+                <span className="font-semibold text-slate-700 uppercase">
+                  {dbProvider === "supabase" ? "Supabase Cloud" : "SQLite Local"}
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1">
+              {/* Access Token Inspector */}
+              <button
+                type="button"
+                onClick={() => setTokenOpen(true)}
+                title="Inspect or Copy Access Token"
+                className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-[#002D72]/10 hover:text-[#002D72] transition"
+              >
+                <KeyRound className="h-4 w-4" />
+              </button>
+
+              {/* Sign Out */}
+              <button
+                type="button"
+                onClick={() => logout()}
+                title="Sign out of Microsoft 365"
+                className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 hover:bg-[#AB2328]/10 hover:text-[#AB2328] transition"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      {/* Main Content Area */}
-      <main className="mx-auto flex-1 w-full max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+      {/* Main Content Layout */}
+      <div
+        className={clsx(
+          "flex min-h-screen flex-1 flex-col transition-all duration-300 ease-in-out",
+          collapsed ? "md:pl-20" : "md:pl-64"
+        )}
+      >
+        {/* Top Header Bar for Mobile & Breadcrumbs */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur-md sm:px-6">
+          <div className="flex items-center gap-3">
+            {/* Mobile Hamburger Button */}
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              className="grid md:hidden h-8 w-8 place-items-center rounded-xl text-slate-600 hover:bg-slate-100"
+              aria-label="Open sidebar menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
 
-      {/* Bangkok Hospital Brand Footer */}
-      <footer className="mt-auto border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500">
-        <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            {/* Breadcrumb / Title */}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-bold text-[#002D72]">BANGKOK HOSPITAL</span>
+              <span className="text-slate-300">/</span>
+              <span className="text-slate-500 font-medium">
+                {pathname === "/"
+                  ? "Portal Hub"
+                  : pathname.startsWith("/reports")
+                  ? "Workspaces & Reports Inbox"
+                  : pathname.startsWith("/licenses")
+                  ? "Power BI Licenses (32 Columns)"
+                  : pathname.startsWith("/changelog")
+                  ? "Version History"
+                  : "Settings"}
+              </span>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-[#002D72]">BANGKOK HOSPITAL</span>
-            <span className="text-slate-300">|</span>
-            <span className="text-slate-500 font-medium">พัฒนาไม่หยุด สู่ขีดสุดการดูแล</span>
+            <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-[#002D72]/5 px-2.5 py-0.5 text-[10px] font-semibold text-[#002D72] border border-[#002D72]/15">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>BDMS Connected</span>
+            </span>
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-400">
-            <span>BDMS Data Department · Power BI Portal</span>
-            <span>•</span>
-            <span>Healthcare Analytics Platform</span>
+        </header>
+
+        {/* Page Content Body */}
+        <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          {children}
+        </main>
+
+        {/* Global Footer */}
+        <footer className="border-t border-slate-200/80 bg-white py-4 text-center text-xs text-slate-400">
+          <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px]">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-[#002D72]">BANGKOK HOSPITAL</span>
+              <span>&bull;</span>
+              <span>Continuous development towards the pinnacle of care</span>
+            </div>
+            <div>
+              <span>BDMS Data Department &bull; Enterprise Analytics Platform</span>
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      </div>
 
       <TokenModal
         isOpen={tokenOpen}

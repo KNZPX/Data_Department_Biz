@@ -123,8 +123,8 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div>
-            <h3 className="text-base font-bold text-slate-800">กำลังตรวจสอบสิทธิ์การเข้าใช้งาน...</h3>
-            <p className="text-xs text-slate-400">Power BI Enterprise Portal</p>
+            <h3 className="text-base font-bold text-slate-800">Verifying access authorization...</h3>
+            <p className="text-xs text-slate-400">Power BI Enterprise Analytics Portal</p>
           </div>
         </div>
       </div>
@@ -148,7 +148,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         {/* Top Header Branding */}
         <header className="relative z-10 mx-auto w-full max-w-7xl px-6 py-6 sm:px-10">
           <div className="flex items-center justify-between">
-            <BangkokHospitalLogo size="md" subtext="Data Department · Power BI Portal" />
+            <BangkokHospitalLogo size="md" subtext="Enterprise Analytics Portal" />
             <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3.5 py-1 text-[11px] font-medium text-slate-600 shadow-2xs backdrop-blur-xs">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
               <span>Bangkok Dusit Medical Services (BDMS)</span>
@@ -168,14 +168,14 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                 <Lock className="h-6 w-6 text-[#002D72]" />
               </div>
               <h1 className="text-xl font-bold tracking-tight text-[#002D72] sm:text-2xl">
-                เข้าสู่ระบบสารสนเทศองค์กร
+                Enterprise Sign In
               </h1>
               <p className="mt-1.5 text-xs text-slate-500">
                 Bangkok Hospital Analytics & License Management
               </p>
               <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#AB2328]/10 px-3 py-0.5 text-[11px] font-semibold text-[#AB2328] border border-[#AB2328]/20">
                 <Sparkles className="h-3 w-3" />
-                <span>พัฒนาไม่หยุด สู่ขีดสุดการดูแล</span>
+                <span>Continuous development towards the pinnacle of care</span>
               </div>
             </div>
 
@@ -185,7 +185,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                 <div className="flex items-start gap-2.5">
                   <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
                   <div>
-                    <span className="font-bold">เกิดข้อผิดพลาดในการเข้าสู่ระบบ:</span>
+                    <span className="font-bold">Authentication error:</span>
                     <p className="mt-1 text-[11px] leading-relaxed text-rose-700">{authError}</p>
                   </div>
                 </div>
@@ -205,12 +205,12 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                   <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
                   <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
                 </svg>
-                <span>เข้าสู่ระบบด้วย Microsoft 365</span>
+                <span>Sign in with Microsoft 365</span>
               </a>
 
               <div className="flex items-center justify-center gap-1.5 pt-0.5 text-[11px] text-slate-500">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                <span>ยืนยันตัวตนปลอดภัยผ่าน Microsoft Entra ID (BDMS Account)</span>
+                <span>Secured via Microsoft Entra ID (BDMS Account)</span>
               </div>
             </div>
 
@@ -223,7 +223,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
               >
                 <span className="flex items-center gap-1.5">
                   <KeyRound className="h-3.5 w-3.5 text-slate-400" />
-                  <span>ตัวเลือกผู้ดูแลระบบ (Manual Token Fallback)</span>
+                  <span>Administrator Access (Manual Token Fallback)</span>
                 </span>
                 <ChevronDown className={`h-4 w-4 transition duration-150 ${manualOpen ? "rotate-180" : ""}`} />
               </button>
@@ -231,11 +231,11 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
               {manualOpen ? (
                 <div className="mt-3 space-y-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs animate-in fade-in duration-150">
                   <p className="text-[11px] text-slate-600">
-                    กรณีไม่สามารถเชื่อมต่อ Microsoft Online ได้ชั่วคราว สามารถวาง Access Token (Bearer) เพื่อเข้าใช้งาน:
+                    If Microsoft Online is temporarily unreachable, you may paste a valid Power BI Bearer Token:
                   </p>
                   <Textarea
                     rows={3}
-                    placeholder="วาง Bearer eyJhbGciOi..."
+                    placeholder="Paste Bearer eyJhbGciOi..."
                     value={manualToken}
                     onChange={(e) => setManualToken(e.target.value)}
                     className="font-mono text-[11px] bg-white border-slate-200 text-slate-800 placeholder:text-slate-400"
@@ -252,7 +252,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                       onClick={handleSaveManualToken}
                     >
                       {manualSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                      <span>บันทึก Token เข้าสู่ระบบ</span>
+                      <span>Save Token & Sign In</span>
                     </Button>
                   </div>
                 </div>
@@ -270,7 +270,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
               </span>
               <span className="flex items-center gap-1 text-emerald-700 font-medium">
                 <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                <span>พร้อมใช้งาน</span>
+                <span>Connected & Ready</span>
               </span>
             </div>
           </div>
@@ -279,7 +279,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         {/* Brand Footer */}
         <footer className="relative z-10 px-6 py-5 text-center text-xs text-slate-400">
           <p>
-            Bangkok Hospital &bull; โรงพยาบาลกรุงเทพ &bull; สำนักบริหารข้อมูลและระบบสารสนเทศ (BDMS)
+            Bangkok Hospital &bull; BDMS Data Department &bull; Enterprise Analytics Platform
           </p>
         </footer>
       </div>

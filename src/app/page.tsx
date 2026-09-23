@@ -1,5 +1,5 @@
-import { ReportsPage } from "@/features/ReportsPage";
+import { PortalPage } from "@/features/PortalPage";
 
 export default function HomePage() {
-  return <ReportsPage />;
+  return <PortalPage />;
 }

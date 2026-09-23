@@ -75,10 +75,10 @@ export function ChangeLogPage() {
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="ประวัติบันทึกทั้งหมด" value={logs.length} icon={History} tone="gold" />
-        <StatCard label="การ Publish เวอร์ชันใหม่" value={publishCount} icon={Clock} tone="emerald" />
-        <StatCard label="การแก้ไขทั่วไป" value={logs.length - publishCount} icon={Filter} tone="blue" />
-        <StatCard label="แสดงอยู่บนหน้าจอ" value={filteredLogs.length} icon={Search} tone="default" />
+        <StatCard label="Total Audit Events" value={logs.length} icon={History} tone="blue" />
+        <StatCard label="New Version Publishes" value={publishCount} icon={Clock} tone="gold" />
+        <StatCard label="Metadata Updates" value={logs.length - publishCount} icon={Filter} tone="default" />
+        <StatCard label="Displayed Logs" value={filteredLogs.length} icon={Search} tone="emerald" />
       </div>
 
       {/* Filter Bar */}
@@ -93,7 +93,7 @@ export function ChangeLogPage() {
                 actionFilter === "all" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
-              ทั้งหมด ({logs.length})
+              All Events ({logs.length})
             </button>
             <button
               type="button"
@@ -103,7 +103,7 @@ export function ChangeLogPage() {
                 actionFilter === "publish" ? "bg-[#AB2328] text-white shadow-xs" : "text-slate-600 hover:text-[#AB2328]"
               )}
             >
-              เฉพาะ Publish Version ({publishCount})
+              Publishes Only ({publishCount})
             </button>
             <button
               type="button"
@@ -113,13 +113,13 @@ export function ChangeLogPage() {
                 actionFilter === "update" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
-              การแก้ไขข้อมูล ({logs.length - publishCount})
+              Updates Only ({logs.length - publishCount})
             </button>
           </div>
 
           <Button type="button" variant="secondary" dense onClick={fetchLogs}>
             <RefreshCw className={clsx("h-3.5 w-3.5", loading && "animate-spin text-[#002D72]")} />
-            <span>รีเฟรชประวัติ</span>
+            <span>Refresh Logs</span>
           </Button>
         </div>
 
@@ -130,7 +130,7 @@ export function ChangeLogPage() {
             onClear={() => setQuery("")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="ค้นหาชื่อรายงาน, รหัส, หรือชื่อผู้เผยแพร่..."
+            placeholder="Search report title, code, or publisher name..."
           />
         </div>
       </Panel>
@@ -139,13 +139,13 @@ export function ChangeLogPage() {
       {loading ? (
         <div className="grid place-items-center py-16 text-slate-400">
           <Loader2 className="h-8 w-8 animate-spin text-[#002D72] mb-2" />
-          <p className="text-sm font-medium">กำลังโหลดประวัติการเปลี่ยนแปลง...</p>
+          <p className="text-sm font-medium">Loading change log stream...</p>
         </div>
       ) : filteredLogs.length === 0 ? (
         <EmptyState>
-          <p className="text-base font-semibold text-slate-800">ไม่พบบันทึกประวัติที่ตรงกับเงื่อนไข</p>
+          <p className="text-base font-semibold text-slate-800">No change log events found</p>
           <p className="mt-1 text-xs text-slate-500">
-            ระบบจะบันทึกประวัติอัตโนมัติเมื่อมีการซิงค์ข้อมูลใหม่จาก Power BI REST API
+            Audit logs are recorded automatically when items sync with Power BI REST API
           </p>
         </EmptyState>
       ) : (
@@ -155,7 +155,7 @@ export function ChangeLogPage() {
               log.summary.toLowerCase().includes("publish") || log.summary.includes("เผยแพร่");
             const date = new Date(log.changed_at);
             const dateStr = !isNaN(date.getTime())
-              ? date.toLocaleString("th-TH", {
+              ? date.toLocaleString("en-US", {
                   day: "numeric",
                   month: "short",
                   year: "numeric",
