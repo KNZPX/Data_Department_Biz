@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.bun
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# environment files
+.env
+.env*.local
+
+# SQLite database & journals
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# debug logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
