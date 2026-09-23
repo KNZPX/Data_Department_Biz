@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import {
   AlertCircle,
   BarChart3,
@@ -43,6 +43,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export function LoginGate({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -131,7 +132,24 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 2. Unauthenticated: Show Biz-Analytic Microsoft Login Gatekeeper
+  // 2. On Landing Page (/), allow rendering so Full-page Vertical Scroll with Login Section 1 is shown
+  if (pathname === "/") {
+    return (
+      <AuthContext.Provider
+        value={{
+          authenticated,
+          user,
+          dbProvider,
+          refreshAuth: checkAuth,
+          logout: handleLogout,
+        }}
+      >
+        {children}
+      </AuthContext.Provider>
+    );
+  }
+
+  // 3. Unauthenticated on protected routes (/reports, /settings): Show Gatekeeper
   if (!authenticated) {
     return (
       <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-b from-slate-50 via-white to-amber-50/20 text-slate-800 selection:bg-[#B45309] selection:text-white">

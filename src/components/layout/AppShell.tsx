@@ -75,6 +75,20 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 
+  // Landing Page (/): Render full-viewport edge-to-edge container for Full-page Vertical Scroll
+  if (pathname === "/") {
+    return (
+      <div className="relative h-screen h-[100dvh] w-full overflow-hidden bg-[#F4F6F8] text-[#1C252E] selection:bg-[#B45309] selection:text-white">
+        {children}
+        <TokenModal
+          isOpen={tokenOpen}
+          onClose={() => setTokenOpen(false)}
+          onSuccess={() => refreshAuth()}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-[#F4F6F8] text-[#1C252E] selection:bg-[#B45309] selection:text-white">
       {/* Mobile Drawer Backdrop */}
