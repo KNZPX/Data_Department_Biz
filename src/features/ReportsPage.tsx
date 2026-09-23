@@ -48,7 +48,7 @@ function SeriesAvailabilityLine({
   const hasTail = tailFrom <= series.rangeMax;
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed text-slate-500">
-      <span className="rounded-full bg-blue-50 px-2 py-0.5 font-mono font-semibold text-blue-700 border border-blue-200">
+      <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 font-mono font-semibold text-[#002D72] border border-[#002D72]/20">
         {series.prefix}
       </span>
       <span>
@@ -60,7 +60,7 @@ function SeriesAvailabilityLine({
           <button
             type="button"
             onClick={() => onShowAvailable(series)}
-            className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800 border border-amber-200 underline decoration-dotted transition hover:bg-amber-100"
+            className="rounded-full bg-[#AB2328]/10 px-2 py-0.5 font-semibold text-[#AB2328] border border-[#AB2328]/20 underline decoration-dotted transition hover:bg-[#AB2328]/20"
           >
             ว่าง ({series.gaps.length})
           </button>
@@ -190,7 +190,7 @@ export function ReportsPage() {
               onClick={() => setKind("report")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                kind === "report" ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                kind === "report" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
               รายงาน (Reports)
@@ -200,7 +200,7 @@ export function ReportsPage() {
               onClick={() => setKind("dashboard")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                kind === "dashboard" ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                kind === "dashboard" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
               แดชบอร์ด (Dashboards)
@@ -215,7 +215,7 @@ export function ReportsPage() {
               onClick={() => refresh()}
               disabled={state.status === "loading"}
             >
-              <RefreshCw className={clsx("h-3.5 w-3.5", state.status === "loading" && "animate-spin")} />
+              <RefreshCw className={clsx("h-3.5 w-3.5", state.status === "loading" && "animate-spin text-[#002D72]")} />
               <span>ซิงค์ข้อมูลสด (Sync)</span>
             </Button>
             <Button
@@ -240,8 +240,8 @@ export function ReportsPage() {
             className={clsx(
               "rounded-full px-3 py-1 text-xs font-semibold transition border",
               siteFilter === "All"
-                ? "bg-slate-900 text-white border-slate-900"
-                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                ? "bg-[#002D72] text-white border-[#002D72] shadow-2xs"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-[#002D72]/5 hover:text-[#002D72]"
             )}
           >
             ทั้งหมด ({items.length})
@@ -254,8 +254,8 @@ export function ReportsPage() {
               className={clsx(
                 "rounded-full px-3 py-1 text-xs font-semibold transition border",
                 siteFilter === k
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  ? "bg-[#002D72] text-white border-[#002D72] shadow-2xs"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-[#002D72]/5 hover:text-[#002D72]"
               )}
             >
               {k} ({siteCounts.get(k) || 0})
@@ -304,7 +304,7 @@ export function ReportsPage() {
           {siteGroups.map((site) => (
             <div key={site.key} className="space-y-3">
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-slate-900 text-white px-3 py-0.5 text-xs font-bold font-mono">
+                <span className="rounded-full bg-[#002D72] text-white px-3 py-0.5 text-xs font-bold font-mono shadow-2xs">
                   {site.key}
                 </span>
                 <h3 className="text-sm font-bold text-slate-800">
@@ -320,7 +320,7 @@ export function ReportsPage() {
                       {/* Workspace Header */}
                       <div className="border-b border-slate-100 pb-2.5">
                         <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-bold text-slate-900 truncate" title={wg.workspaceName}>
+                          <h4 className="text-sm font-bold text-[#002D72] truncate" title={wg.workspaceName}>
                             {wg.workspaceName}
                           </h4>
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
@@ -349,12 +349,12 @@ export function ReportsPage() {
                           return (
                             <div
                               key={item.id}
-                              className="py-2.5 flex items-start justify-between gap-2 group hover:bg-slate-50/60 rounded-xl px-2 -mx-2 transition"
+                              className="py-2.5 flex items-start justify-between gap-2 group hover:bg-[#002D72]/5 rounded-xl px-2 -mx-2 transition"
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   {item.reportCode ? (
-                                    <span className="rounded-full bg-blue-50 px-2 py-0.2 font-mono text-[11px] font-bold text-blue-700 border border-blue-200">
+                                    <span className="rounded-full bg-[#002D72]/10 px-2 py-0.2 font-mono text-[11px] font-bold text-[#002D72] border border-[#002D72]/20">
                                       {item.reportCode}
                                     </span>
                                   ) : null}
@@ -429,7 +429,7 @@ export function ReportsPage() {
                 {availablePopupSeries.gaps.map((n) => (
                   <span
                     key={n}
-                    className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-900 font-bold border border-amber-200"
+                    className="rounded-full bg-[#AB2328]/10 px-2.5 py-1 text-[#AB2328] font-bold border border-[#AB2328]/20"
                   >
                     {availablePopupSeries.prefix}-{padCodeNumber(n, availablePopupSeries.numberWidth)}
                   </span>

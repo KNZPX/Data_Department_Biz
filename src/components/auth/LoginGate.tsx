@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button, Textarea } from "@/components/ui";
+import { BangkokHospitalLogo } from "@/components/brand/BangkokHospitalLogo";
 
 export type AuthUser = {
   name: string;
@@ -130,68 +131,72 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 2. Unauthenticated: Show Microsoft Login Gatekeeper
+  // 2. Unauthenticated: Show Bangkok Hospital Microsoft Login Gatekeeper
   if (!authenticated) {
     return (
-      <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-slate-100 selection:bg-amber-400 selection:text-slate-950">
-        {/* Subtle decorative background glow */}
+      <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-800 selection:bg-[#002D72] selection:text-white">
+        {/* Brand CI Top Accent Bar */}
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#002D72] via-[#002D72] to-[#AB2328]" />
+
+        {/* Ambient Medical Soft Lighting */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-amber-500/10 blur-3xl" />
-          <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
+          <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[#002D72]/5 blur-3xl" />
+          <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-[#AB2328]/5 blur-3xl" />
+          <div className="absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-[#002D72]/5 blur-3xl" />
         </div>
 
-        {/* Top Minimal Branding */}
-        <header className="relative z-10 px-6 py-6 sm:px-10">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20">
-              <BarChart3 className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-black tracking-tight text-white">Power BI</span>
-                <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-400/30 font-mono">
-                  PORTAL
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">Enterprise Analytics & License Manager</p>
+        {/* Top Header Branding */}
+        <header className="relative z-10 mx-auto w-full max-w-7xl px-6 py-6 sm:px-10">
+          <div className="flex items-center justify-between">
+            <BangkokHospitalLogo size="md" subtext="Data Department · Power BI Portal" />
+            <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3.5 py-1 text-[11px] font-medium text-slate-600 shadow-2xs backdrop-blur-xs">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Bangkok Dusit Medical Services (BDMS)</span>
             </div>
           </div>
         </header>
 
-        {/* Center Main Card */}
+        {/* Center Main Login Card */}
         <main className="relative z-10 mx-auto my-auto w-full max-w-md px-4 py-8">
-          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
-            {/* Header Icon & Title */}
-            <div className="text-center">
-              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 border border-slate-700/80 shadow-inner">
-                <Lock className="h-7 w-7 text-amber-400" />
+          <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 shadow-xl shadow-slate-200/70 sm:p-9">
+            {/* Top decorative stripe inside card */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#002D72] via-[#002D72] to-[#AB2328]" />
+
+            {/* Hospital Emblem & Title */}
+            <div className="text-center pt-2">
+              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#002D72]/5 border border-[#002D72]/15 shadow-2xs">
+                <Lock className="h-6 w-6 text-[#002D72]" />
               </div>
-              <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-                เข้าสู่ระบบเพื่อเข้าใช้งาน
+              <h1 className="text-xl font-bold tracking-tight text-[#002D72] sm:text-2xl">
+                เข้าสู่ระบบสารสนเทศองค์กร
               </h1>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                ยืนยันตัวตนด้วยบัญชี <span className="font-semibold text-slate-200">Microsoft 365 องค์กร</span> เพื่อเข้าถึงรายงาน Power BI, แดชบอร์ด และข้อมูลสิทธิ์
+              <p className="mt-1.5 text-xs text-slate-500">
+                Bangkok Hospital Analytics & License Management
               </p>
+              <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#AB2328]/10 px-3 py-0.5 text-[11px] font-semibold text-[#AB2328] border border-[#AB2328]/20">
+                <Sparkles className="h-3 w-3" />
+                <span>พัฒนาไม่หยุด สู่ขีดสุดการดูแล</span>
+              </div>
             </div>
 
             {/* Error Message if redirected back with error */}
             {authError ? (
-              <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs text-rose-300">
+              <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800">
                 <div className="flex items-start gap-2.5">
-                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
                   <div>
                     <span className="font-bold">เกิดข้อผิดพลาดในการเข้าสู่ระบบ:</span>
-                    <p className="mt-1 text-[11px] leading-relaxed text-rose-200/90">{authError}</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-rose-700">{authError}</p>
                   </div>
                 </div>
               </div>
             ) : null}
 
             {/* Primary Action: Sign in with Microsoft */}
-            <div className="mt-7 space-y-3">
+            <div className="mt-7 space-y-3.5">
               <a
                 href="/api/powerbi/auth/start"
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-3.5 text-sm font-semibold text-slate-900 shadow-md hover:bg-slate-100 active:scale-[0.99] transition duration-150"
+                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-xs hover:border-[#002D72] hover:bg-slate-50 hover:text-[#002D72] active:scale-[0.99] transition duration-150"
               >
                 {/* Official Microsoft 4-square logo */}
                 <svg className="h-5 w-5 shrink-0" viewBox="0 0 21 21">
@@ -203,29 +208,29 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                 <span>เข้าสู่ระบบด้วย Microsoft 365</span>
               </a>
 
-              <div className="flex items-center justify-center gap-2 pt-1 text-[11px] text-slate-400">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                <span>ยืนยันตัวตนอย่างปลอดภัยผ่าน Microsoft Entra ID</span>
+              <div className="flex items-center justify-center gap-1.5 pt-0.5 text-[11px] text-slate-500">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                <span>ยืนยันตัวตนปลอดภัยผ่าน Microsoft Entra ID (BDMS Account)</span>
               </div>
             </div>
 
             {/* Secondary Option: Manual Token Fallback */}
-            <div className="mt-8 border-t border-slate-800/80 pt-4">
+            <div className="mt-7 border-t border-slate-100 pt-4">
               <button
                 type="button"
                 onClick={() => setManualOpen((v) => !v)}
-                className="flex w-full items-center justify-between text-xs text-slate-400 hover:text-slate-200 transition"
+                className="flex w-full items-center justify-between text-xs text-slate-500 hover:text-[#002D72] transition"
               >
                 <span className="flex items-center gap-1.5">
-                  <KeyRound className="h-3.5 w-3.5 text-slate-500" />
+                  <KeyRound className="h-3.5 w-3.5 text-slate-400" />
                   <span>ตัวเลือกผู้ดูแลระบบ (Manual Token Fallback)</span>
                 </span>
                 <ChevronDown className={`h-4 w-4 transition duration-150 ${manualOpen ? "rotate-180" : ""}`} />
               </button>
 
               {manualOpen ? (
-                <div className="mt-3 space-y-2.5 rounded-2xl border border-slate-800 bg-slate-950/60 p-3.5 text-xs animate-in fade-in duration-150">
-                  <p className="text-[11px] text-slate-400">
+                <div className="mt-3 space-y-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs animate-in fade-in duration-150">
+                  <p className="text-[11px] text-slate-600">
                     กรณีไม่สามารถเชื่อมต่อ Microsoft Online ได้ชั่วคราว สามารถวาง Access Token (Bearer) เพื่อเข้าใช้งาน:
                   </p>
                   <Textarea
@@ -233,10 +238,10 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                     placeholder="วาง Bearer eyJhbGciOi..."
                     value={manualToken}
                     onChange={(e) => setManualToken(e.target.value)}
-                    className="font-mono text-[11px] bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-600"
+                    className="font-mono text-[11px] bg-white border-slate-200 text-slate-800 placeholder:text-slate-400"
                   />
                   {manualError ? (
-                    <p className="text-[11px] text-rose-400 font-medium">{manualError}</p>
+                    <p className="text-[11px] text-rose-600 font-medium">{manualError}</p>
                   ) : null}
                   <div className="flex justify-end pt-1">
                     <Button
@@ -255,25 +260,27 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* System Status Pills */}
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-950/40 px-3.5 py-2.5 text-[11px] text-slate-400 border border-slate-800/60">
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3.5 py-2.5 text-[11px] text-slate-500 border border-slate-200/80">
               <span className="flex items-center gap-1.5">
-                <Database className="h-3 w-3 text-emerald-400" />
+                <Database className="h-3 w-3 text-[#002D72]" />
                 <span>DB:</span>
-                <span className="font-semibold text-slate-200 uppercase font-mono">
+                <span className="font-semibold text-[#002D72] uppercase font-mono">
                   {dbProvider === "supabase" ? "Supabase Cloud" : "SQLite Local"}
                 </span>
               </span>
-              <span className="flex items-center gap-1">
-                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+              <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                 <span>พร้อมใช้งาน</span>
               </span>
             </div>
           </div>
         </main>
 
-        {/* Footer */}
-        <footer className="relative z-10 px-6 py-4 text-center text-xs text-slate-400">
-          <p>Power BI Analytics Portal &bull; Enterprise Hospital Data Management</p>
+        {/* Brand Footer */}
+        <footer className="relative z-10 px-6 py-5 text-center text-xs text-slate-400">
+          <p>
+            Bangkok Hospital &bull; โรงพยาบาลกรุงเทพ &bull; สำนักบริหารข้อมูลและระบบสารสนเทศ (BDMS)
+          </p>
         </footer>
       </div>
     );

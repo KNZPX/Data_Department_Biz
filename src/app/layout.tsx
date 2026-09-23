@@ -3,8 +3,8 @@ import { AppShell } from "@/components/layout/AppShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Power BI Portal — Standalone Catalog & License Manager",
-  description: "ระบบจัดการรายงาน Power BI, Publish Version History, และสิทธิ์การใช้งาน 32 คอลัมน์",
+  title: "Bangkok Hospital · Data Department & Power BI Portal",
+  description: "พัฒนาไม่หยุด สู่ขีดสุดการดูแล — ระบบแคตตาล็อกรายงาน Power BI, ประวัติ Version History และการบริหารจัดการสิทธิ์ License 32 คอลัมน์ เครือ BDMS",
 };
 
 export default function RootLayout({

@@ -197,7 +197,7 @@ export function LicensesPage() {
               onClick={() => setPageViewMode("table")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                pageViewMode === "table" ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                pageViewMode === "table" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
               ตารางสิทธิ์ (32 Columns)
@@ -207,7 +207,7 @@ export function LicensesPage() {
               onClick={() => setPageViewMode("permissions")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                pageViewMode === "permissions" ? "bg-slate-900 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+                pageViewMode === "permissions" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
               วิเคราะห์สิทธิ์ (Permission Matrix)
@@ -302,8 +302,8 @@ export function LicensesPage() {
                 className={clsx(
                   "rounded-full px-3 py-1 font-semibold transition border",
                   activeGroup === g.key
-                    ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    ? "bg-[#002D72] text-white border-[#002D72] shadow-xs"
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-[#002D72]/5 hover:text-[#002D72]"
                 )}
               >
                 {g.label}
@@ -327,7 +327,7 @@ export function LicensesPage() {
         /* Table View */
         <div className="overflow-x-auto rounded-3xl border border-slate-200/90 bg-white shadow-xs">
           <table className="table table-zebra table-xs w-full text-left">
-            <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+            <thead className="bg-slate-50 text-[#002D72] font-bold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-3 whitespace-nowrap">#</th>
                 {activeColumns.map((col) => (
@@ -367,7 +367,7 @@ export function LicensesPage() {
                             {String(val || "active")}
                           </span>
                         ) : col.key === "license_type" ? (
-                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 border border-blue-200">
+                          <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 text-[11px] font-bold text-[#002D72] border border-[#002D72]/20">
                             {String(val || "-")}
                           </span>
                         ) : (
@@ -420,14 +420,14 @@ export function LicensesPage() {
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-slate-900 text-white px-2 py-0.2 font-mono text-[10px] font-bold">
+                        <span className="rounded-full bg-[#002D72] text-white px-2 py-0.2 font-mono text-[10px] font-bold shadow-2xs">
                           {lic.site || "PKT"}
                         </span>
                         <h4 className="text-sm font-bold text-slate-900">{lic.display_name}</h4>
                       </div>
                       <p className="text-xs text-slate-500">{lic.department_name || lic.department_en}</p>
                     </div>
-                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
+                    <span className="rounded-full bg-[#002D72]/10 px-2 py-0.5 text-[10px] font-bold text-[#002D72] border border-[#002D72]/20">
                       {lic.license_type}
                     </span>
                   </div>

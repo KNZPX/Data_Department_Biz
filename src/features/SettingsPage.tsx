@@ -46,7 +46,7 @@ export function SettingsPage() {
       {/* 1. Power BI Connection Settings */}
       <Panel className="p-5 sm:p-6 space-y-4">
         <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-amber-50 text-amber-700 border border-amber-200">
+          <div className="grid h-10 w-10 place-items-center rounded-2xl bg-[#002D72]/10 text-[#002D72] border border-[#002D72]/20 shadow-2xs">
             <KeyRound className="h-5 w-5" />
           </div>
           <div>
@@ -66,8 +66,8 @@ export function SettingsPage() {
                 เชื่อมต่อสำเร็จ (OAuth Active)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900 border border-amber-300">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#AB2328]/10 px-3 py-1 text-xs font-bold text-[#AB2328] border border-[#AB2328]/20">
+                <span className="h-2 w-2 rounded-full bg-[#AB2328]" />
                 ยังไม่ได้เชื่อมต่อ หรือ Token หมดอายุ
               </span>
             )}
@@ -86,7 +86,7 @@ export function SettingsPage() {
               dense
               onClick={() => setTokenModalOpen(true)}
             >
-              <LogIn className="h-4 w-4 text-amber-400" />
+              <LogIn className="h-4 w-4" />
               <span>เข้าสู่ระบบหรือจัดการ Token</span>
             </Button>
           </div>

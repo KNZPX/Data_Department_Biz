@@ -282,21 +282,21 @@ export function DashboardLogModal({
 
         {/* Quick KPI Stats Summary */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-          <div className="rounded-2xl border border-purple-200/70 bg-purple-50/40 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-purple-600 uppercase">เผยแพร่ทั้งหมด</div>
-            <div className="mt-0.5 text-base font-black text-purple-900">{totalPublishes} ครั้ง</div>
+          <div className="rounded-2xl border border-[#002D72]/20 bg-[#002D72]/5 p-2.5 text-center">
+            <div className="text-[10px] font-bold text-[#002D72] uppercase">เผยแพร่ทั้งหมด</div>
+            <div className="mt-0.5 text-base font-black text-[#002D72]">{totalPublishes} ครั้ง</div>
           </div>
-          <div className="rounded-2xl border border-blue-200/70 bg-blue-50/40 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-blue-600 uppercase">เผยแพร่ครั้งแรก</div>
-            <div className="mt-0.5 text-[11px] font-bold text-blue-900 truncate">{firstPublishDateStr}</div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 text-center">
+            <div className="text-[10px] font-bold text-slate-500 uppercase">เผยแพร่ครั้งแรก</div>
+            <div className="mt-0.5 text-[11px] font-bold text-slate-800 truncate">{firstPublishDateStr}</div>
           </div>
           <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/40 p-2.5 text-center">
             <div className="text-[10px] font-bold text-emerald-600 uppercase">เวอร์ชันล่าสุด</div>
             <div className="mt-0.5 text-[11px] font-bold text-emerald-900 truncate">{latestPublishDateStr}</div>
           </div>
-          <div className="rounded-2xl border border-amber-200/70 bg-amber-50/40 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-amber-600 uppercase">ระบบบันทึก</div>
-            <div className="mt-0.5 text-[11px] font-bold text-amber-900">ฐานข้อมูลแยกเฉพาะ</div>
+          <div className="rounded-2xl border border-[#AB2328]/20 bg-[#AB2328]/5 p-2.5 text-center">
+            <div className="text-[10px] font-bold text-[#AB2328] uppercase">ระบบบันทึก</div>
+            <div className="mt-0.5 text-[11px] font-bold text-[#AB2328]">Bangkok Hospital Cloud</div>
           </div>
         </div>
 
