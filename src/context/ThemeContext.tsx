@@ -127,18 +127,18 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  colorPreset: "violet",
+  colorPreset: "sapphire",
   setColorPreset: () => {},
   canvasPreset: "soft",
   setCanvasPreset: () => {},
   radiusPreset: "squircle",
   setRadiusPreset: () => {},
-  currentTheme: COLOR_PRESETS.violet,
+  currentTheme: COLOR_PRESETS.sapphire,
   currentCanvas: CANVAS_PRESETS.soft,
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [colorPreset, setColorPresetState] = useState<ColorPresetId>("violet");
+  const [colorPreset, setColorPresetState] = useState<ColorPresetId>("sapphire");
   const [canvasPreset, setCanvasPresetState] = useState<CanvasPresetId>("soft");
   const [radiusPreset, setRadiusPresetState] = useState<RadiusPresetId>("squircle");
 

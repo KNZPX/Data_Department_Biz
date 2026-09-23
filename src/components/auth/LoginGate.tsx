@@ -99,12 +99,12 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ token: manualToken.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "บันทึก Token ไม่สำเร็จ");
+      if (!res.ok) throw new Error(data.error || "Failed to save Token");
       setManualToken("");
       setManualOpen(false);
       await checkAuth();
     } catch (err) {
-      setManualError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการบันทึก Token");
+      setManualError(err instanceof Error ? err.message : "An error occurred while saving Token");
     } finally {
       setManualSaving(false);
     }

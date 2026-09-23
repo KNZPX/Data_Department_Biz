@@ -102,9 +102,9 @@ export function DashboardLogModal({
           versionNumber: 1,
           date: d,
           dateStr: publishDateStr,
-          author: item.responsibleUser || "ไม่ได้ระบุ",
+          author: item.responsibleUser || "Unspecified",
           activity: "Initial Publish",
-          summary: `เวอร์ชันเริ่มต้น (Active Version บน Power BI Service)`,
+          summary: `Baseline version (Active version on Power BI Service)`,
           isPublish: true,
           isInitial: true,
         });
@@ -124,7 +124,7 @@ export function DashboardLogModal({
       const initialDateRaw = (b.last_publish || b.first_seen_at || b.last_modified) as string | undefined;
       const initialDate = initialDateRaw ? new Date(initialDateRaw) : new Date(firstLog.changed_at);
       const initialDateStr = !isNaN(initialDate.getTime())
-        ? initialDate.toLocaleDateString("th-TH", {
+        ? initialDate.toLocaleDateString("en-US", {
             day: "numeric",
             month: "short",
             year: "numeric",
@@ -141,9 +141,9 @@ export function DashboardLogModal({
         versionNumber: vCounter,
         date: initialDate,
         dateStr: initialDateStr,
-        author: author || item.responsibleUser || "ไม่ได้ระบุ",
+        author: author || item.responsibleUser || "Unspecified",
         activity: "Initial Publish",
-        summary: `เวอร์ชันเริ่มต้น (บันทึกจากการ Publish ครั้งแรกบน Power BI Service)`,
+        summary: `Baseline version (Recorded from initial publish on Power BI Service)`,
         isPublish: true,
         isInitial: true,
       });
@@ -154,7 +154,6 @@ export function DashboardLogModal({
       const isCreate = log.action === "create";
       const isPublish =
         log.summary.toLowerCase().includes("publish") ||
-        log.summary.includes("เผยแพร่") ||
         isCreate;
       const author =
         log.changed_by ||
@@ -162,10 +161,10 @@ export function DashboardLogModal({
           ? ((log.after as Record<string, unknown>).responsible_user as string)
           : null) ||
         item.responsibleUser ||
-        "ไม่ได้ระบุ";
+        "Unspecified";
       const date = new Date(log.changed_at);
       const dateStr = !isNaN(date.getTime())
-        ? date.toLocaleDateString("th-TH", {
+        ? date.toLocaleDateString("en-US", {
             day: "numeric",
             month: "short",
             year: "numeric",

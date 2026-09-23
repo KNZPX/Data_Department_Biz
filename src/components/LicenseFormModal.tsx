@@ -73,12 +73,12 @@ export function LicenseFormModal({
     e.preventDefault();
     if (!formData.display_name.trim() && !formData.name_th.trim()) {
       setActiveTab("employee");
-      setError("กรุณากรอก Display Name หรือชื่อภาษาไทยของผู้ใช้งาน");
+      setError("Please provide a Display Name or Employee Name.");
       return;
     }
     if (!formData.ad_account.trim()) {
       setActiveTab("employee");
-      setError("กรุณากรอก AD Account / Email ให้ถูกต้อง");
+      setError("Please enter a valid AD Account or corporate email.");
       return;
     }
 
@@ -88,7 +88,7 @@ export function LicenseFormModal({
       await onSave(normalizeLicense(formData));
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการบันทึกข้อมูล License");
+      setError(err instanceof Error ? err.message : "Failed to save license record.");
     } finally {
       setSaving(false);
     }
@@ -105,12 +105,12 @@ export function LicenseFormModal({
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 sm:text-lg">
-                {isNew ? "เพิ่มข้อมูลสิทธิ์ Power BI License" : "แก้ไขข้อมูลสิทธิ์ Power BI License"}
+                {isNew ? "Add Power BI License Record" : "Edit Power BI License Record"}
               </h2>
               <p className="text-xs text-slate-500">
                 {isNew
-                  ? "สร้างรายการสิทธิ์การใช้งานใหม่ พร้อมกำหนดสิทธิ์ Workspace และกลุ่มความปลอดภัย"
-                  : "ปรับปรุงข้อมูลผู้ใช้ สิทธิ์ประเภท License และสิทธิ์การเข้าถึงรายงาน"}
+                  ? "Create new license entitlement with workspace permissions and security groups."
+                  : "Update employee metadata, license entitlement tier, and workspace access."}
               </p>
             </div>
           </div>
@@ -126,9 +126,9 @@ export function LicenseFormModal({
         {/* Tab Switcher */}
         <div className="mt-3.5 flex gap-1.5 overflow-x-auto border-b border-slate-100 pb-2.5">
           {[
-            { key: "employee", label: "1. ข้อมูลพนักงาน (Employee)" },
-            { key: "org", label: "2. สังกัด/แผนก (Organization)" },
-            { key: "license", label: "3. สิทธิ์ License & ผู้สร้าง" },
+            { key: "employee", label: "1. Employee Details" },
+            { key: "org", label: "2. Organization & Department" },
+            { key: "license", label: "3. License Tier & Requester" },
             { key: "security", label: "4. Security Groups (10)" },
           ].map((tab) => {
             const active = activeTab === tab.key;
@@ -153,7 +153,7 @@ export function LicenseFormModal({
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {error ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-700 flex items-center gap-2">
-              <span className="font-bold">ข้อผิดพลาด:</span> {error}
+              <span className="font-bold">Error:</span> {error}
             </div>
           ) : null}
 
@@ -163,23 +163,23 @@ export function LicenseFormModal({
               <Field
                 label="Display Name"
                 required
-                hint="ชื่อและนามสกุลภาษาอังกฤษสำหรับแสดงในระบบ"
+                hint="English display name shown across directory"
               >
                 <Input
                   required
                   icon={User}
-                  placeholder="เช่น Siwakorn Phuksapakdeewong"
+                  placeholder="e.g. Siwakorn Phuksapakdeewong"
                   value={formData.display_name}
                   onChange={(e) => updateField("display_name", e.target.value)}
                 />
               </Field>
               <Field
-                label="ชื่อ - นามสกุล (TH)"
-                hint="ชื่อพนักงานภาษาไทยเพื่อการค้นหาในองค์กร"
+                label="Full Name (TH / Alternate)"
+                hint="Employee full name in local language"
               >
                 <Input
                   icon={User}
-                  placeholder="เช่น ศิวกร ภักษาภักดีวงศ์"
+                  placeholder="e.g. Siwakorn Phuksapakdeewong"
                   value={formData.name_th}
                   onChange={(e) => updateField("name_th", e.target.value)}
                 />
@@ -187,79 +187,79 @@ export function LicenseFormModal({
               <Field
                 label="AD Account (Email)"
                 required
-                hint="อีเมลองค์กร @bdms.co.th เพื่อผูกกับสิทธิ์ Power BI"
+                hint="Corporate @bdms.co.th account for Power BI linking"
               >
                 <Input
                   required
                   type="email"
                   icon={Mail}
-                  placeholder="เช่น siwakorn.ph@bdms.co.th"
+                  placeholder="e.g. user.name@domain.com"
                   value={formData.ad_account}
                   onChange={(e) => updateField("ad_account", e.target.value)}
                 />
               </Field>
               <Field
                 label="Person ID"
-                hint="รหัสประจำตัวบุคคลจากระบบ HR"
+                hint="Employee identification number from HRIS"
               >
                 <Input
                   icon={Hash}
-                  placeholder="เช่น 1002345"
+                  placeholder="e.g. 1002345"
                   value={formData.person_id}
                   onChange={(e) => updateField("person_id", e.target.value)}
                 />
               </Field>
               <Field
                 label="User ID"
-                hint="รหัสบัญชีผู้ใช้งานระบบสารสนเทศ"
+                hint="Active Directory logon account ID"
               >
                 <Input
                   icon={Tag}
-                  placeholder="เช่น U1002345"
+                  placeholder="e.g. U1002345"
                   value={formData.user_id}
                   onChange={(e) => updateField("user_id", e.target.value)}
                 />
               </Field>
               <Field
                 label="Position Name (EN)"
-                hint="ชื่อตำแหน่งงานภาษาอังกฤษตามโครงสร้างองค์กร"
+                hint="Official job designation in organizational structure"
               >
                 <Input
                   icon={Briefcase}
-                  placeholder="เช่น Senior BI Specialist"
+                  placeholder="e.g. Senior BI Specialist"
                   value={formData.position_en}
                   onChange={(e) => updateField("position_en", e.target.value)}
                 />
               </Field>
               <Field
                 label="Employee Class"
-                hint="ประเภทระดับพนักงาน เช่น Permanent หรือ Monthly"
+                hint="Employee classification e.g. Permanent or Monthly"
               >
                 <Input
                   icon={BadgeCheck}
-                  placeholder="เช่น Permanent / Monthly"
+                  placeholder="e.g. Permanent / Monthly"
                   value={formData.employee_class}
                   onChange={(e) => updateField("employee_class", e.target.value)}
                 />
               </Field>
               <Field
                 label="Full-time / Part-time"
-                hint="รูปแบบการจ้างงาน"
+                hint="Employment tenure format"
               >
                 <Input
                   icon={Activity}
-                  placeholder="เช่น Full-time หรือ Part-time"
+                  placeholder="e.g. Full-time or Part-time"
                   value={formData.employment_type}
                   onChange={(e) => updateField("employment_type", e.target.value)}
                 />
               </Field>
               <Field
                 label="Type"
-                hint="กลุ่มผู้ใช้ เช่น Staff หรือ Outsource"
+                hint="Workforce category e.g. Staff or Outsource"
               >
                 <Input
                   icon={Layers}
-                  placeholder="เช่น Staff / Outsource"
+                  placeholder="e.g. Staff / Outsource"
                   value={formData.user_type}
                   onChange={(e) => updateField("user_type", e.target.value)}
                 />
@@ -271,8 +271,8 @@ export function LicenseFormModal({
           {activeTab === "org" ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field
-                label="Site (โรงพยาบาล / สาขา)"
-                hint="สาขาหลักที่ผู้ใช้สังกัดเพื่อจัดกลุ่มรายงาน"
+                label="Site / Hospital Facility"
+                hint="Primary operating site or campus facility"
               >
                 <Select
                   value={formData.site}
@@ -285,66 +285,66 @@ export function LicenseFormModal({
               </Field>
               <Field
                 label="Business Unit Code"
-                hint="รหัสหน่วยธุรกิจ เช่น BPK, DBK หรือ BSI"
+                hint="Business unit identifier code e.g. BPK, DBK, BSI"
               >
                 <Input
                   icon={Building}
-                  placeholder="เช่น BPK, DBK, BSI"
+                  placeholder="e.g. BPK, DBK, BSI"
                   value={formData.business_unit_code}
                   onChange={(e) => updateField("business_unit_code", e.target.value)}
                 />
               </Field>
               <Field
-                label="Department Name (TH)"
-                hint="ชื่อแผนกภาษาไทย"
+                label="Department Name (Local)"
+                hint="Local department designation"
               >
                 <Input
                   icon={Building2}
-                  placeholder="เช่น สารสนเทศทางการแพทย์"
+                  placeholder="e.g. Medical Informatics"
                   value={formData.department_name}
                   onChange={(e) => updateField("department_name", e.target.value)}
                 />
               </Field>
               <Field
                 label="Department Code"
-                hint="รหัสแผนกตามผังบัญชีหรือ HR"
+                hint="Department cost center or HR code"
               >
                 <Input
                   icon={Hash}
-                  placeholder="เช่น 50201"
+                  placeholder="e.g. 50201"
                   value={formData.department_code}
                   onChange={(e) => updateField("department_code", e.target.value)}
                 />
               </Field>
               <Field
                 label="Department Name (EN)"
-                hint="ชื่อแผนกภาษาอังกฤษ"
+                hint="Standard English department title"
               >
                 <Input
                   icon={Globe}
-                  placeholder="เช่น Medical Informatics"
+                  placeholder="e.g. Medical Informatics"
                   value={formData.department_en}
                   onChange={(e) => updateField("department_en", e.target.value)}
                 />
               </Field>
               <Field
                 label="Dept Group"
-                hint="กลุ่มสายงาน เช่น Support, Clinical หรือ Administrative"
+                hint="Functional organizational division"
               >
                 <Input
                   icon={Layers}
-                  placeholder="เช่น Support, Clinical"
+                  placeholder="e.g. Support, Clinical, Admin"
                   value={formData.dept_group}
                   onChange={(e) => updateField("dept_group", e.target.value)}
                 />
               </Field>
               <Field
                 label="HOD 3Site"
-                hint="หัวหน้าแผนกดูแล 3 สาขาหรือไม่"
+                hint="Whether supervising across all 3 network hospitals"
               >
                 <Input
                   icon={UserCheck}
-                  placeholder="เช่น Yes / No หรือระบุชื่อหัวหน้า"
+                  placeholder="e.g. Yes / No or supervisor name"
                   value={formData.hod_3site}
                   onChange={(e) => updateField("hod_3site", e.target.value)}
                 />
@@ -357,8 +357,8 @@ export function LicenseFormModal({
             <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
-                  label="ประเภทสิทธิ์ License"
-                  hint="ระดับสิทธิ์ของ Power BI เช่น Pro, Free หรือ Embedded"
+                  label="License Tier"
+                  hint="Power BI license entitlement tier"
                 >
                   <Select
                     value={formData.license_type}
@@ -370,37 +370,37 @@ export function LicenseFormModal({
                   </Select>
                 </Field>
                 <Field
-                  label="สถานะสิทธิ์ (Status)"
-                  hint="สถานะการเปิดใช้งานสิทธิ์ในปัจจุบัน"
+                  label="Entitlement Status"
+                  hint="Current operational status of entitlement"
                 >
                   <Select
                     value={formData.status}
                     onChange={(e) => updateField("status", e.target.value as LicenseStatus)}
                   >
-                    <option value="active">Active (ใช้งานได้ปกติ)</option>
-                    <option value="pending">Pending (รออนุมัติ/ดำเนินการ)</option>
-                    <option value="revoked">Revoked (ถูกเพิกถอนสิทธิ์)</option>
-                    <option value="inactive">Inactive (ปิดการใช้งาน)</option>
+                    <option value="active">Active (Operational)</option>
+                    <option value="pending">Pending Approval</option>
+                    <option value="revoked">Revoked</option>
+                    <option value="inactive">Inactive</option>
                   </Select>
                 </Field>
                 <Field
                   label="Power BI Pro License"
-                  hint="มีสิทธิ์ Pro ประจำตัวหรือไม่"
+                  hint="Designated dedicated Power BI Pro license"
                 >
                   <Input
                     icon={Sparkles}
-                    placeholder="เช่น Yes หรือ No"
+                    placeholder="e.g. Yes or No"
                     value={formData.pbi_pro_license}
                     onChange={(e) => updateField("pbi_pro_license", e.target.value)}
                   />
                 </Field>
                 <Field
                   label="Power BI Premium per Capacity"
-                  hint="สิทธิ์การเข้าถึง Premium Capacity"
+                  hint="Capacity-based workspace access permissions"
                 >
                   <Input
                     icon={ShieldCheck}
-                    placeholder="เช่น Yes หรือ No"
+                    placeholder="e.g. Yes or No"
                     value={formData.pbi_premium_capacity}
                     onChange={(e) => updateField("pbi_premium_capacity", e.target.value)}
                   />
@@ -411,38 +411,38 @@ export function LicenseFormModal({
               <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-bold text-blue-900">
                   <Info className="h-4 w-4 text-blue-600" />
-                  <span>ข้อมูลผู้ขอ / ผู้สร้างรายการ (Creator Information)</span>
+                  <span>Requester & Creator Record Information</span>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field
                     label="Creator Person ID"
-                    hint="รหัสพนักงานของผู้บันทึก"
+                    hint="Employee ID of requester / recorder"
                   >
                     <Input
                       icon={Hash}
-                      placeholder="เช่น 1002345"
+                      placeholder="e.g. 1002345"
                       value={formData.creator_person_id}
                       onChange={(e) => updateField("creator_person_id", e.target.value)}
                     />
                   </Field>
                   <Field
-                    label="ชื่อผู้สร้าง (TH)"
-                    hint="ชื่อ-นามสกุลไทยผู้บันทึก"
+                    label="Creator Name"
+                    hint="Full name of requester / recorder"
                   >
                     <Input
                       icon={User}
-                      placeholder="เช่น ศิวกร ภักษาภักดีวงศ์"
+                      placeholder="e.g. Siwakorn Phuksapakdeewong"
                       value={formData.creator_name_th}
                       onChange={(e) => updateField("creator_name_th", e.target.value)}
                     />
                   </Field>
                   <Field
-                    label="ตำแหน่งผู้สร้าง (EN)"
-                    hint="ตำแหน่งงานผู้บันทึก"
+                    label="Creator Position"
+                    hint="Designation of requester / recorder"
                   >
                     <Input
                       icon={Briefcase}
-                      placeholder="เช่น Senior BI Specialist"
+                      placeholder="e.g. Senior BI Specialist"
                       value={formData.creator_position_en}
                       onChange={(e) => updateField("creator_position_en", e.target.value)}
                     />
@@ -451,12 +451,12 @@ export function LicenseFormModal({
               </div>
 
               <Field
-                label="วัตถุประสงค์ / รายงานที่ใช้งาน (Purpose & Reports)"
-                hint="ระบุชื่อแดชบอร์ด รายงาน หรือเหตุผลที่ต้องใช้สิทธิ์ เพื่อประกอบการจัดสรร"
+                label="Business Purpose & Target Reports"
+                hint="Specify dashboards, reports, or business justification for allocation"
               >
                 <Textarea
                   rows={2}
-                  placeholder="เช่น ใช้สำหรับดู Executive Dashboard, Bed Occupancy, รายงานการเงินประจำวัน..."
+                  placeholder="e.g. For Executive Dashboard, Bed Occupancy, Daily Financial Performance Reports..."
                   value={formData.purpose || ""}
                   onChange={(e) => updateField("purpose", e.target.value)}
                 />
@@ -553,20 +553,20 @@ export function LicenseFormModal({
                 variant="ghost"
                 className="text-rose-600 hover:bg-rose-50"
                 onClick={async () => {
-                  if (confirm("คุณแน่ใจหรือไม่ว่าต้องการลบรายการสิทธิ์ License นี้?")) {
+                  if (confirm("Are you sure you want to delete this license entitlement record?")) {
                     await onDelete(editing.id);
                     onClose();
                   }
                 }}
               >
                 <Trash2 className="h-4 w-4 text-rose-600" />
-                <span>ลบรายการ (Delete)</span>
+                <span>Delete Record</span>
               </Button>
             ) : <div />}
 
             <div className="flex items-center gap-2">
               <Button type="button" variant="ghost" onClick={onClose}>
-                ยกเลิก (Cancel)
+                Cancel
               </Button>
               <Button
                 type="submit"
@@ -575,7 +575,7 @@ export function LicenseFormModal({
                 className="shadow-xs hover:opacity-90 transition"
               >
                 <Save className="h-4 w-4" />
-                <span>{saving ? "กำลังบันทึก..." : isNew ? "สร้างสิทธิ์ใหม่" : "บันทึกการแก้ไข"}</span>
+                <span>{saving ? "Saving..." : isNew ? "Create Entitlement" : "Save Changes"}</span>
               </Button>
             </div>
           </div>

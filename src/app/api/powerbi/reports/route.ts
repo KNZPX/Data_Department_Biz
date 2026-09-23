@@ -48,13 +48,14 @@ export async function GET(request: NextRequest) {
       const cachedItems = await getDbItems("report");
       if (cachedItems.length > 0) {
         const uniqueWorkspaces = new Set(cachedItems.map((i) => i.workspaceId)).size;
-        const response: PowerBiListResponse = {
+        const response: any = {
           data: cachedItems,
+          reports: cachedItems,
           meta: {
             workspaceCount: uniqueWorkspaces,
             itemCount: cachedItems.length,
             codedCount: cachedItems.filter((item) => item.reportCode).length,
-            fetchedAt: memoryCache?.response.meta.fetchedAt || new Date().toISOString(),
+            fetchedAt: memoryCache?.response?.meta?.fetchedAt || new Date().toISOString(),
             skippedWorkspaces: [],
           },
         };

@@ -94,9 +94,9 @@ export function LicenseImportModal({
         {successCount !== null ? (
           <div className="my-8 flex flex-col items-center justify-center text-center space-y-2">
             <CheckCircle2 className="h-10 w-10 text-emerald-600 animate-bounce" />
-            <h3 className="text-base font-bold text-slate-900">นำเข้าข้อมูลสำเร็จ!</h3>
+            <h3 className="text-base font-bold text-slate-900">Import Completed Successfully!</h3>
             <p className="text-xs text-slate-500">
-              บันทึกและซิงค์ข้อมูลสิทธิ์จำนวน {successCount} รายการเข้าสู่ระบบเรียบร้อย
+              Successfully saved and synchronized {successCount} license records into the system.
             </p>
           </div>
         ) : (
@@ -104,10 +104,10 @@ export function LicenseImportModal({
             <label className="flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/50 p-6 text-center cursor-pointer hover:border-slate-400 hover:bg-slate-50 transition shadow-xs">
               <Upload className="h-8 w-8 text-slate-400" />
               <div className="text-xs font-semibold text-slate-800">
-                {file ? file.name : "คลิกหรือลากไฟล์ Excel (.xlsx) มาวางที่นี่"}
+                {file ? file.name : "Click or drag an Excel spreadsheet (.xlsx) here"}
               </div>
               <div className="text-[11px] text-slate-400">
-                รองรับไฟล์ตารางสิทธิ์ 32 คอลัมน์ หรือตารางรายชื่อผู้ถือ License
+                Supports 32-column license matrix or user license tables
               </div>
               <input
                 type="file"
@@ -123,7 +123,7 @@ export function LicenseImportModal({
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-4 text-xs text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin text-slate-600" />
-                กำลังวิเคราะห์โครงสร้างคอลัมน์และแถวข้อมูลในไฟล์...
+                Analyzing columns and row structures in file...
               </div>
             ) : previewRows.length > 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-white p-3 space-y-2">
@@ -133,7 +133,7 @@ export function LicenseImportModal({
                     <span>Sheet: {sheetName}</span>
                   </div>
                   <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-bold border border-emerald-200/60">
-                    ตรวจพบ {previewRows.length} รายการ
+                    Detected {previewRows.length} rows
                   </span>
                 </div>
 
@@ -161,7 +161,7 @@ export function LicenseImportModal({
                 </div>
                 {previewRows.length > 10 ? (
                   <div className="text-center text-[10px] text-slate-400">
-                    ...และอีก {previewRows.length - 10} รายการที่พร้อมนำเข้า
+                    ...and {previewRows.length - 10} more rows ready to import
                   </div>
                 ) : null}
               </div>
@@ -169,7 +169,7 @@ export function LicenseImportModal({
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <Button type="button" variant="ghost" onClick={onClose} disabled={importing}>
-                ยกเลิก (Cancel)
+                Cancel
               </Button>
               <Button
                 type="button"
@@ -177,7 +177,7 @@ export function LicenseImportModal({
                 disabled={previewRows.length === 0 || importing}
                 onClick={handleConfirmImport}
               >
-                {importing ? "กำลังนำเข้า..." : `ยืนยันการนำเข้า (${previewRows.length} รายการ)`}
+                {importing ? "Importing..." : `Confirm Import (${previewRows.length} rows)`}
               </Button>
             </div>
           </div>

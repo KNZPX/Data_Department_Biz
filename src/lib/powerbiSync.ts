@@ -58,9 +58,9 @@ export async function syncPowerBiItemsToDatabase(
       updated_at: nowIso,
     };
 
-    const publisher = item.responsibleUser || item.responsibleEmail || "ไม่ได้ระบุ";
+    const publisher = item.responsibleUser || item.responsibleEmail || "Unspecified";
     const pubDateStr = publishTime
-      ? new Date(publishTime).toLocaleString("th-TH", {
+      ? new Date(publishTime).toLocaleString("en-US", {
           day: "numeric",
           month: "short",
           year: "numeric",
@@ -80,32 +80,32 @@ export async function syncPowerBiItemsToDatabase(
       const isNewPublish = oldPublish !== newPublish;
 
       if (isNewPublish) {
-        diffs.push(`Publish Version ใหม่ (${pubDateStr || "-"})`);
+        diffs.push(`New Publish Version (${pubDateStr || "-"})`);
       }
       if ((existing.responsibleUser || "") !== (item.responsibleUser || "")) {
-        diffs.push(`ผู้รับผิดชอบเปลี่ยนเป็น "${item.responsibleUser || "ไม่มี"}"`);
+        diffs.push(`Responsible user changed to "${item.responsibleUser || "None"}"`);
       }
       if (existing.name !== item.name) {
-        diffs.push(`ชื่อเปลี่ยนเป็น "${item.name}"`);
+        diffs.push(`Name changed to "${item.name}"`);
       }
       if (existing.workspaceName !== item.workspaceName) {
-        diffs.push(`ย้ายไป Workspace "${item.workspaceName}"`);
+        diffs.push(`Moved to Workspace "${item.workspaceName}"`);
       }
       if ((existing.description || "") !== (item.description || "")) {
-        diffs.push("อัปเดตคำอธิบาย");
+        diffs.push("Updated description");
       }
 
       if (diffs.length > 0) {
         toUpsert.push(currentRecord);
-        const kindTh = item.kind === "dashboard" ? "แดชบอร์ด" : "รายงาน";
+        const kindLabel = item.kind === "dashboard" ? "Dashboard" : "Report";
         const codePart = item.reportCode ? `[${item.reportCode}] ` : "";
-        const actionTitle = isNewPublish ? `Publish Version ใหม่` : `อัปเดต${kindTh}`;
+        const actionTitle = isNewPublish ? `New Version Published` : `Updated ${kindLabel}`;
 
         changeLogsToInsert.push({
           entity_table: "powerbi_items",
           entity_id: item.id,
           action: "update",
-          summary: `${actionTitle}: ${codePart}${item.name} (${diffs.join(", ")}) โดย ${publisher}`,
+          summary: `${actionTitle}: ${codePart}${item.name} (${diffs.join(", ")}) by ${publisher}`,
           before: existing,
           after: currentRecord,
           changed_by: publisher,

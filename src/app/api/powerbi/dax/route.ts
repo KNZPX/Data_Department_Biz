@@ -1,133 +1,134 @@
 import { NextRequest, NextResponse } from "next/server";
-import { executeDaxQuery, getAllDatasets } from "@/lib/powerbi";
+import { executeDaxQuery } from "@/lib/powerbi";
 import fs from "fs";
 import path from "path";
 
 export const dynamic = "force-dynamic";
 
-interface DictionaryItem {
-  Table_Name: string;
-  Object_Name: string;
-  Description: string;
-  Definition: string;
-  Object_Type: string;
-  DAX_Formula: string;
-  Status: string;
-  Semantic_Model?: string;
+interface SemanticModelStore {
+  [key: string]: {
+    id: string;
+    code: string;
+    name: string;
+    measures: any[];
+    columns: any[];
+  };
 }
 
-let cachedDictionary: DictionaryItem[] | null = null;
+let cachedModels: SemanticModelStore | null = null;
 
-function getDictionary(): DictionaryItem[] {
-  if (cachedDictionary) return cachedDictionary;
+function loadModels(): SemanticModelStore {
+  if (cachedModels) return cachedModels;
   try {
-    const filePath = path.join(process.cwd(), "src/data/measure_dictionary.json");
+    const filePath = path.join(process.cwd(), "src/data/d01_d02_dictionary.json");
     if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, "utf-8");
-      cachedDictionary = JSON.parse(data);
-      return cachedDictionary || [];
+      const raw = fs.readFileSync(filePath, "utf-8");
+      cachedModels = JSON.parse(raw);
+      return cachedModels || {};
     }
   } catch (err) {
-    console.error("Error reading measure_dictionary.json:", err);
+    console.error("Error reading d01_d02_dictionary.json:", err);
   }
-  return [];
+  return {};
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const modelCode = (searchParams.get("model") || "PKT-D01").toUpperCase();
+    const type = (searchParams.get("type") || "all").toLowerCase();
+    const table = (searchParams.get("table") || "all").toLowerCase();
     const q = (searchParams.get("q") || "").toLowerCase().trim();
-    const model = searchParams.get("model") || "";
-    const table = searchParams.get("table") || "";
-    const type = searchParams.get("type") || "";
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "60", 10);
 
-    const allItems = getDictionary();
+    const store = loadModels();
+    const activeModelKey = store[modelCode] ? modelCode : (store["PKT-D01"] ? "PKT-D01" : Object.keys(store)[0]);
+    const activeModel = store[activeModelKey];
 
-    // Group items by Semantic Model
-    const modelStatsMap = new Map<string, {
-      name: string;
-      total: number;
-      measures: number;
-      columns: number;
-      tables: Set<string>;
-    }>();
-
-    for (const item of allItems) {
-      const mName = item.Semantic_Model || "Hospital Master Core Dimensions";
-      if (!modelStatsMap.has(mName)) {
-        modelStatsMap.set(mName, {
-          name: mName,
-          total: 0,
-          measures: 0,
-          columns: 0,
-          tables: new Set(),
-        });
-      }
-      const st = modelStatsMap.get(mName)!;
-      st.total++;
-      if (item.Object_Type === "Measure") st.measures++;
-      else st.columns++;
-      if (item.Table_Name) st.tables.add(item.Table_Name);
+    if (!activeModel) {
+      return NextResponse.json({
+        items: [],
+        meta: { total: 0, totalMeasures: 0, totalColumns: 0, tables: [] },
+        models: [],
+      });
     }
 
-    const semanticModels = Array.from(modelStatsMap.values()).map((st) => ({
-      name: st.name,
-      total: st.total,
-      measures: st.measures,
-      columns: st.columns,
-      tableCount: st.tables.size,
-    })).sort((a, b) => b.total - a.total);
+    // Build unified items list for this model
+    const measures = (activeModel.measures || []).map((m: any) => ({
+      id: String(m["[ID]"] || m["[Name]"]),
+      name: m["[Name]"] || "Unnamed Measure",
+      tableName: m["[Table]"] || "Unknown Table",
+      type: "Measure",
+      dataType: m["[DataType]"] || "Double",
+      description: m["[Description]"] || "Standard calculation logic defined in semantic model.",
+      expression: m["[Expression]"] || `CALCULATE([${m["[Name]"]}])`,
+      formatString: m["[FormatString]"] || null,
+      isHidden: Boolean(m["[IsHidden]"]),
+      modelCode: activeModel.code,
+      modelName: activeModel.name,
+    }));
 
-    // Filter items
-    let filtered = allItems;
+    const columns = (activeModel.columns || []).map((c: any) => ({
+      id: String(c["[ID]"] || c["[Name]"]),
+      name: c["[Name]"] || "Unnamed Column",
+      tableName: c["[Table]"] || "Unknown Table",
+      type: c["[Type]"] === "Calculated" ? "Calculated Column" : "Data Column",
+      dataType: c["[DataType]"] || "String",
+      description: c["[Description]"] || "Physical or calculated attribute in semantic table.",
+      expression: c["[Expression]"] || null,
+      formatString: c["[FormatString]"] || null,
+      isHidden: Boolean(c["[IsHidden]"]),
+      modelCode: activeModel.code,
+      modelName: activeModel.name,
+    }));
 
-    if (model && model !== "all") {
-      filtered = filtered.filter((i) => (i.Semantic_Model || "").toLowerCase() === model.toLowerCase());
+    // Collect all tables and global counts for active model
+    const tablesSet = new Set<string>();
+    measures.forEach((m) => tablesSet.add(m.tableName));
+    columns.forEach((c) => tablesSet.add(c.tableName));
+
+    let items: any[] = [];
+    if (type === "measure" || type === "measures") {
+      items = measures;
+    } else if (type === "column" || type === "columns") {
+      items = columns;
+    } else {
+      items = [...measures, ...columns];
     }
 
+    // Filter by table
     if (table && table !== "all") {
-      filtered = filtered.filter((i) => i.Table_Name.toLowerCase() === table.toLowerCase());
+      items = items.filter((i) => i.tableName.toLowerCase() === table);
     }
 
-    if (type && type !== "all") {
-      filtered = filtered.filter((i) => i.Object_Type.toLowerCase() === type.toLowerCase());
-    }
-
+    // Filter by search query
     if (q) {
-      filtered = filtered.filter((i) => {
+      items = items.filter((i) => {
         return (
-          i.Object_Name.toLowerCase().includes(q) ||
-          i.Table_Name.toLowerCase().includes(q) ||
-          i.Description.toLowerCase().includes(q) ||
-          i.Definition.toLowerCase().includes(q) ||
-          i.DAX_Formula.toLowerCase().includes(q) ||
-          (i.Semantic_Model && i.Semantic_Model.toLowerCase().includes(q))
+          i.name.toLowerCase().includes(q) ||
+          i.tableName.toLowerCase().includes(q) ||
+          i.description.toLowerCase().includes(q) ||
+          (i.expression && i.expression.toLowerCase().includes(q))
         );
       });
     }
 
-    // Collect filtered table names
-    const filteredTablesSet = new Set<string>();
-    let filteredMeasures = 0;
-    let filteredColumns = 0;
-
-    for (const item of filtered) {
-      if (item.Table_Name) filteredTablesSet.add(item.Table_Name);
-      if (item.Object_Type === "Measure") filteredMeasures++;
-      else filteredColumns++;
-    }
-
-    const total = filtered.length;
+    const total = items.length;
     const startIndex = (page - 1) * limit;
-    const paginated = filtered.slice(startIndex, startIndex + limit);
+    const paginated = items.slice(startIndex, startIndex + limit);
 
-    // Also fetch available datasets from Power BI API (optional)
-    let datasets: any[] = [];
-    try {
-      datasets = await getAllDatasets();
-    } catch {}
+    // Metadata for the available models
+    const modelsMeta = Object.keys(store).map((k) => {
+      const m = store[k];
+      return {
+        code: m.code,
+        name: m.name,
+        id: m.id,
+        totalMeasures: (m.measures || []).length,
+        totalColumns: (m.columns || []).length,
+      };
+    });
 
     return NextResponse.json({
       items: paginated,
@@ -136,13 +137,15 @@ export async function GET(request: NextRequest) {
         page,
         limit,
         totalPages: Math.ceil(total / limit),
-        totalMeasures: filteredMeasures,
-        totalColumns: filteredColumns,
-        totalTables: filteredTablesSet.size,
-        tables: Array.from(filteredTablesSet).sort(),
+        totalMeasures: measures.length,
+        totalColumns: columns.length,
+        totalTables: tablesSet.size,
+        tables: Array.from(tablesSet).sort(),
+        activeModelCode: activeModel.code,
+        activeModelName: activeModel.name,
+        activeModelId: activeModel.id,
       },
-      semanticModels,
-      datasets,
+      models: modelsMeta,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

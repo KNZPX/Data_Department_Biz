@@ -47,8 +47,7 @@ export function ChangeLogPage() {
   const filteredLogs = useMemo(() => {
     const q = query.trim().toLowerCase();
     return logs.filter((log) => {
-      const isPublish =
-        log.summary.toLowerCase().includes("publish") || log.summary.includes("เผยแพร่");
+      const isPublish = log.summary.toLowerCase().includes("publish");
 
       if (actionFilter === "publish" && !isPublish) return false;
       if (actionFilter === "update" && (isPublish || log.action !== "update")) return false;
@@ -65,14 +64,12 @@ export function ChangeLogPage() {
 
   const publishCount = useMemo(
     () =>
-      logs.filter(
-        (l) => l.summary.toLowerCase().includes("publish") || l.summary.includes("เผยแพร่")
-      ).length,
+      logs.filter((l) => l.summary.toLowerCase().includes("publish")).length,
     [logs]
   );
 
   return (
-    <div className="space-y-6">
+    <div className="h-full overflow-y-auto pr-1 space-y-6 pb-12">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Total Audit Events" value={logs.length} icon={History} tone="blue" />
@@ -151,8 +148,7 @@ export function ChangeLogPage() {
       ) : (
         <div className="space-y-3">
           {filteredLogs.map((log) => {
-            const isPublish =
-              log.summary.toLowerCase().includes("publish") || log.summary.includes("เผยแพร่");
+            const isPublish = log.summary.toLowerCase().includes("publish");
             const date = new Date(log.changed_at);
             const dateStr = !isNaN(date.getTime())
               ? date.toLocaleString("en-US", {
@@ -184,7 +180,7 @@ export function ChangeLogPage() {
                         {log.changed_by ? (
                           <span className="flex items-center gap-1 font-medium text-slate-700">
                             <User className="h-3.5 w-3.5 text-slate-400" />
-                            <span>โดย: {log.changed_by}</span>
+                            <span>By: {log.changed_by}</span>
                           </span>
                         ) : null}
                         <span className="flex items-center gap-1 font-mono text-[11px]">

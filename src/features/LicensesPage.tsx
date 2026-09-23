@@ -178,7 +178,7 @@ export function LicensesPage() {
   }, [activeGroup]);
 
   return (
-    <div className="space-y-6">
+    <div className="h-full overflow-y-auto pr-1 space-y-6 pb-12">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Total License Holders" value={stats.total} icon={Users} tone="gold" />

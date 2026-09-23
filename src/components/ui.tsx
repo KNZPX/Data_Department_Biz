@@ -211,7 +211,7 @@ export function Input({
 export function SearchInput({
   value,
   onChange,
-  placeholder = "ค้นหา...",
+  placeholder = "Search...",
   dense = false,
   className,
 }: {

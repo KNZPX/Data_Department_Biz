@@ -100,7 +100,8 @@ export function PortalPage() {
       const res = await fetch("/api/powerbi/reports", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
-        const reports: PowerBiItem[] = (json.reports || []).map((r: any) => ({
+        const rawList = json.data || json.reports || [];
+        const reports: PowerBiItem[] = rawList.map((r: any) => ({
           id: r.id,
           kind: "report",
           reportCode: r.reportCode || "",
@@ -219,7 +220,7 @@ export function PortalPage() {
   ];
 
   return (
-    <div className="space-y-7 pb-16 max-w-7xl mx-auto">
+    <div className="h-full overflow-y-auto pr-1 space-y-7 pb-16 max-w-7xl mx-auto">
       {/* 2-COLUMN MAIN DASHBOARD (Inspired by Reference Image) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* LEFT / CENTER COLUMN (8 cols) */}

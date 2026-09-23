@@ -124,7 +124,7 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="h-full overflow-y-auto pr-1 space-y-4 pb-12">
       {/* Top Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-3xl border border-slate-200/80 shadow-2xs">
         <div className="flex items-center gap-2">
