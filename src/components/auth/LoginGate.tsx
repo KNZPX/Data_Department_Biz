@@ -132,11 +132,11 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-4">
         <div className="flex flex-col items-center gap-4 text-center">
           <div className="relative">
-            <div className="grid h-16 w-16 place-items-center rounded-3xl bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/20 animate-pulse">
+            <div className="grid h-16 w-16 place-items-center rounded-3xl bg-blue-600 text-slate-950 shadow-lg shadow-blue-500/20 animate-pulse">
               <BarChart3 className="h-8 w-8" />
             </div>
             <div className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-slate-900 text-white shadow-xs">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
             </div>
           </div>
           <div>
@@ -168,15 +168,15 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   // 3. Unauthenticated on protected routes (/reports, /settings): Show Gatekeeper
   if (!authenticated) {
     return (
-      <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-b from-slate-50 via-white to-amber-50/20 text-slate-800 selection:bg-[#B45309] selection:text-white">
+      <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-b from-slate-50 via-white to-blue-50/30 text-slate-800 selection:bg-blue-600 selection:text-white">
         {/* Brand CI Top Accent Bar - Dark Yellow / Amber */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#60A5FA]" />
 
         {/* Ambient Analytics Soft Lighting */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[#B45309]/5 blur-3xl" />
-          <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-[#D97706]/5 blur-3xl" />
-          <div className="absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-[#F59E0B]/5 blur-3xl" />
+          <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-blue-600/5 blur-3xl" />
+          <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-blue-500/5 blur-3xl" />
+          <div className="absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-sky-400/5 blur-3xl" />
         </div>
 
         {/* Top Header Branding */}
@@ -194,20 +194,20 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         <main className="relative z-10 mx-auto my-auto w-full max-w-md px-4 py-8">
           <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 shadow-xl shadow-slate-200/70 sm:p-9">
             {/* Top decorative stripe inside card */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#B45309] via-[#D97706] to-[#F59E0B]" />
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#60A5FA]" />
 
             {/* Analytics Emblem & Title */}
             <div className="text-center pt-2">
-              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#B45309]/10 border border-[#B45309]/20 shadow-2xs">
-                <Lock className="h-6 w-6 text-[#B45309]" />
+              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 border border-blue-200 shadow-2xs">
+                <Lock className="h-6 w-6 text-blue-600" />
               </div>
-              <h1 className="text-xl font-bold tracking-tight text-[#B45309] sm:text-2xl">
+              <h1 className="text-xl font-bold tracking-tight text-blue-600 sm:text-2xl">
                 Enterprise Sign In
               </h1>
               <p className="mt-1.5 text-xs text-slate-500">
                 Biz-Analytic Intelligence & Power BI Portal
               </p>
-              <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#B45309]/10 px-3 py-0.5 text-[11px] font-semibold text-[#B45309] border border-[#B45309]/20">
+              <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-0.5 text-[11px] font-semibold text-blue-600 border border-blue-200">
                 <Sparkles className="h-3 w-3" />
                 <span>Enterprise Business Analytics & Intelligence</span>
               </div>
@@ -230,7 +230,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             <div className="mt-7 space-y-3.5">
               <a
                 href="/api/powerbi/auth/start"
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-xs hover:border-[#B45309] hover:bg-amber-50/30 hover:text-[#B45309] active:scale-[0.99] transition duration-150"
+                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-xs hover:border-blue-600 hover:bg-blue-50/50 hover:text-blue-600 active:scale-[0.99] transition duration-150"
               >
                 {/* Official Microsoft 4-square logo */}
                 <svg className="h-5 w-5 shrink-0" viewBox="0 0 21 21">
@@ -253,7 +253,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setManualOpen((v) => !v)}
-                className="flex w-full items-center justify-between text-xs text-slate-500 hover:text-[#B45309] transition"
+                className="flex w-full items-center justify-between text-xs text-slate-500 hover:text-blue-600 transition"
               >
                 <span className="flex items-center gap-1.5">
                   <KeyRound className="h-3.5 w-3.5 text-slate-400" />
@@ -296,9 +296,9 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             {/* System Status Pills */}
             <div className="mt-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3.5 py-2.5 text-[11px] text-slate-500 border border-slate-200/80">
               <span className="flex items-center gap-1.5">
-                <Database className="h-3 w-3 text-[#B45309]" />
+                <Database className="h-3 w-3 text-blue-600" />
                 <span>DB:</span>
-                <span className="font-semibold text-[#B45309] uppercase font-mono">
+                <span className="font-semibold text-blue-600 uppercase font-mono">
                   {dbProvider === "supabase" ? "Supabase Cloud" : "SQLite Local"}
                 </span>
               </span>

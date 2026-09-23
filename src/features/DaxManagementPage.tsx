@@ -92,7 +92,16 @@ interface ModelMeta {
   totalColumns: number;
 }
 
-interface DiagramNode {
+export type DiagramPortSide = "top" | "right" | "bottom" | "left";
+
+export interface DiagramConnection {
+  targetId: string;
+  fromSide?: DiagramPortSide;
+  toSide?: DiagramPortSide;
+  label?: string;
+}
+
+export interface DiagramNode {
   id: string;
   title: string;
   category: "source" | "measure_call" | "filter" | "switch" | "relationship" | "calculation" | "output";
@@ -101,7 +110,25 @@ interface DiagramNode {
   codeSnippet?: string;
   x: number;
   y: number;
-  connections: string[];
+  width?: number;
+  height?: number;
+  connections: DiagramConnection[];
+}
+
+// Calculate exact port coordinate given node geometry and side (Aligned with Whiteboard System)
+export function getDiagramPortCoordinate(node: DiagramNode, side: DiagramPortSide = "right"): { x: number; y: number } {
+  const width = node.width || 230;
+  const height = node.height || 92;
+  switch (side) {
+    case "top":
+      return { x: node.x + width / 2, y: node.y };
+    case "right":
+      return { x: node.x + width, y: node.y + height / 2 };
+    case "bottom":
+      return { x: node.x + width / 2, y: node.y + height };
+    case "left":
+      return { x: node.x, y: node.y + height / 2 };
+  }
 }
 
 function HighlightText({
@@ -258,7 +285,7 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
         detail: `Table: ${tableName}`,
         x: 40,
         y: 120,
-        connections: ["calc_default"],
+        connections: [{ targetId: "calc_default", fromSide: "right", toSide: "left" }],
       },
       {
         id: "calc_default",
@@ -268,7 +295,7 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
         detail: "Standard aggregation logic",
         x: 340,
         y: 120,
-        connections: ["out_final"],
+        connections: [{ targetId: "out_final", fromSide: "right", toSide: "left" }],
       },
       {
         id: "out_final",
@@ -452,7 +479,7 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
       detail: `Routes ${switchBranches.length} metric cases (e.g. ${switchBranches.slice(0, 3).map((b) => b.caseVal).join(", ")})`,
       x: 640,
       y: 100,
-      connections: ["out_result"],
+      connections: [{ targetId: "out_result", fromSide: "right", toSide: "left" }],
     });
 
     // Add branch child nodes
@@ -466,7 +493,7 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
         detail: `Dispatches -> [${b.targetMeasure}]`,
         x: 920,
         y: 40 + idx * 110,
-        connections: ["out_result"],
+        connections: [{ targetId: "out_result", fromSide: "right", toSide: "left" }],
       });
     });
   } else {
@@ -497,7 +524,7 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
       detail: engineDetail,
       x: 640,
       y: 120,
-      connections: ["out_result"],
+      connections: [{ targetId: "out_result", fromSide: "right", toSide: "left" }],
     });
   }
 
@@ -518,7 +545,7 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
   inputNodeIds.forEach((inpId) => {
     const inpNode = nodes.find((n) => n.id === inpId);
     if (inpNode) {
-      inpNode.connections = [coreNodeId];
+      inpNode.connections = [{ targetId: coreNodeId, fromSide: "right", toSide: "left", label: "Inputs" }];
     }
   });
 
@@ -526,7 +553,7 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
   filterNodeIds.forEach((fltId) => {
     const fltNode = nodes.find((n) => n.id === fltId);
     if (fltNode) {
-      fltNode.connections = [coreNodeId];
+      fltNode.connections = [{ targetId: coreNodeId, fromSide: "right", toSide: "left", label: "Predicate" }];
     }
   });
 
@@ -617,17 +644,68 @@ export function DaxManagementPage() {
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [pendingSelection, setPendingSelection] = useState<ItemRecord | null>(null);
 
-  // INTERACTIVE DIAGRAM STATE & TOOLBOX
+  // INTERACTIVE DIAGRAM STATE & TOOLBOX (ALIGNED WITH WHITEBOARD ARCHITECTURE)
   const [diagramModalOpen, setDiagramModalOpen] = useState(false);
   const [diagramTarget, setDiagramTarget] = useState<ItemRecord | null>(null);
   const [diagramNodes, setDiagramNodes] = useState<DiagramNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [diagramZoom, setDiagramZoom] = useState(0.8);
+  const [diagramPan, setDiagramPan] = useState<{ x: number; y: number }>({ x: 60, y: 60 });
+  const [isDiagramPanning, setIsDiagramPanning] = useState(false);
+  const [diagramPanStart, setDiagramPanStart] = useState({ x: 0, y: 0 });
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [connectingSourceId, setConnectingSourceId] = useState<string | null>(null);
+  const [connectingSource, setConnectingSource] = useState<{ nodeId: string; fromSide: DiagramPortSide } | null>(null);
+  const [liveWireEnd, setLiveWireEnd] = useState<{ x: number; y: number } | null>(null);
+  const [editingConnection, setEditingConnection] = useState<{ sourceId: string; targetId: string } | null>(null);
   const [diagramSaveSuccess, setDiagramSaveSuccess] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // DELETE KEYBOARD SHORTCUT (Del / Backspace) for Diagram Modal
+  useEffect(() => {
+    if (!diagramModalOpen) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedNodeId) {
+          e.preventDefault();
+          setDiagramNodes((prev) =>
+            prev
+              .filter((n) => n.id !== selectedNodeId)
+              .map((n) => ({
+                ...n,
+                connections: (n.connections || []).filter((c) => c.targetId !== selectedNodeId),
+              }))
+          );
+          setSelectedNodeId(null);
+          setConnectingSource(null);
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [diagramModalOpen, selectedNodeId]);
+
+  // MOUSE WHEEL ZOOM LISTENER for Diagram Modal
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || !diagramModalOpen) return;
+
+    function handleWheel(e: WheelEvent) {
+      e.preventDefault();
+      const zoomStep = e.deltaY < 0 ? 0.08 : -0.08;
+      setDiagramZoom((z) => Math.min(2.0, Math.max(0.3, Number((z + zoomStep).toFixed(2)))));
+    }
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [diagramModalOpen]);
 
   // Custom DAX Modal state
   const [customDaxModalOpen, setCustomDaxModalOpen] = useState(false);
@@ -832,45 +910,160 @@ export function DaxManagementPage() {
     }
   }
 
-  // Open Interactive Diagram Modal with Deep AST Parsing
+  // Open Interactive Diagram Modal with Deep AST Parsing (Supports Saved Layout & 4-Port System)
   function handleOpenDiagram(item: ItemRecord) {
     setDiagramTarget(item);
+    if (item.notes && item.notes.startsWith("DIAGRAM_LAYOUT:")) {
+      try {
+        const rawJson = item.notes.replace("DIAGRAM_LAYOUT:", "");
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const normalized: DiagramNode[] = parsed.map((n: any) => ({
+            ...n,
+            width: n.width || 230,
+            height: n.height || 92,
+            connections: (n.connections || []).map((c: any) =>
+              typeof c === "string" ? { targetId: c, fromSide: "right", toSide: "left" } : c
+            ),
+          }));
+          setDiagramNodes(normalized);
+          setSelectedNodeId(normalized[0]?.id || null);
+          setDiagramZoom(0.8);
+          setDiagramPan({ x: 60, y: 60 });
+          setConnectingSource(null);
+          setLiveWireEnd(null);
+          setDiagramSaveSuccess(false);
+          setDiagramModalOpen(true);
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to parse saved diagram layout", err);
+      }
+    }
     const parsed = parseDaxToProgrammingAst(item.name, item.expression, item.tableName);
     setDiagramNodes(parsed);
     setSelectedNodeId(parsed[0]?.id || null);
     setDiagramZoom(0.8);
-    setConnectingSourceId(null);
+    setDiagramPan({ x: 60, y: 60 });
+    setConnectingSource(null);
+    setLiveWireEnd(null);
     setDiagramSaveSuccess(false);
     setDiagramModalOpen(true);
   }
 
-  // Dragging logic for Diagram nodes
-  function handleNodeMouseDown(e: React.MouseEvent, nodeId: string) {
+  // 4-Side Port Mouse Event Handlers
+  function handleDiagramPortMouseDown(e: React.MouseEvent, nodeId: string, side: DiagramPortSide) {
     e.stopPropagation();
-    const node = diagramNodes.find((n) => n.id === nodeId);
-    if (!node || !canvasRef.current) return;
-    const canvasRect = canvasRef.current.getBoundingClientRect();
-    setDraggingNodeId(nodeId);
-    setSelectedNodeId(nodeId);
-    setDragOffset({
-      x: (e.clientX - canvasRect.left) / diagramZoom - node.x,
-      y: (e.clientY - canvasRect.top) / diagramZoom - node.y,
-    });
+    setConnectingSource({ nodeId, fromSide: side });
+    const srcNode = diagramNodes.find((n) => n.id === nodeId);
+    if (srcNode) {
+      const coord = getDiagramPortCoordinate(srcNode, side);
+      setLiveWireEnd(coord);
+    }
   }
 
-  function handleCanvasMouseMove(e: React.MouseEvent) {
-    if (!draggingNodeId || !canvasRef.current) return;
-    const canvasRect = canvasRef.current.getBoundingClientRect();
-    const newX = Math.max(10, Math.round((e.clientX - canvasRect.left) / diagramZoom - dragOffset.x));
-    const newY = Math.max(10, Math.round((e.clientY - canvasRect.top) / diagramZoom - dragOffset.y));
+  function handleDiagramPortMouseUp(nodeId: string, toSide: DiagramPortSide = "left") {
+    if (!connectingSource) return;
+    if (connectingSource.nodeId === nodeId) {
+      setConnectingSource(null);
+      setLiveWireEnd(null);
+      return;
+    }
 
+    const { nodeId: srcId, fromSide } = connectingSource;
     setDiagramNodes((prev) =>
-      prev.map((n) => (n.id === draggingNodeId ? { ...n, x: newX, y: newY } : n))
+      prev.map((n) => {
+        if (n.id === srcId) {
+          const current = n.connections || [];
+          if (!current.some((c) => c.targetId === nodeId)) {
+            return {
+              ...n,
+              connections: [...current, { targetId: nodeId, fromSide, toSide, label: "Evaluate" }],
+            };
+          }
+        }
+        return n;
+      })
     );
+
+    setConnectingSource(null);
+    setLiveWireEnd(null);
   }
 
-  function handleCanvasMouseUp() {
+  function handleRemoveDiagramConnection(srcId: string, targetId: string) {
+    setDiagramNodes((prev) =>
+      prev.map((n) =>
+        n.id === srcId
+          ? { ...n, connections: (n.connections || []).filter((c) => c.targetId !== targetId) }
+          : n
+      )
+    );
+    setEditingConnection(null);
+  }
+
+  // Canvas Mouse Event Handlers (Empty space = Hand/Pan, Node = Select/Move)
+  function handleDiagramCanvasMouseDown(e: React.MouseEvent) {
+    setIsDiagramPanning(true);
+    setDiagramPanStart({ x: e.clientX - diagramPan.x, y: e.clientY - diagramPan.y });
+    setSelectedNodeId(null);
+    setConnectingSource(null);
+    setLiveWireEnd(null);
+    setEditingConnection(null);
+  }
+
+  function handleDiagramCanvasMouseMove(e: React.MouseEvent) {
+    if (isDiagramPanning) {
+      setDiagramPan({ x: e.clientX - diagramPanStart.x, y: e.clientY - diagramPanStart.y });
+      return;
+    }
+
+    if (connectingSource && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const curX = (e.clientX - rect.left - diagramPan.x) / diagramZoom;
+      const curY = (e.clientY - rect.top - diagramPan.y) / diagramZoom;
+      setLiveWireEnd({ x: curX, y: curY });
+      return;
+    }
+
+    if (draggingNodeId && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const newX = Math.round((e.clientX - rect.left - diagramPan.x) / diagramZoom - dragOffset.x);
+      const newY = Math.round((e.clientY - rect.top - diagramPan.y) / diagramZoom - dragOffset.y);
+
+      setDiagramNodes((prev) =>
+        prev.map((n) => (n.id === draggingNodeId ? { ...n, x: Math.max(10, newX), y: Math.max(10, newY) } : n))
+      );
+    }
+  }
+
+  function handleDiagramCanvasMouseUp() {
+    setIsDiagramPanning(false);
     setDraggingNodeId(null);
+    if (connectingSource) {
+      setConnectingSource(null);
+      setLiveWireEnd(null);
+    }
+  }
+
+  // Node Click & Drag Start (Visual = Select & Move)
+  function handleDiagramNodeMouseDown(e: React.MouseEvent, node: DiagramNode) {
+    e.stopPropagation();
+
+    // If connecting wire in progress, clicking node connects to its left port
+    if (connectingSource && connectingSource.nodeId !== node.id) {
+      handleDiagramPortMouseUp(node.id, "left");
+      return;
+    }
+
+    setSelectedNodeId(node.id);
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+
+    setDraggingNodeId(node.id);
+    setDragOffset({
+      x: (e.clientX - rect.left - diagramPan.x) / diagramZoom - node.x,
+      y: (e.clientY - rect.top - diagramPan.y) / diagramZoom - node.y,
+    });
   }
 
   // TOOLBOX: Add specific programming node types
@@ -886,42 +1079,24 @@ export function DaxManagementPage() {
     };
 
     const config = defaultConfigs[type] || defaultConfigs.calculation;
+    const spawnX = Math.round((-diagramPan.x + 360) / diagramZoom);
+    const spawnY = Math.round((-diagramPan.y + 200) / diagramZoom);
+
     const newNode: DiagramNode = {
       id: newId,
       title: config.title,
       category: type,
       role: config.role,
       detail: config.detail,
-      x: 380,
-      y: 160,
+      x: Math.max(20, spawnX),
+      y: Math.max(20, spawnY),
+      width: 230,
+      height: 92,
       connections: [],
     };
 
     setDiagramNodes((prev) => [...prev, newNode]);
     setSelectedNodeId(newId);
-  }
-
-  // Handle Connecting Nodes (Port to Port wiring)
-  function handleToggleConnect(nodeId: string) {
-    if (!connectingSourceId) {
-      setConnectingSourceId(nodeId);
-    } else if (connectingSourceId === nodeId) {
-      setConnectingSourceId(null);
-    } else {
-      // Connect connectingSourceId -> nodeId
-      setDiagramNodes((prev) =>
-        prev.map((n) => {
-          if (n.id === connectingSourceId) {
-            const current = n.connections || [];
-            if (!current.includes(nodeId)) {
-              return { ...n, connections: [...current, nodeId] };
-            }
-          }
-          return n;
-        })
-      );
-      setConnectingSourceId(null);
-    }
   }
 
   // Save Diagram to Database
@@ -955,9 +1130,10 @@ export function DaxManagementPage() {
     const parsed = parseDaxToProgrammingAst(diagramTarget.name, diagramTarget.expression, diagramTarget.tableName);
     setDiagramNodes(parsed);
     setDiagramZoom(0.8);
-    setConnectingSourceId(null);
+    setDiagramPan({ x: 60, y: 60 });
+    setConnectingSource(null);
+    setLiveWireEnd(null);
   }
-
   // Handle Search Input Change with Table Auto-unlock
   function handleSearchInputChange(val: string) {
     setSearchQuery(val);
@@ -2214,9 +2390,9 @@ export function DaxManagementPage() {
                 )}
 
                 {/* Connecting Mode Banner */}
-                {connectingSourceId && (
+                {connectingSource && (
                   <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 animate-pulse">
-                    Click target node to connect...
+                    Connecting from {connectingSource.fromSide} port (drag to any port)...
                   </span>
                 )}
 
@@ -2381,89 +2557,173 @@ export function DaxManagementPage() {
                 </div>
               </div>
 
-              {/* CANVAS (Draggable 2D Workspace with Dynamic Curved SVG Connectors) */}
+              {/* CANVAS (Draggable 2D Workspace with 4-Port Magnetic Connectors & Pan/Zoom) */}
               <div
                 ref={canvasRef}
-                onMouseMove={handleCanvasMouseMove}
-                onMouseUp={handleCanvasMouseUp}
-                className="flex-1 relative bg-radial from-slate-100 via-slate-50 to-slate-100 overflow-hidden select-none"
+                onMouseDown={handleDiagramCanvasMouseDown}
+                onMouseMove={handleDiagramCanvasMouseMove}
+                onMouseUp={handleDiagramCanvasMouseUp}
+                className={clsx(
+                  "flex-1 relative overflow-hidden select-none transition-colors",
+                  isDiagramPanning ? "cursor-grabbing" : "cursor-grab"
+                )}
                 style={{
-                  backgroundImage: "radial-gradient(#cbd5e1 1.2px, transparent 1.2px)",
-                  backgroundSize: "24px 24px",
+                  backgroundColor: "#f8fafc",
+                  backgroundImage: "radial-gradient(#cbd5e1 1.5px, transparent 1.5px)",
+                  backgroundSize: `${24 * diagramZoom}px ${24 * diagramZoom}px`,
+                  backgroundPosition: `${diagramPan.x}px ${diagramPan.y}px`,
                 }}
               >
-                {/* SVG Connecting Lines with Arrowheads */}
-                <svg
-                  className="absolute inset-0 w-full h-full pointer-events-none z-10"
-                  style={{
-                    transform: `scale(${diagramZoom})`,
-                    transformOrigin: "top left",
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="astLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.85" />
-                      <stop offset="100%" stopColor="#2563eb" stopOpacity="0.85" />
-                    </linearGradient>
-                    <marker
-                      id="astArrow"
-                      markerWidth="9"
-                      markerHeight="7"
-                      refX="8"
-                      refY="3.5"
-                      orient="auto"
-                    >
-                      <polygon points="0 0, 9 3.5, 0 7" fill="#2563eb" />
-                    </marker>
-                  </defs>
-
-                  {diagramNodes.map((node) => {
-                    return (node.connections || []).map((targetId) => {
-                      const target = diagramNodes.find((t) => t.id === targetId);
-                      if (!target) return null;
-
-                      const nodeW = 230;
-                      const nodeH = 92;
-
-                      // Source output port (right center)
-                      const startX = node.x + nodeW;
-                      const startY = node.y + nodeH / 2;
-
-                      // Target input port (left center)
-                      const endX = target.x;
-                      const endY = target.y + nodeH / 2;
-
-                      const deltaX = Math.max(40, Math.abs(endX - startX) * 0.5);
-                      const pathData = `M ${startX} ${startY} C ${startX + deltaX} ${startY}, ${endX - deltaX} ${endY}, ${endX} ${endY}`;
-
-                      return (
-                        <g key={`${node.id}->${targetId}`}>
-                          <path
-                            d={pathData}
-                            fill="none"
-                            stroke="url(#astLineGradient)"
-                            strokeWidth="2.5"
-                            markerEnd="url(#astArrow)"
-                            strokeDasharray="5 3"
-                          />
-                        </g>
-                      );
-                    });
-                  })}
-                </svg>
-
-                {/* Draggable Node Cards */}
+                {/* Transformed Workspace Layer */}
                 <div
-                  className="absolute inset-0"
                   style={{
-                    transform: `scale(${diagramZoom})`,
-                    transformOrigin: "top left",
+                    transform: `translate(${diagramPan.x}px, ${diagramPan.y}px) scale(${diagramZoom})`,
+                    transformOrigin: "0 0",
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    width: "5000px",
+                    height: "4000px",
                   }}
                 >
+                  {/* SVG Connecting Lines with Arrowheads */}
+                  <svg
+                    className="absolute inset-0 pointer-events-none w-full h-full"
+                    style={{ overflow: "visible" }}
+                  >
+                    <defs>
+                      <linearGradient id="astLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.85" />
+                        <stop offset="100%" stopColor="#2563eb" stopOpacity="0.85" />
+                      </linearGradient>
+                      <marker
+                        id="astArrow"
+                        viewBox="0 0 10 10"
+                        refX="6"
+                        refY="5"
+                        markerWidth="6"
+                        markerHeight="6"
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb" />
+                      </marker>
+                    </defs>
+
+                    {/* Render Existing Connection Wires */}
+                    {diagramNodes.map((node) => {
+                      if (!node.connections || node.connections.length === 0) return null;
+
+                      return node.connections.map((conn) => {
+                        const target = diagramNodes.find((t) => t.id === conn.targetId);
+                        if (!target) return null;
+
+                        const srcCoord = getDiagramPortCoordinate(node, conn.fromSide || "right");
+                        const tgtCoord = getDiagramPortCoordinate(target, conn.toSide || "left");
+
+                        const dx = tgtCoord.x - srcCoord.x;
+                        const dy = tgtCoord.y - srcCoord.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const curveDist = Math.max(40, Math.min(160, dist * 0.4));
+
+                        // Tangent controls based on side
+                        let cp1X = srcCoord.x;
+                        let cp1Y = srcCoord.y;
+                        if (conn.fromSide === "left") cp1X -= curveDist;
+                        else if (conn.fromSide === "top") cp1Y -= curveDist;
+                        else if (conn.fromSide === "bottom") cp1Y += curveDist;
+                        else cp1X += curveDist; // default right
+
+                        let cp2X = tgtCoord.x;
+                        let cp2Y = tgtCoord.y;
+                        if (conn.toSide === "right") cp2X += curveDist;
+                        else if (conn.toSide === "top") cp2Y -= curveDist;
+                        else if (conn.toSide === "bottom") cp2Y += curveDist;
+                        else cp2X -= curveDist; // default left
+
+                        const pathData = `M ${srcCoord.x} ${srcCoord.y} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${tgtCoord.x} ${tgtCoord.y}`;
+                        const midX = (srcCoord.x + tgtCoord.x) / 2;
+                        const midY = (srcCoord.y + tgtCoord.y) / 2;
+
+                        return (
+                          <g key={`${node.id}->${conn.targetId}`}>
+                            {/* Click hit target */}
+                            <path
+                              d={pathData}
+                              fill="none"
+                              stroke="transparent"
+                              strokeWidth="16"
+                              className="pointer-events-auto cursor-pointer"
+                              onClick={() => setEditingConnection({ sourceId: node.id, targetId: conn.targetId })}
+                            />
+                            <path
+                              d={pathData}
+                              fill="none"
+                              stroke="url(#astLineGradient)"
+                              strokeWidth="2.5"
+                              markerEnd="url(#astArrow)"
+                              strokeDasharray="5 3"
+                            />
+                            {conn.label && (
+                              <g
+                                transform={`translate(${midX}, ${midY})`}
+                                className="pointer-events-auto cursor-pointer"
+                                onClick={() => setEditingConnection({ sourceId: node.id, targetId: conn.targetId })}
+                              >
+                                <rect
+                                  x="-28"
+                                  y="-9"
+                                  width="56"
+                                  height="18"
+                                  rx="9"
+                                  fill="#ffffff"
+                                  stroke="#bfdbfe"
+                                  strokeWidth="1.5"
+                                  className="shadow-2xs"
+                                />
+                                <text
+                                  x="0"
+                                  y="3.5"
+                                  textAnchor="middle"
+                                  fill="#1e40af"
+                                  fontSize="9"
+                                  fontFamily="monospace"
+                                  fontWeight="bold"
+                                >
+                                  {conn.label}
+                                </text>
+                              </g>
+                            )}
+                          </g>
+                        );
+                      });
+                    })}
+
+                    {/* Live Dragging Wire Preview */}
+                    {connectingSource && liveWireEnd && (
+                      (() => {
+                        const srcNode = diagramNodes.find((n) => n.id === connectingSource.nodeId);
+                        if (!srcNode) return null;
+                        const srcCoord = getDiagramPortCoordinate(srcNode, connectingSource.fromSide);
+                        return (
+                          <path
+                            d={`M ${srcCoord.x} ${srcCoord.y} Q ${(srcCoord.x + liveWireEnd.x) / 2} ${(srcCoord.y + liveWireEnd.y) / 2 - 30}, ${liveWireEnd.x} ${liveWireEnd.y}`}
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="2.5"
+                            strokeDasharray="5 5"
+                            markerEnd="url(#astArrow)"
+                          />
+                        );
+                      })()
+                    )}
+                  </svg>
+
+                  {/* Render Visual Nodes */}
                   {diagramNodes.map((node) => {
                     const isSelected = selectedNodeId === node.id;
+                    const isHovered = hoveredNodeId === node.id;
                     const isDragging = draggingNodeId === node.id;
-                    const isConnectingSource = connectingSourceId === node.id;
+                    const isConnecting = Boolean(connectingSource);
 
                     const colorStyles =
                       node.category === "source"
@@ -2483,70 +2743,136 @@ export function DaxManagementPage() {
                     return (
                       <div
                         key={node.id}
+                        onMouseEnter={() => setHoveredNodeId(node.id)}
+                        onMouseLeave={() => setHoveredNodeId((curr) => (curr === node.id ? null : curr))}
+                        onMouseDown={(e) => handleDiagramNodeMouseDown(e, node)}
                         style={{
                           position: "absolute",
                           left: `${node.x}px`,
                           top: `${node.y}px`,
                           width: "230px",
-                          cursor: isDragging ? "grabbing" : "grab",
+                          minHeight: "92px",
+                          cursor: isDragging ? "grabbing" : "move",
                           zIndex: isSelected ? 30 : 20,
                         }}
-                        onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                        onClick={() => {
-                          if (connectingSourceId && connectingSourceId !== node.id) {
-                            handleToggleConnect(node.id);
-                          } else {
-                            setSelectedNodeId(node.id);
-                          }
-                        }}
                         className={clsx(
-                          "rounded-2xl border p-2.5 shadow-md backdrop-blur-xs transition-shadow flex flex-col gap-1 select-none",
+                          "rounded-2xl border p-2.5 shadow-md backdrop-blur-xs transition-shadow flex flex-col justify-between select-none relative group",
                           colorStyles,
-                          isSelected && "ring-2 ring-blue-600 shadow-xl",
-                          isConnectingSource && "ring-2 ring-amber-500 animate-pulse"
+                          isSelected && "ring-3 ring-blue-600 shadow-2xl",
+                          isConnecting && connectingSource?.nodeId !== node.id && "hover:ring-2 hover:ring-amber-500"
                         )}
                       >
-                        {/* Header: Category Badge + Action Buttons (Connect / Move) */}
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full bg-white/80 border border-slate-200">
-                            {node.category}
-                          </span>
-
-                          <div className="flex items-center gap-1">
+                        {/* 4 MAGNETIC PORTS (TOP, RIGHT, BOTTOM, LEFT) */}
+                        {(isHovered || isSelected || isConnecting) && (
+                          <>
+                            {/* Top Port */}
                             <button
                               type="button"
-                              onClick={(e) => {
+                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "top")}
+                              onMouseUp={(e) => {
                                 e.stopPropagation();
-                                handleToggleConnect(node.id);
+                                handleDiagramPortMouseUp(node.id, "top");
                               }}
-                              title={isConnectingSource ? "Cancel Connection" : "Connect to another node"}
-                              className={clsx(
-                                "p-0.5 rounded text-[10px] transition cursor-pointer",
-                                isConnectingSource ? "bg-amber-500 text-white" : "hover:bg-black/10 text-slate-600"
-                              )}
+                              title="Top Port (Connect)"
+                              className="absolute -top-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
                             >
-                              <Link className="h-3 w-3" />
+                              +
                             </button>
+
+                            {/* Right Port */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "right")}
+                              onMouseUp={(e) => {
+                                e.stopPropagation();
+                                handleDiagramPortMouseUp(node.id, "right");
+                              }}
+                              title="Right Port (Connect)"
+                              className="absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
+                            >
+                              +
+                            </button>
+
+                            {/* Bottom Port */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "bottom")}
+                              onMouseUp={(e) => {
+                                e.stopPropagation();
+                                handleDiagramPortMouseUp(node.id, "bottom");
+                              }}
+                              title="Bottom Port (Connect)"
+                              className="absolute -bottom-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
+                            >
+                              +
+                            </button>
+
+                            {/* Left Port */}
+                            <button
+                              type="button"
+                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "left")}
+                              onMouseUp={(e) => {
+                                e.stopPropagation();
+                                handleDiagramPortMouseUp(node.id, "left");
+                              }}
+                              title="Left Port (Connect)"
+                              className="absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
+                            >
+                              +
+                            </button>
+                          </>
+                        )}
+
+                        {/* Node Header */}
+                        <div>
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full bg-white/80 border border-slate-200">
+                              {node.category}
+                            </span>
                             <Move className="h-3 w-3 opacity-40 shrink-0" />
                           </div>
+
+                          {/* Node Title */}
+                          <h4 className="font-mono text-xs font-bold truncate">
+                            {node.title}
+                          </h4>
+
+                          {/* Role & Details */}
+                          <p className="text-[10px] font-semibold opacity-85 truncate">
+                            {node.role}
+                          </p>
                         </div>
 
-                        {/* Title */}
-                        <h4 className="font-mono text-xs font-bold truncate">
-                          {node.title}
-                        </h4>
-
-                        {/* Role & Details */}
-                        <p className="text-[10px] font-semibold opacity-85 truncate">
-                          {node.role}
-                        </p>
-                        <p className="text-[10px] opacity-75 line-clamp-2 leading-tight">
+                        <p className="text-[10px] opacity-75 line-clamp-2 leading-tight mt-1">
                           {node.detail}
                         </p>
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Wire Edit / Disconnect Popup */}
+                {editingConnection && (
+                  <div className="absolute top-4 right-4 z-40 bg-white rounded-2xl border border-slate-200 shadow-xl p-3 flex items-center gap-3 animate-in fade-in zoom-in-95">
+                    <span className="text-xs font-bold text-slate-700">Selected Connection Wire</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleRemoveDiagramConnection(editingConnection.sourceId, editingConnection.targetId)
+                      }
+                      className="px-2.5 py-1 rounded-xl text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
+                    >
+                      Delete Wire
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingConnection(null)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2560,7 +2886,7 @@ export function DaxManagementPage() {
                     <>
                       <div className="flex items-center gap-2 flex-1 w-full flex-wrap">
                         <span className="text-xs font-bold text-slate-700 shrink-0">
-                          Edit Selected Node:
+                          Edit Node:
                         </span>
                         <input
                           type="text"
@@ -2598,13 +2924,20 @@ export function DaxManagementPage() {
                             }}
                             className="px-2.5 py-1 rounded-full text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
                           >
-                            Disconnect
+                            Disconnect All
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => {
-                            setDiagramNodes((prev) => prev.filter((n) => n.id !== node.id));
+                            setDiagramNodes((prev) =>
+                              prev
+                                .filter((n) => n.id !== node.id)
+                                .map((n) => ({
+                                  ...n,
+                                  connections: (n.connections || []).filter((c) => c.targetId !== node.id),
+                                }))
+                            );
                             setSelectedNodeId(null);
                           }}
                           className="px-2.5 py-1 rounded-full text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"

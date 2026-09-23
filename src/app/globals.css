@@ -3,11 +3,11 @@
 @plugin "daisyui";
 
 :root {
-  /* Biz-Analytic Brand CI Palette - Dark Yellow & Deep Amber */
-  --biz-yellow: #B45309;
-  --biz-yellow-dark: #92400E;
-  --biz-yellow-light: #D97706;
-  --biz-yellow-50: #FFFBEB;
+  /* Biz-Analytic Brand CI Palette - Ocean Sapphire */
+  --biz-yellow: #2563EB;
+  --biz-yellow-dark: #1D4ED8;
+  --biz-yellow-light: #3B82F6;
+  --biz-yellow-50: #EFF6FF;
   --biz-slate: #0F172A;
   
   --background: #F4F6F8;
@@ -17,11 +17,11 @@
   --panel: #ffffff;
   
   /* daisyUI 5 theme mapping for Biz-Analytic */
-  --color-primary: #B45309;
+  --color-primary: #2563EB;
   --color-primary-content: #ffffff;
   --color-secondary: #1C252E;
   --color-secondary-content: #ffffff;
-  --color-accent: #D97706;
+  --color-accent: #2563EB;
   --color-accent-content: #ffffff;
   --color-neutral: #212B36;
   --color-neutral-content: #ffffff;
