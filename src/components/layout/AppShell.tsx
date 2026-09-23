@@ -75,10 +75,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 
-  // Landing Page (/): Render full-viewport edge-to-edge container for Full-page Vertical Scroll
+  // Landing Page (/): Render modern full-width clean canvas for Minimalist Analytics Dashboard
   if (pathname === "/") {
     return (
-      <div className="relative h-screen h-[100dvh] w-full overflow-hidden bg-[#F4F6F8] text-[#1C252E] selection:bg-[#B45309] selection:text-white">
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] selection:bg-[#B45309] selection:text-white">
         {children}
         <TokenModal
           isOpen={tokenOpen}
