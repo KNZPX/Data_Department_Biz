@@ -128,6 +128,116 @@ function HighlightText({
   );
 }
 
+// Searchable Table Dropdown Component
+function TableSearchDropdown({
+  tables,
+  value,
+  onChange,
+  placeholder = "Select or search table...",
+  allowAll = false,
+}: {
+  tables: string[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  allowAll?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const list = allowAll ? ["all", ...tables] : tables;
+    if (!filterQuery.trim()) return list;
+    return list.filter((t) => t.toLowerCase().includes(filterQuery.toLowerCase()));
+  }, [tables, filterQuery, allowAll]);
+
+  return (
+    <div className="relative w-full" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono text-slate-800 hover:bg-slate-100/80 transition text-left focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+      >
+        <span className="truncate font-semibold">
+          {value === "all" ? "All Tables" : value || placeholder}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 text-slate-400 shrink-0 ml-2" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 flex flex-col gap-1.5 max-h-64 overflow-hidden animate-in fade-in zoom-in-95">
+          <div className="relative shrink-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+            <input
+              type="text"
+              autoFocus
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="Search tables in model..."
+              className="w-full pl-7 pr-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 focus:outline-none text-slate-800"
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto space-y-0.5 pr-1 max-h-48">
+            {filtered.length === 0 ? (
+              <div className="p-3 text-center text-xs text-slate-400">
+                No matching tables found.
+                {filterQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(filterQuery.trim());
+                      setIsOpen(false);
+                    }}
+                    className="block mt-1 w-full text-blue-600 font-bold hover:underline"
+                  >
+                    Use "{filterQuery.trim()}"
+                  </button>
+                )}
+              </div>
+            ) : (
+              filtered.map((t) => {
+                const isSelected = value === t;
+                const displayName = t === "all" ? "All Tables (Default)" : t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      onChange(t);
+                      setIsOpen(false);
+                    }}
+                    className={clsx(
+                      "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono transition text-left",
+                      isSelected
+                        ? "bg-blue-600 text-white font-bold"
+                        : "text-slate-700 hover:bg-slate-100"
+                    )}
+                  >
+                    <span className="truncate">{displayName}</span>
+                    {isSelected && <Check className="h-3.5 w-3.5 shrink-0 ml-1" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Generate Diagram Nodes by analyzing DAX formula
 function parseFormulaToNodes(measureName: string, formula: string | null, tableName: string): DiagramNode[] {
   if (!formula || !formula.trim()) {
@@ -183,8 +293,6 @@ function parseFormulaToNodes(measureName: string, formula: string | null, tableN
     connections: ["step_op1"],
   });
 
-  let currentStepY = 80;
-
   // 2. Identify secondary tables (relationships/filters)
   const secondaryTables = tableMatches.slice(1, 3);
   secondaryTables.forEach((sec, idx) => {
@@ -201,11 +309,10 @@ function parseFormulaToNodes(measureName: string, formula: string | null, tableN
     });
   });
 
-  // 3. Identify Transformation functions (SUMMARIZE, CALCULATE, COUNTROWS, etc.)
+  // 3. Identify Transformation functions
   const hasSummarize = /SUMMARIZE/i.test(text);
   const hasCountRows = /COUNTROWS/i.test(text);
   const hasSum = /SUM\(/i.test(text);
-  const hasDivide = /DIVIDE/i.test(text);
   const hasCalculate = /CALCULATE/i.test(text);
   const hasUserelationship = /USERELATIONSHIP/i.test(text);
   const hasFilter = /FILTER|NOT\s*\(|ISBLANK/i.test(text);
@@ -248,7 +355,6 @@ function parseFormulaToNodes(measureName: string, formula: string | null, tableN
   }
 
   // 4. Modifiers / Relationship Activations
-  const contextConnections: string[] = [];
   if (hasUserelationship) {
     nodes.push({
       id: "step_rel",
@@ -260,7 +366,6 @@ function parseFormulaToNodes(measureName: string, formula: string | null, tableN
       y: 240,
       connections: ["step_calc"],
     });
-    contextConnections.push("step_rel");
   }
 
   if (hasFilter) {
@@ -274,7 +379,6 @@ function parseFormulaToNodes(measureName: string, formula: string | null, tableN
       y: hasUserelationship ? 370 : 240,
       connections: ["step_calc"],
     });
-    contextConnections.push("step_filter");
   }
 
   // 5. Evaluation Engine: CALCULATE
@@ -737,7 +841,7 @@ export function DaxManagementPage() {
     } else {
       setCustomDaxTarget(null);
       setCustomName("");
-      setCustomTable(selectedTable !== "all" ? selectedTable : "fact_patient_visit");
+      setCustomTable(selectedTable !== "all" ? selectedTable : (meta.tables?.[0] || "fact_patient_visit"));
       setCustomDataType("Decimal");
       setCustomExpression("");
       setCustomMath("");
@@ -873,7 +977,7 @@ export function DaxManagementPage() {
           <button
             type="button"
             onClick={() => openCustomDaxModal()}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
             <span>Add Custom DAX</span>
@@ -883,7 +987,7 @@ export function DaxManagementPage() {
           <button
             type="button"
             onClick={() => setFloatSidebarOpen(!floatSidebarOpen)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
           >
             <Layers className="h-3.5 w-3.5 text-blue-600" />
             <span>{floatSidebarOpen ? "Hide Datasets" : "Show Datasets"}</span>
@@ -896,7 +1000,7 @@ export function DaxManagementPage() {
               onClick={() => setViewMode("table")}
               title="Table View (Full Grid)"
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition",
+                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition cursor-pointer",
                 viewMode === "table"
                   ? "bg-white text-blue-600 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -910,7 +1014,7 @@ export function DaxManagementPage() {
               onClick={() => setViewMode("sidebox")}
               title="Sidebox View (Direct Editable Inspector)"
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition",
+                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition cursor-pointer",
                 viewMode === "sidebox"
                   ? "bg-white text-blue-600 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -924,7 +1028,7 @@ export function DaxManagementPage() {
               onClick={() => setViewMode("split")}
               title="Split View (Card List with Inline DAX)"
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition",
+                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition cursor-pointer",
                 viewMode === "split"
                   ? "bg-white text-blue-600 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -941,7 +1045,7 @@ export function DaxManagementPage() {
               type="button"
               onClick={() => setActiveTab("explorer")}
               className={clsx(
-                "flex items-center gap-1.5 px-3 py-1 rounded-full font-bold transition",
+                "flex items-center gap-1.5 px-3 py-1 rounded-full font-bold transition cursor-pointer",
                 activeTab === "explorer"
                   ? "bg-blue-600 text-white shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -954,7 +1058,7 @@ export function DaxManagementPage() {
               type="button"
               onClick={() => setActiveTab("api-console")}
               className={clsx(
-                "flex items-center gap-1.5 px-3 py-1 rounded-full font-bold transition",
+                "flex items-center gap-1.5 px-3 py-1 rounded-full font-bold transition cursor-pointer",
                 activeTab === "api-console"
                   ? "bg-blue-600 text-white shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -1057,7 +1161,7 @@ export function DaxManagementPage() {
                   type="button"
                   onClick={() => setSelectedTable("all")}
                   className={clsx(
-                    "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition text-left",
+                    "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-medium transition text-left cursor-pointer",
                     selectedTable === "all"
                       ? "bg-slate-900 text-white font-bold"
                       : "text-slate-600 hover:bg-slate-100"
@@ -1074,7 +1178,7 @@ export function DaxManagementPage() {
                       type="button"
                       onClick={() => setSelectedTable(t)}
                       className={clsx(
-                        "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-mono transition text-left truncate",
+                        "w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-mono transition text-left truncate cursor-pointer",
                         isSel
                           ? "bg-blue-600 text-white font-bold"
                           : "text-slate-600 hover:bg-slate-100"
@@ -1098,76 +1202,114 @@ export function DaxManagementPage() {
         <main className="flex-1 min-w-0 bg-white rounded-3xl p-4 shadow-xs border border-slate-200/80 flex flex-col gap-4 overflow-hidden">
           {activeTab === "explorer" ? (
             <>
-              {/* SEARCH & FILTERS BAR */}
-              <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <div className="relative flex-1 flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => handleSearchInputChange(e.target.value)}
-                      placeholder="Instant search measures, columns, expressions (unfiltered)..."
-                      className="w-full pl-10 pr-9 py-2 rounded-full bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
-                    />
-                    {searchQuery && (
+              {/* SEARCH & BULLET FILTERS BAR */}
+              <div className="shrink-0 flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  {/* Search Bar with Mode Toggle */}
+                  <div className="relative flex-1 flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => handleSearchInputChange(e.target.value)}
+                        placeholder="Instant search measures, columns, expressions (unfiltered)..."
+                        className="w-full pl-10 pr-9 py-2 rounded-full bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => handleSearchInputChange("")}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Partial vs Exact Toggle */}
+                    <div className="flex items-center bg-slate-100 p-0.5 rounded-full text-[11px] shrink-0">
                       <button
                         type="button"
-                        onClick={() => handleSearchInputChange("")}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        onClick={() => setSearchMode("partial")}
+                        className={clsx(
+                          "px-2.5 py-1 rounded-full font-bold transition cursor-pointer",
+                          searchMode === "partial"
+                            ? "bg-white text-blue-600 shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        )}
                       >
-                        <X className="h-3 w-3" />
+                        Partial
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setSearchMode("exact")}
+                        className={clsx(
+                          "px-2.5 py-1 rounded-full font-bold transition cursor-pointer",
+                          searchMode === "exact"
+                            ? "bg-white text-blue-600 shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        )}
+                      >
+                        Exact
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Partial vs Exact Toggle */}
-                  <div className="flex items-center bg-slate-100 p-0.5 rounded-full text-[11px] shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setSearchMode("partial")}
-                      className={clsx(
-                        "px-2.5 py-1 rounded-full font-bold transition",
-                        searchMode === "partial"
-                          ? "bg-white text-blue-600 shadow-2xs"
-                          : "text-slate-600 hover:text-slate-900"
-                      )}
-                    >
-                      Partial
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSearchMode("exact")}
-                      className={clsx(
-                        "px-2.5 py-1 rounded-full font-bold transition",
-                        searchMode === "exact"
-                          ? "bg-white text-blue-600 shadow-2xs"
-                          : "text-slate-600 hover:text-slate-900"
-                      )}
-                    >
-                      Exact
-                    </button>
+                  {/* Quick Table Search Dropdown in Top Bar */}
+                  <div className="w-56 shrink-0">
+                    <TableSearchDropdown
+                      tables={meta.tables || []}
+                      value={selectedTable}
+                      onChange={(t) => setSelectedTable(t)}
+                      allowAll={true}
+                    />
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap shrink-0">
-                  {/* Source & Type Filter Dropdown */}
-                  <select
-                    value={selectedType}
-                    onChange={(e) => setSelectedType(e.target.value)}
-                    className="rounded-full bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 border border-slate-200 focus:outline-none"
-                  >
-                    <option value="all">All Items ({meta.total})</option>
-                    <option value="semantic">
-                      Semantic Model ({meta.totalSemantic || meta.totalMeasures + meta.totalColumns})
-                    </option>
-                    <option value="custom">
-                      Custom by User ({meta.totalCustom || 0})
-                    </option>
-                    <option value="measure">Measures Only ({meta.totalMeasures})</option>
-                    <option value="column">Columns Only ({meta.totalColumns})</option>
-                    <option value="calculated_column">Calculated Columns</option>
-                  </select>
+                {/* BULLET PILL FILTERS (All, Semantic, Custom, Measures, Columns, Calculated) */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  {[
+                    { id: "all", label: "All Items", count: meta.total, dotColor: "bg-slate-400" },
+                    { id: "semantic", label: "Semantic Model", count: meta.totalSemantic || (meta.totalMeasures + meta.totalColumns), dotColor: "bg-sky-500" },
+                    { id: "custom", label: "Custom by User", count: meta.totalCustom || 0, dotColor: "bg-purple-500" },
+                    { id: "measure", label: "Measures Only", count: meta.totalMeasures, dotColor: "bg-blue-500" },
+                    { id: "column", label: "Columns Only", count: meta.totalColumns, dotColor: "bg-emerald-500" },
+                    { id: "calculated_column", label: "Calculated Columns", count: null, dotColor: "bg-amber-500" },
+                  ].map((pill) => {
+                    const isSelected = selectedType === pill.id;
+                    return (
+                      <button
+                        key={pill.id}
+                        type="button"
+                        onClick={() => setSelectedType(pill.id)}
+                        className={clsx(
+                          "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-xs cursor-pointer select-none",
+                          isSelected
+                            ? "bg-blue-600 text-white shadow-blue-500/25 ring-2 ring-blue-500/30"
+                            : "bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/70"
+                        )}
+                      >
+                        <span
+                          className={clsx(
+                            "h-2 w-2 rounded-full shrink-0",
+                            isSelected ? "bg-white ring-2 ring-white/40" : pill.dotColor
+                          )}
+                        />
+                        <span>{pill.label}</span>
+                        {pill.count !== null && (
+                          <span
+                            className={clsx(
+                              "px-1.5 py-0.2 rounded-full text-[10px] font-extrabold font-mono",
+                              isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
+                            )}
+                          >
+                            {pill.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1298,7 +1440,7 @@ export function DaxManagementPage() {
                                       type="button"
                                       onClick={() => handleFetchColumnSamples(it)}
                                       disabled={loadingSamplesId === it.id}
-                                      className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                      className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                                     >
                                       {loadingSamplesId === it.id ? (
                                         <RefreshCw className="h-2.5 w-2.5 animate-spin" />
@@ -1329,7 +1471,7 @@ export function DaxManagementPage() {
                                     type="button"
                                     onClick={() => handleOpenDiagram(it)}
                                     title="View Calculation Diagram"
-                                    className="p-1 rounded-lg text-indigo-600 hover:bg-indigo-50 transition"
+                                    className="p-1 rounded-lg text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
                                   >
                                     <Workflow className="h-3.5 w-3.5" />
                                   </button>
@@ -1339,7 +1481,7 @@ export function DaxManagementPage() {
                                     type="button"
                                     onClick={() => copyText(it.id, it.expression!)}
                                     title="Copy Formula"
-                                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                                   >
                                     {copiedId === it.id ? (
                                       <Check className="h-3.5 w-3.5 text-emerald-600" />
@@ -1355,7 +1497,7 @@ export function DaxManagementPage() {
                                     setViewMode("sidebox");
                                   }}
                                   title="Edit in Sidebox"
-                                  className="p-1 rounded-lg text-blue-600 hover:bg-blue-50 transition"
+                                  className="p-1 rounded-lg text-blue-600 hover:bg-blue-50 transition cursor-pointer"
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
                                 </button>
@@ -1468,7 +1610,7 @@ export function DaxManagementPage() {
                                   type="button"
                                   onClick={() => handleOpenDiagram(selectedItem)}
                                   title="View Flow Diagram"
-                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition"
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
                                 >
                                   <Workflow className="h-3.5 w-3.5" />
                                   <span>Diagram</span>
@@ -1481,7 +1623,7 @@ export function DaxManagementPage() {
                                 onClick={handleSaveSidebox}
                                 disabled={isSavingSidebox || !isSideboxDirty}
                                 className={clsx(
-                                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-xs",
+                                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-xs cursor-pointer",
                                   isSideboxDirty
                                     ? "bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-400/40"
                                     : "bg-slate-200 text-slate-400 cursor-not-allowed"
@@ -1545,7 +1687,7 @@ export function DaxManagementPage() {
                                   type="button"
                                   onClick={() => handleFetchColumnSamples(selectedItem)}
                                   disabled={loadingSamplesId === selectedItem.id}
-                                  className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition disabled:opacity-50"
+                                  className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition disabled:opacity-50 cursor-pointer"
                                 >
                                   {loadingSamplesId === selectedItem.id ? (
                                     <RefreshCw className="h-2.5 w-2.5 animate-spin" />
@@ -1657,7 +1799,7 @@ export function DaxManagementPage() {
                                   <button
                                     type="button"
                                     onClick={() => handleOpenDiagram(selectedItem)}
-                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+                                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
                                   >
                                     <Workflow className="h-3 w-3" />
                                     <span>Diagram</span>
@@ -1665,7 +1807,7 @@ export function DaxManagementPage() {
                                   <button
                                     type="button"
                                     onClick={() => copyText(selectedItem.id, selectedItem.expression!)}
-                                    className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                                    className="text-[10px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
                                   >
                                     {copiedId === selectedItem.id ? (
                                       <>
@@ -1693,7 +1835,7 @@ export function DaxManagementPage() {
                             <button
                               type="button"
                               onClick={() => handleDeleteCustomDax(selectedItem.id)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               <span>Delete Custom DAX</span>
@@ -1759,7 +1901,7 @@ export function DaxManagementPage() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenDiagram(it)}
-                                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
                               >
                                 <Workflow className="h-3 w-3" />
                                 <span>Diagram</span>
@@ -1771,7 +1913,7 @@ export function DaxManagementPage() {
                                 handleSelectItem(it);
                                 setViewMode("sidebox");
                               }}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 transition"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
                             >
                               <Pencil className="h-3 w-3" />
                               <span>Edit</span>
@@ -1816,7 +1958,7 @@ export function DaxManagementPage() {
                   type="button"
                   onClick={handleExecuteConsole}
                   disabled={executing}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition disabled:opacity-50 cursor-pointer"
                 >
                   {executing ? (
                     <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -1883,14 +2025,14 @@ export function DaxManagementPage() {
               <button
                 type="button"
                 onClick={() => setShowUnsavedModal(false)}
-                className="px-4 py-2 rounded-full text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+                className="px-4 py-2 rounded-full text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 Keep Editing
               </button>
               <button
                 type="button"
                 onClick={handleDiscardAndProceed}
-                className="px-4 py-2 rounded-full text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition"
+                className="px-4 py-2 rounded-full text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer"
               >
                 Discard & Switch
               </button>
@@ -1932,7 +2074,7 @@ export function DaxManagementPage() {
                     type="button"
                     onClick={() => setDiagramZoom((z) => Math.max(0.6, z - 0.1))}
                     title="Zoom Out"
-                    className="p-1 hover:text-slate-900"
+                    className="p-1 hover:text-slate-900 cursor-pointer"
                   >
                     <ZoomOut className="h-3.5 w-3.5" />
                   </button>
@@ -1943,7 +2085,7 @@ export function DaxManagementPage() {
                     type="button"
                     onClick={() => setDiagramZoom((z) => Math.min(1.5, z + 0.1))}
                     title="Zoom In"
-                    className="p-1 hover:text-slate-900"
+                    className="p-1 hover:text-slate-900 cursor-pointer"
                   >
                     <ZoomIn className="h-3.5 w-3.5" />
                   </button>
@@ -1952,7 +2094,7 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={handleAddDiagramNode}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 transition"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 transition cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Add Step</span>
@@ -1961,7 +2103,7 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={handleResetDiagramLayout}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition cursor-pointer"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   <span>Reset Layout</span>
@@ -1970,7 +2112,7 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={() => setDiagramModalOpen(false)}
-                  className="h-8 w-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 grid place-items-center transition"
+                  className="h-8 w-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 grid place-items-center transition cursor-pointer"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -2160,7 +2302,7 @@ export function DaxManagementPage() {
                             setDiagramNodes((prev) => prev.filter((n) => n.id !== node.id));
                             setSelectedNodeId(null);
                           }}
-                          className="px-3 py-1 rounded-full text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
+                          className="px-3 py-1 rounded-full text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
                         >
                           Remove Node
                         </button>
@@ -2174,21 +2316,26 @@ export function DaxManagementPage() {
         </div>
       )}
 
-      {/* ================= CUSTOM DAX MODAL ================= */}
+      {/* ================= CUSTOM DAX MODAL WITH SEARCHABLE TABLE DROPDOWN ================= */}
       {customDaxModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
           <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Plus className="h-5 w-5 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">
-                  {customDaxTarget ? "Edit Custom DAX Measure" : "Create Custom DAX Measure"}
-                </h3>
+                <div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200 block w-fit mb-0.5">
+                    CUSTOM DAX AUTHORING
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {customDaxTarget ? "Edit Custom DAX Measure" : "Create New Custom DAX Measure"}
+                  </h3>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setCustomDaxModalOpen(false)}
-                className="h-7 w-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 grid place-items-center transition"
+                className="h-7 w-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 grid place-items-center transition cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2211,49 +2358,96 @@ export function DaxManagementPage() {
                     required
                     value={customName}
                     onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="_custom_metric_name"
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="e.g. Average Length of Stay (Days)"
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Target Table *
+                    Data Type
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={customTable}
-                    onChange={(e) => setCustomTable(e.target.value)}
-                    placeholder="fact_patient_visit"
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
+                  <select
+                    value={customDataType}
+                    onChange={(e) => setCustomDataType(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                  >
+                    <option value="Decimal">Decimal</option>
+                    <option value="Integer">Integer</option>
+                    <option value="String">String</option>
+                    <option value="Currency">Currency</option>
+                    <option value="Percentage">Percentage</option>
+                  </select>
                 </div>
+              </div>
+
+              {/* SEARCHABLE TABLE DROPDOWN (Directly fulfills user request) */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Home Table Name *
+                </label>
+                <TableSearchDropdown
+                  tables={meta.tables || []}
+                  value={customTable}
+                  onChange={(t) => setCustomTable(t)}
+                  placeholder="Select or search existing table in model..."
+                  allowAll={false}
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Select an existing table from the semantic model, or type a custom table name.
+                </span>
               </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  DAX Expression *
+                  DAX Formula / Expression *
                 </label>
                 <textarea
                   required
                   rows={4}
                   value={customExpression}
                   onChange={(e) => setCustomExpression(e.target.value)}
-                  placeholder="CALCULATE( SUM('fact'[amount]), 'fact'[flag] = 1 )"
-                  className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-y"
+                  placeholder="e.g. DIVIDE(SUM('Fact_Inpatient'[Total_Stay_Hours]), 24, 0)"
+                  className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-y shadow-inner"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Business Definition
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={customBusiness}
+                    onChange={(e) => setCustomBusiness(e.target.value)}
+                    placeholder="Clinical or operational logic..."
+                    className="w-full p-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none shadow-2xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Mathematical Formulation
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={customMath}
+                    onChange={(e) => setCustomMath(e.target.value)}
+                    placeholder="Formula notation (e.g. Sum / Count)..."
+                    className="w-full p-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono text-purple-900 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-none shadow-2xs"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Business Meaning / Definition
+                  Notes
                 </label>
-                <textarea
-                  rows={2}
-                  value={customBusiness}
-                  onChange={(e) => setCustomBusiness(e.target.value)}
-                  placeholder="Brief description of the business rationale..."
-                  className="w-full p-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                <input
+                  type="text"
+                  value={customNotes}
+                  onChange={(e) => setCustomNotes(e.target.value)}
+                  placeholder="Optional governance or refresh notes..."
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
                 />
               </div>
 
@@ -2261,16 +2455,16 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={() => setCustomDaxModalOpen(false)}
-                  className="px-4 py-2 rounded-full text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+                  className="px-4 py-2 rounded-full text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSavingCustom}
-                  className="px-4 py-2 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition disabled:opacity-50"
+                  className="px-5 py-2 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition disabled:opacity-50 cursor-pointer"
                 >
-                  {isSavingCustom ? "Saving..." : "Save Custom Measure"}
+                  {isSavingCustom ? "Saving..." : "Save Custom DAX"}
                 </button>
               </div>
             </form>
