@@ -589,6 +589,35 @@ export async function recordUserLogin(user: {
   ip?: string;
 }): Promise<void> {
   const now = new Date().toISOString();
+  const provider = getDbProvider();
+
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      // 1. Upsert directly into public.app_users
+      const { data: existing } = await supabase
+        .from("app_users")
+        .select("login_count")
+        .eq("email", user.email.toLowerCase())
+        .maybeSingle();
+
+      const newCount = (existing?.login_count || 0) + 1;
+
+      await supabase.from("app_users").upsert({
+        email: user.email.toLowerCase(),
+        name: user.name,
+        last_login_at: now,
+        login_count: newCount,
+        last_ip: user.ip || null,
+        last_user_agent: user.userAgent || null,
+        updated_at: now,
+      });
+    } catch (err) {
+      console.error("Failed to update app_users table in Supabase:", err);
+    }
+  }
+
+  // 2. Always record in change_log for full audit stream
   await insertDbChangeLogs([
     {
       id: crypto.randomUUID(),
@@ -611,6 +640,36 @@ export async function recordUserLogin(user: {
 }
 
 export async function getAppUsers(): Promise<AppUserSummary[]> {
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("app_users")
+        .select("*")
+        .order("last_login_at", { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        return data.map((u: any) => ({
+          email: u.email,
+          name: u.name,
+          lastLoginAt: u.last_login_at || u.created_at,
+          loginCount: u.login_count || 1,
+          recentLogins: [
+            {
+              date: u.last_login_at || u.created_at,
+              userAgent: u.last_user_agent || undefined,
+              ip: u.last_ip || undefined,
+            },
+          ],
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to query app_users table:", err);
+    }
+  }
+
+  // Fallback to logs
   const logs = await getDbChangeLogs({ entityTable: "app_users", limit: 500 });
   const map = new Map<string, AppUserSummary>();
 
@@ -684,8 +743,60 @@ export type DaxAnnotation = {
   updatedAt?: string;
 };
 
-export async function saveDaxAnnotation(item: DaxAnnotation & { changedBy?: string }): Promise<void> {
+export async function saveDaxAnnotation(item: DaxAnnotation & {
+  changedBy?: string;
+  modelCode?: string;
+  tableName?: string;
+  objectName?: string;
+  objectType?: string;
+}): Promise<void> {
   const now = new Date().toISOString();
+  const provider = getDbProvider();
+
+  let beforeState: Record<string, unknown> | null = null;
+
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      // Fetch previous state for Restore capability
+      const { data: current } = await supabase
+        .from("dax_annotations")
+        .select("*")
+        .eq("id", item.id)
+        .maybeSingle();
+
+      beforeState = current || null;
+
+      // 1. Upsert into dax_annotations table
+      await supabase.from("dax_annotations").upsert({
+        id: item.id,
+        model_code: item.modelCode || "PKT-D01",
+        table_name: item.tableName || "",
+        object_name: item.objectName || "",
+        object_type: item.objectType || "Measure",
+        math_definition: item.mathDefinition || "",
+        business_definition: item.businessDefinition || "",
+        notes: item.notes || "",
+        changed_by: item.changedBy || "Analyst",
+        updated_at: now,
+      });
+
+      // 2. Also update dax_dictionary_items if present
+      await supabase
+        .from("dax_dictionary_items")
+        .update({
+          math_definition: item.mathDefinition || "",
+          business_definition: item.businessDefinition || "",
+          notes: item.notes || "",
+          updated_at: now,
+        })
+        .eq("id", item.id);
+    } catch (err) {
+      console.error("Error saving DAX annotation in Supabase:", err);
+    }
+  }
+
+  // 3. Log into change_log with before and after state
   await insertDbChangeLogs([
     {
       id: crypto.randomUUID(),
@@ -695,7 +806,7 @@ export async function saveDaxAnnotation(item: DaxAnnotation & { changedBy?: stri
       summary: `Updated business/math definitions for DAX item: ${item.id}`,
       changed_by: item.changedBy || "Analyst",
       changed_at: now,
-      before: null,
+      before: beforeState,
       after: {
         id: item.id,
         mathDefinition: item.mathDefinition || "",
@@ -708,6 +819,30 @@ export async function saveDaxAnnotation(item: DaxAnnotation & { changedBy?: stri
 }
 
 export async function getAllDaxAnnotations(): Promise<Record<string, DaxAnnotation>> {
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from("dax_annotations").select("*");
+      if (!error && data) {
+        const map: Record<string, DaxAnnotation> = {};
+        for (const row of data) {
+          map[row.id] = {
+            id: row.id,
+            mathDefinition: row.math_definition || "",
+            businessDefinition: row.business_definition || "",
+            notes: row.notes || "",
+            updatedAt: row.updated_at,
+          };
+        }
+        return map;
+      }
+    } catch (err) {
+      console.error("Error querying dax_annotations in Supabase:", err);
+    }
+  }
+
+  // Fallback to change_log
   const logs = await getDbChangeLogs({ entityTable: "dax_annotations", limit: 1000 });
   const map: Record<string, DaxAnnotation> = {};
   const sorted = [...logs].sort((a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime());
@@ -733,7 +868,8 @@ export type CustomDaxItem = {
   name: string;
   expression: string;
   formatString?: string;
-  itemType: "measure" | "column" | "calculated_column" | "custom_dax";
+  dataType?: string;
+  itemType: "measure" | "column" | "calculated_column" | "custom_dax" | string;
   mathDefinition?: string;
   businessDefinition?: string;
   notes?: string;
@@ -743,16 +879,54 @@ export type CustomDaxItem = {
 
 export async function saveCustomDaxItem(item: CustomDaxItem): Promise<void> {
   const now = new Date().toISOString();
+  const provider = getDbProvider();
+
+  let beforeState: Record<string, unknown> | null = null;
+
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { data: current } = await supabase
+        .from("dax_dictionary_items")
+        .select("*")
+        .eq("id", item.id)
+        .maybeSingle();
+
+      beforeState = current || null;
+
+      // Upsert into dax_dictionary_items
+      await supabase.from("dax_dictionary_items").upsert({
+        id: item.id,
+        model_code: item.datasetId || "PKT-D01",
+        table_name: item.tableName,
+        name: item.name,
+        item_type: "Custom DAX",
+        data_type: item.dataType || "Decimal",
+        expression: item.expression,
+        format_string: item.formatString || null,
+        math_definition: item.mathDefinition || "",
+        business_definition: item.businessDefinition || "",
+        notes: item.notes || "",
+        is_custom: true,
+        updated_at: now,
+      });
+    } catch (err) {
+      console.error("Error saving custom DAX in Supabase:", err);
+    }
+  }
+
   await insertDbChangeLogs([
     {
       id: crypto.randomUUID(),
       entity_table: "custom_dax_items",
       entity_id: item.id,
-      action: "create",
-      summary: `Created custom DAX measure [${item.name}] in ${item.tableName}`,
+      action: beforeState ? "update" : "create",
+      summary: beforeState
+        ? `Updated custom DAX measure [${item.name}] in ${item.tableName}`
+        : `Created custom DAX measure [${item.name}] in ${item.tableName}`,
       changed_by: item.createdBy || "Analyst",
       changed_at: now,
-      before: null,
+      before: beforeState,
       after: { ...item, createdAt: item.createdAt || now, updatedAt: now },
     },
   ]);
@@ -760,6 +934,27 @@ export async function saveCustomDaxItem(item: CustomDaxItem): Promise<void> {
 
 export async function deleteCustomDaxItem(id: string, user: string = "Analyst"): Promise<void> {
   const now = new Date().toISOString();
+  const provider = getDbProvider();
+
+  let beforeState: Record<string, unknown> | null = null;
+
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { data: current } = await supabase
+        .from("dax_dictionary_items")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+
+      beforeState = current || null;
+
+      await supabase.from("dax_dictionary_items").delete().eq("id", id);
+    } catch (err) {
+      console.error("Error deleting custom DAX from Supabase:", err);
+    }
+  }
+
   await insertDbChangeLogs([
     {
       id: crypto.randomUUID(),
@@ -769,13 +964,44 @@ export async function deleteCustomDaxItem(id: string, user: string = "Analyst"):
       summary: `Deleted custom DAX measure ID: ${id}`,
       changed_by: user,
       changed_at: now,
-      before: null,
+      before: beforeState,
       after: null,
     },
   ]);
 }
 
 export async function getAllCustomDaxItems(): Promise<CustomDaxItem[]> {
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("dax_dictionary_items")
+        .select("*")
+        .eq("is_custom", true);
+
+      if (!error && data) {
+        return data.map((row: any) => ({
+          id: row.id,
+          datasetId: row.model_code,
+          tableName: row.table_name,
+          name: row.name,
+          expression: row.expression || "",
+          formatString: row.format_string || undefined,
+          dataType: row.data_type || "Decimal",
+          itemType: "custom_dax",
+          mathDefinition: row.math_definition || "",
+          businessDefinition: row.business_definition || "",
+          notes: row.notes || "",
+          createdAt: row.created_at,
+        }));
+      }
+    } catch (err) {
+      console.error("Error reading custom DAX from Supabase:", err);
+    }
+  }
+
+  // Fallback to change_log
   const logs = await getDbChangeLogs({ entityTable: "custom_dax_items", limit: 500 });
   const map = new Map<string, CustomDaxItem>();
   const sorted = [...logs].sort((a, b) => new Date(a.changed_at).getTime() - new Date(b.changed_at).getTime());
@@ -789,4 +1015,124 @@ export async function getAllCustomDaxItems(): Promise<CustomDaxItem[]> {
     }
   }
   return Array.from(map.values());
+}
+
+// =============================================================================
+// 7. RESTORE / ROLLBACK SYSTEM AUDIT EVENTS
+// =============================================================================
+export async function restoreChangeLog(
+  logId: string,
+  restoredBy: string = "Admin"
+): Promise<{ success: boolean; message: string }> {
+  const provider = getDbProvider();
+  const supabase = provider === "supabase" ? getSupabaseClient() : null;
+
+  // 1. Fetch the log entry
+  let logEntry: any = null;
+  if (supabase) {
+    const { data } = await supabase.from("change_log").select("*").eq("id", logId).maybeSingle();
+    logEntry = data;
+  } else {
+    const logs = await getDbChangeLogs({ limit: 1000 });
+    logEntry = logs.find((l) => l.id === logId);
+  }
+
+  if (!logEntry) {
+    throw new Error(`Audit log entry #${logId} not found`);
+  }
+
+  const { entity_table, entity_id, action, before, after } = logEntry;
+  const beforeObj = typeof before === "string" ? JSON.parse(before) : before;
+  const afterObj = typeof after === "string" ? JSON.parse(after) : after;
+  const now = new Date().toISOString();
+
+  // 2. Perform restoration based on entity and previous action
+  if (entity_table === "custom_dax_items" || entity_table === "dax_dictionary_items") {
+    if (action === "delete" && beforeObj) {
+      // Re-insert the deleted custom item
+      if (supabase) {
+        await supabase.from("dax_dictionary_items").upsert({
+          id: entity_id,
+          model_code: beforeObj.model_code || beforeObj.datasetId || "PKT-D01",
+          table_name: beforeObj.table_name || beforeObj.tableName || "Custom",
+          name: beforeObj.name,
+          item_type: "Custom DAX",
+          data_type: beforeObj.data_type || beforeObj.dataType || "Decimal",
+          expression: beforeObj.expression,
+          math_definition: beforeObj.math_definition || beforeObj.mathDefinition || "",
+          business_definition: beforeObj.business_definition || beforeObj.businessDefinition || "",
+          notes: beforeObj.notes || "",
+          is_custom: true,
+          updated_at: now,
+        });
+      }
+    } else if (action === "create") {
+      // Rollback creation by deleting the item
+      if (supabase) {
+        await supabase.from("dax_dictionary_items").delete().eq("id", entity_id);
+      }
+    } else if (action === "update" && beforeObj) {
+      // Rollback update by restoring previous definitions
+      if (supabase) {
+        await supabase
+          .from("dax_dictionary_items")
+          .update({
+            expression: beforeObj.expression,
+            math_definition: beforeObj.math_definition || beforeObj.mathDefinition,
+            business_definition: beforeObj.business_definition || beforeObj.businessDefinition,
+            notes: beforeObj.notes,
+            updated_at: now,
+          })
+          .eq("id", entity_id);
+      }
+    }
+  } else if (entity_table === "dax_annotations" && beforeObj) {
+    if (supabase) {
+      await supabase.from("dax_annotations").upsert({
+        ...beforeObj,
+        updated_at: now,
+      });
+      await supabase
+        .from("dax_dictionary_items")
+        .update({
+          math_definition: beforeObj.math_definition || beforeObj.mathDefinition,
+          business_definition: beforeObj.business_definition || beforeObj.businessDefinition,
+          notes: beforeObj.notes,
+          updated_at: now,
+        })
+        .eq("id", entity_id);
+    }
+  } else if (entity_table === "powerbi_licenses") {
+    if (action === "delete" && beforeObj) {
+      if (supabase) {
+        await supabase.from("powerbi_licenses").upsert(beforeObj);
+      }
+    } else if (action === "update" && beforeObj) {
+      if (supabase) {
+        await supabase.from("powerbi_licenses").upsert(beforeObj);
+      }
+    }
+  }
+
+  // 3. Mark the log as restored
+  if (supabase) {
+    await supabase.from("change_log").update({ is_restored: true }).eq("id", logId);
+  }
+
+  // 4. Log a RESTORE audit event
+  await insertDbChangeLogs([
+    {
+      id: crypto.randomUUID(),
+      entity_table,
+      entity_id,
+      action: "restore",
+      summary: `Restored ${entity_table} (${entity_id}) from log #${logId.slice(0, 8)}`,
+      changed_by: restoredBy,
+      changed_at: now,
+      before: afterObj,
+      after: beforeObj,
+    },
+  ]);
+
+  return { success: true, message: `Successfully restored ${entity_table} record #${entity_id}` };
 }

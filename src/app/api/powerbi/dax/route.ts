@@ -7,6 +7,7 @@ import {
   saveCustomDaxItem,
   deleteCustomDaxItem,
   logSystemActivity,
+  getSupabaseClient,
 } from "@/lib/db";
 import fs from "fs";
 import path from "path";
@@ -299,7 +300,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: "Custom DAX measure deleted" });
     }
 
-    // 4. Default: Live Query Execution via Power BI REST API
+    // 4. Fetch Live Column Samples from Semantic Model
+    if (action === "fetch_column_samples") {
+      const { datasetId, tableName, columnName, itemId } = body;
+      if (!datasetId || !tableName || !columnName) {
+        return NextResponse.json(
+          { error: "datasetId, tableName, and columnName are required" },
+          { status: 400 }
+        );
+      }
+
+      const sampleQuery = `EVALUATE TOPN(10, VALUES('${tableName}'[${columnName}]))`;
+      const queryResult = await executeDaxQuery(datasetId, sampleQuery);
+
+      const rows = queryResult?.results?.[0]?.tables?.[0]?.rows || [];
+      const values = rows
+        .map((r: Record<string, any>) => Object.values(r)[0])
+        .filter((v: any) => v !== undefined && v !== null);
+
+      if (itemId) {
+        try {
+          const supabase = getSupabaseClient();
+          await supabase
+            .from("dax_dictionary_items")
+            .update({ sample_values: values })
+            .eq("id", itemId);
+        } catch {}
+      }
+
+      return NextResponse.json({ success: true, values });
+    }
+
+    // 5. Default: Live Query Execution via Power BI REST API
     const { datasetId, query } = body;
     if (!datasetId || !query) {
       return NextResponse.json(

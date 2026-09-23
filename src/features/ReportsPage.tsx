@@ -131,11 +131,11 @@ export function ReportsPage() {
         workspaces: Array<{ fullName: string; subName: string; count: number; enabled: boolean }>;
       }
     > = {
-      BPK: { site: "BPK", label: "BPK · Bangpakok 9 Hospital", totalReports: 0, workspaces: [] },
-      BSI: { site: "BSI", label: "BSI · Bangpakok Samutprakan", totalReports: 0, workspaces: [] },
-      PKT: { site: "PKT", label: "PKT · Phuket Hospital Network", totalReports: 0, workspaces: [] },
-      DBK: { site: "DBK", label: "DBK · Dhonburi & Network", totalReports: 0, workspaces: [] },
-      Other: { site: "Other", label: "Enterprise & Shared Analytics", totalReports: 0, workspaces: [] },
+      BPK: { site: "BPK", label: "BPK", totalReports: 0, workspaces: [] },
+      BSI: { site: "BSI", label: "BSI", totalReports: 0, workspaces: [] },
+      PKT: { site: "PKT", label: "PKT", totalReports: 0, workspaces: [] },
+      DBK: { site: "DBK", label: "DBK", totalReports: 0, workspaces: [] },
+      Other: { site: "Other", label: "OTHER", totalReports: 0, workspaces: [] },
     };
 
     for (const ws of allWorkspaceNames) {
@@ -148,7 +148,7 @@ export function ReportsPage() {
         targetGroup.totalReports += list.length;
       }
 
-      // Format clean sub name (e.g. "BPK | 01 Strategy (STG)" -> "01 Strategy (STG)")
+      // Clean subName or exact ws code
       let subName = ws;
       if (ws.includes("|")) {
         const parts = ws.split("|");
@@ -173,31 +173,37 @@ export function ReportsPage() {
     setExpandedSites((prev) => ({ ...prev, [site]: !prev[site] }));
   }
 
-  // Selected items: either from a specific workspace, or from an entire site folder
+  // Selected items: when searching, search unlocked across ALL workspaces!
   const displayedItems = useMemo(() => {
-    let baseList: PowerBiItem[] = [];
+    const q = itemSearch.trim().toLowerCase();
+    if (q) {
+      // Unlocked search across all catalog workspaces
+      return items.filter(
+        (i) =>
+          enabledWorkspaces.has(i.workspaceName) &&
+          (i.reportTitle.toLowerCase().includes(q) ||
+            (i.reportCode && i.reportCode.toLowerCase().includes(q)) ||
+            (i.workspaceName && i.workspaceName.toLowerCase().includes(q)) ||
+            (i.responsibleUser && i.responsibleUser.toLowerCase().includes(q)))
+      );
+    }
+
     if (selectedWorkspace) {
-      baseList = workspaceMap.get(selectedWorkspace) || [];
+      return workspaceMap.get(selectedWorkspace) || [];
     } else if (selectedSiteFolder) {
       const group = folderTree.find((g) => g.site === selectedSiteFolder);
       if (group) {
+        const list: PowerBiItem[] = [];
         group.workspaces.forEach((w) => {
           if (w.enabled) {
-            baseList.push(...(workspaceMap.get(w.fullName) || []));
+            list.push(...(workspaceMap.get(w.fullName) || []));
           }
         });
+        return list;
       }
     }
-
-    const q = itemSearch.trim().toLowerCase();
-    if (!q) return baseList;
-    return baseList.filter(
-      (i) =>
-        i.reportTitle.toLowerCase().includes(q) ||
-        (i.reportCode && i.reportCode.toLowerCase().includes(q)) ||
-        (i.responsibleUser && i.responsibleUser.toLowerCase().includes(q))
-    );
-  }, [selectedWorkspace, selectedSiteFolder, workspaceMap, folderTree, itemSearch]);
+    return items.filter((i) => enabledWorkspaces.has(i.workspaceName));
+  }, [selectedWorkspace, selectedSiteFolder, workspaceMap, folderTree, itemSearch, items, enabledWorkspaces]);
 
   // Set default selection when data loads
   useEffect(() => {
@@ -455,10 +461,14 @@ export function ReportsPage() {
                 <div>
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <BarChart3 className="h-5 w-5 text-blue-600" />
-                    <span>{selectedWorkspace || `${selectedSiteFolder} Network All Workspaces`}</span>
+                    <span>
+                      {itemSearch
+                        ? `Catalog Search Results (${displayedItems.length} matching across all workspaces)`
+                        : selectedWorkspace || `${selectedSiteFolder} Workspaces`}
+                    </span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Showing {displayedItems.length} reports in active selection
+                    {itemSearch ? "Searching all enabled workspaces (filters unlocked)" : `Showing ${displayedItems.length} reports in active selection`}
                   </p>
                 </div>
 

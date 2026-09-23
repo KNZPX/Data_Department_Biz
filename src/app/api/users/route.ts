@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const users = await getAppUsers();
     let loginLogs: any[] = [];
     if (includeLogs) {
-      loginLogs = await getDbChangeLogs({ entityTable: "app_users", limit: 100 });
+      loginLogs = await getDbChangeLogs({ entityTable: "all", limit: 200 });
     }
 
     return Response.json({

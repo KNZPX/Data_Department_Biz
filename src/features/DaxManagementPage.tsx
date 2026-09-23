@@ -85,7 +85,7 @@ function HighlightText({
 }) {
   if (!active || !match.trim() || !text) return <>{text}</>;
   const query = match.trim();
-  const escaped = query.replace(/[.*+?^$\{}()|[\]\\]/g, "\\$&");
+  const escaped = query.replace(/[.*+?^\$\{}()|[\]\\]/g, "\\$&");
   const regex = new RegExp(`(${escaped})`, "gi");
   const parts = text.split(regex);
   return (
@@ -170,6 +170,10 @@ export function DaxManagementPage() {
   const [execResult, setExecResult] = useState<any>(null);
   const [execError, setExecError] = useState<string | null>(null);
 
+  // Live Semantic Model Column Sampling State
+  const [sampleValuesMap, setSampleValuesMap] = useState<Record<string, any[]>>({});
+  const [loadingSamplesId, setLoadingSamplesId] = useState<string | null>(null);
+
   // Modals state
   const [definitionModalOpen, setDefinitionModalOpen] = useState(false);
   const [definitionTarget, setDefinitionTarget] = useState<ItemRecord | null>(null);
@@ -232,15 +236,56 @@ export function DaxManagementPage() {
     }
   }
 
+  // When searching, ALWAYS unlock table filter to "all" as requested
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (searchQuery.trim() && selectedTable !== "all") {
+      setSelectedTable("all");
+    }
     void fetchItems();
+  }
+
+  function handleSearchQueryChange(val: string) {
+    setSearchQuery(val);
+    if (val.trim() && selectedTable !== "all") {
+      // Auto-unlock table filter when user searches
+      setSelectedTable("all");
+    }
   }
 
   function copyText(id: string, text: string) {
     void navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  // Live Semantic Model Column Values Sampling
+  async function handleFetchColumnSamples(item: ItemRecord) {
+    const currentModelMeta = models.find((m) => m.code === activeModel);
+    if (!currentModelMeta?.id) return;
+
+    setLoadingSamplesId(item.id);
+    try {
+      const res = await fetch("/api/powerbi/dax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "fetch_column_samples",
+          datasetId: currentModelMeta.id,
+          tableName: item.tableName,
+          columnName: item.name,
+          itemId: item.id,
+        }),
+      });
+      const json = await res.json();
+      if (json.values) {
+        setSampleValuesMap((prev) => ({ ...prev, [item.id]: json.values }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch column samples:", err);
+    } finally {
+      setLoadingSamplesId(null);
+    }
   }
 
   // Open Edit Definitions Modal
@@ -265,6 +310,7 @@ export function DaxManagementPage() {
           tableName: definitionTarget.tableName,
           objectName: definitionTarget.name,
           objectType: definitionTarget.type,
+          id: definitionTarget.id,
           mathDefinition: defMath,
           businessDefinition: defBusiness,
           notes: defNotes,
@@ -449,11 +495,11 @@ export function DaxManagementPage() {
                 DAX & Semantic Model Intelligence
               </h1>
               <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-extrabold uppercase border border-blue-200">
-                Live REST API
+                Live Supabase + REST API
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Direct telemetry from Power BI REST API &bull; Active: {currentModelMeta.name}
+              Synced to Supabase DB &bull; Active Model: {currentModelMeta.name}
             </p>
           </div>
         </div>
@@ -474,7 +520,7 @@ export function DaxManagementPage() {
           <button
             type="button"
             onClick={() => setFloatSidebarOpen(!floatSidebarOpen)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
           >
             <Layers className="h-3.5 w-3.5 text-blue-600" />
             <span>{floatSidebarOpen ? "Hide Datasets" : "Show Datasets"}</span>
@@ -723,7 +769,7 @@ export function DaxManagementPage() {
                     <input
                       type="text"
                       value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onChange={(e) => handleSearchQueryChange(e.target.value)}
                       placeholder="Search measures, columns, expressions, definitions..."
                       className="w-full rounded-full bg-slate-50 pl-10 pr-4 py-2 text-xs text-slate-800 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-400"
                     />
@@ -784,14 +830,14 @@ export function DaxManagementPage() {
 
               {/* Status Header */}
               <div className="shrink-0 flex items-center justify-between text-xs text-slate-500 pb-2 border-b border-slate-100">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span>Scope:</span>
                   <span className="font-bold text-slate-800 bg-slate-100 px-2.5 py-0.5 rounded-full">
                     {activeModel} &bull; {selectedTable === "all" ? "All Tables" : selectedTable}
                   </span>
                   {searchQuery && (
-                    <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full font-semibold">
-                      Matching: "{searchQuery}" ({searchMode})
+                    <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full font-semibold">
+                      Unlocked All Tables Search: "{searchQuery}" ({searchMode})
                     </span>
                   )}
                 </div>
@@ -802,7 +848,7 @@ export function DaxManagementPage() {
               <div className="flex-1 min-h-0 overflow-hidden">
                 {loading ? (
                   <div className="h-full flex items-center justify-center text-xs text-slate-400 animate-pulse">
-                    Querying Power BI REST API and Data Dictionary...
+                    Querying Supabase and Semantic Model...
                   </div>
                 ) : items.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-xs text-slate-400">
@@ -819,7 +865,7 @@ export function DaxManagementPage() {
                           <th className="py-2.5 px-3">Table</th>
                           <th className="py-2.5 px-3">Data Type</th>
                           <th className="py-2.5 px-3">Definitions</th>
-                          <th className="py-2.5 px-3">Formula / DAX</th>
+                          <th className="py-2.5 px-3">Formula / Samples</th>
                           <th className="py-2.5 px-3">Status</th>
                           <th className="py-2.5 px-3 text-right">Actions</th>
                         </tr>
@@ -886,6 +932,28 @@ export function DaxManagementPage() {
                                 <span className="truncate block font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-800" title={it.expression}>
                                   {it.expression}
                                 </span>
+                              ) : it.type.includes("Column") ? (
+                                <div className="flex items-center gap-1.5">
+                                  {sampleValuesMap[it.id] ? (
+                                    <span className="text-[10px] font-mono text-emerald-700 truncate">
+                                      [{sampleValuesMap[it.id].slice(0, 3).join(", ")}]
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleFetchColumnSamples(it)}
+                                      disabled={loadingSamplesId === it.id}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 transition"
+                                    >
+                                      {loadingSamplesId === it.id ? (
+                                        <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                                      ) : (
+                                        <Zap className="h-2.5 w-2.5" />
+                                      )}
+                                      <span>Sample</span>
+                                    </button>
+                                  )}
+                                </div>
                               ) : (
                                 <span className="text-slate-300 italic">Direct column</span>
                               )}
@@ -1046,6 +1114,54 @@ export function DaxManagementPage() {
                             </div>
                           </div>
 
+                          {/* Live Column Samples Section for Columns */}
+                          {selectedItem.type.includes("Column") && (
+                            <div className="space-y-2 p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <Zap className="h-3.5 w-3.5 text-blue-600" />
+                                  <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                                    Semantic Model Samples
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleFetchColumnSamples(selectedItem)}
+                                  disabled={loadingSamplesId === selectedItem.id}
+                                  className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition disabled:opacity-50"
+                                >
+                                  {loadingSamplesId === selectedItem.id ? (
+                                    <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="h-2.5 w-2.5" />
+                                  )}
+                                  <span>{loadingSamplesId === selectedItem.id ? "Querying..." : "Fetch Samples"}</span>
+                                </button>
+                              </div>
+
+                              {sampleValuesMap[selectedItem.id] ? (
+                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                  {sampleValuesMap[selectedItem.id].length > 0 ? (
+                                    sampleValuesMap[selectedItem.id].map((val, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-mono"
+                                      >
+                                        {String(val)}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 italic">No values found in model</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-slate-400 leading-relaxed">
+                                  Executes live DAX query (<code className="text-blue-600">VALUES</code>) against Power BI REST API to display distinct column values.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
                           {/* Business Definition */}
                           <div className="space-y-1">
                             <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
@@ -1174,6 +1290,22 @@ export function DaxManagementPage() {
                           </div>
 
                           <div className="flex items-center gap-2 self-end sm:self-auto">
+                            {it.type.includes("Column") && (
+                              <button
+                                type="button"
+                                onClick={() => handleFetchColumnSamples(it)}
+                                disabled={loadingSamplesId === it.id}
+                                className="flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold bg-white border border-slate-200 text-blue-600 hover:border-blue-300 shadow-2xs transition disabled:opacity-50"
+                              >
+                                {loadingSamplesId === it.id ? (
+                                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                                ) : (
+                                  <Zap className="h-2.5 w-2.5" />
+                                )}
+                                <span>Sample Values</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => openDefinitionModal(it)}
@@ -1215,6 +1347,18 @@ export function DaxManagementPage() {
                             )}
                           </div>
                         </div>
+
+                        {/* Live Column Samples Display */}
+                        {sampleValuesMap[it.id] && (
+                          <div className="p-2.5 rounded-xl bg-blue-50/50 border border-blue-100 flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold text-blue-700 uppercase">Samples:</span>
+                            {sampleValuesMap[it.id].map((v, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-white border border-blue-200 rounded text-[10px] font-mono text-slate-800">
+                                {String(v)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Mathematical & Business Definitions */}
                         {(it.businessDefinition || it.mathDefinition) && (
