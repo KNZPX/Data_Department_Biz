@@ -324,7 +324,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: "Custom DAX measure deleted" });
     }
 
-    // 4. Fetch Live Column Samples from Semantic Model
+    // 4. Fetch Live Column Samples from Semantic Model (5-10 samples)
     if (action === "fetch_column_samples") {
       const { datasetId, tableName, columnName, itemId } = body;
       if (!datasetId || !tableName || !columnName) {
@@ -334,25 +334,63 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const sampleQuery = `EVALUATE TOPN(10, VALUES('${tableName}'[${columnName}]))`;
-      const queryResult = await executeDaxQuery(datasetId, sampleQuery);
+      // Resolve dataset ID to actual GUID if model code was passed
+      const store = loadModels();
+      let resolvedDatasetId = datasetId;
+      if (store[datasetId]?.id) {
+        resolvedDatasetId = store[datasetId].id;
+      } else if (datasetId.toUpperCase().includes("D01")) {
+        resolvedDatasetId = store["PKT-D01"]?.id || "aa345483-35dc-4a57-a3a8-b09dffeb39e0";
+      } else if (datasetId.toUpperCase().includes("D02")) {
+        resolvedDatasetId = store["PKT-D02"]?.id || "e78dfd10-e9b6-45ac-a74d-14a1f5d1b7fc";
+      }
 
-      const rows = queryResult?.results?.[0]?.tables?.[0]?.rows || [];
-      const values = rows
-        .map((r: Record<string, any>) => Object.values(r)[0])
-        .filter((v: any) => v !== undefined && v !== null);
+      // Safely escape DAX identifiers
+      const cleanTable = tableName.replace(/^'|'$/g, "").replace(/'/g, "''");
+      const cleanCol = columnName.replace(/^\[|\]$/g, "").replace(/]/g, "]]");
+      const sampleQuery = `EVALUATE TOPN(8, VALUES('${cleanTable}'[${cleanCol}]))`;
 
-      if (itemId) {
+      let values: any[] = [];
+      try {
+        const queryResult = await executeDaxQuery(resolvedDatasetId, sampleQuery);
+        const rows = queryResult?.results?.[0]?.tables?.[0]?.rows || [];
+        values = rows
+          .map((r: Record<string, any>) => Object.values(r)[0])
+          .filter((v: any) => v !== undefined && v !== null && v !== "");
+      } catch (err: any) {
+        // Fallback for calculated tables or single columns
+        try {
+          const fallbackQuery = `EVALUATE TOPN(8, SELECTCOLUMNS('${cleanTable}', "val", '${cleanTable}'[${cleanCol}]))`;
+          const queryResult = await executeDaxQuery(resolvedDatasetId, fallbackQuery);
+          const rows = queryResult?.results?.[0]?.tables?.[0]?.rows || [];
+          values = rows
+            .map((r: Record<string, any>) => Object.values(r)[0])
+            .filter((v: any) => v !== undefined && v !== null && v !== "");
+        } catch (innerErr: any) {
+          return NextResponse.json({
+            success: false,
+            error: "Sampling is not supported for this column type (e.g., system RowNumber, binary, or restricted table).",
+            values: [],
+          });
+        }
+      }
+
+      // Slice to 5-10 distinct values
+      const distinctValues = Array.from(new Set(values)).slice(0, 10);
+
+      if (itemId && distinctValues.length > 0) {
         try {
           const supabase = getSupabaseClient();
           await supabase
             .from("dax_dictionary_items")
-            .update({ sample_values: values })
+            .update({ sample_values: distinctValues, updated_at: new Date().toISOString() })
             .eq("id", itemId);
-        } catch {}
+        } catch (dbErr) {
+          console.error("Failed to persist sample values to Supabase:", dbErr);
+        }
       }
 
-      return NextResponse.json({ success: true, values });
+      return NextResponse.json({ success: true, values: distinctValues });
     }
 
     // 5. Default: Live Query Execution via Power BI REST API
