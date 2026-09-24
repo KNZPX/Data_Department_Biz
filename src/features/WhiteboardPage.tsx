@@ -419,7 +419,10 @@ export const NODE_TEMPLATES: Record<
 };
 
 // Calculate exact port coordinate given node geometry and side
-export function getPortCoordinate(node: WhiteboardNode, side: PortSide = "right"): { x: number; y: number } {
+export function getPortCoordinate(
+  node: { x: number; y: number; width?: number; height?: number },
+  side: PortSide = "right"
+): { x: number; y: number } {
   const width = node.width || 230;
   const height = node.height || 100;
   switch (side) {

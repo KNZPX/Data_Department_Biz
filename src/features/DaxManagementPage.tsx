@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import {
   Activity,
   ArrowRight,
@@ -66,6 +66,13 @@ import { clsx } from "clsx";
 import { useTheme } from "@/context/ThemeContext";
 import { DaxCodeViewer } from "@/components/powerbi/DaxCodeViewer";
 import { formatDax } from "@/lib/daxFormatter";
+import {
+  PortSide as DiagramPortSide,
+  NodeConnection as DiagramConnection,
+  WhiteboardNode,
+  WhiteboardBoard,
+  getPortCoordinate as getDiagramPortCoordinate,
+} from "@/features/WhiteboardPage";
 
 interface ItemRecord {
   id: string;
@@ -95,14 +102,7 @@ interface ModelMeta {
   totalColumns: number;
 }
 
-export type DiagramPortSide = "top" | "right" | "bottom" | "left";
-
-export interface DiagramConnection {
-  targetId: string;
-  fromSide?: DiagramPortSide;
-  toSide?: DiagramPortSide;
-  label?: string;
-}
+export type { DiagramPortSide, DiagramConnection };
 
 export interface DiagramNode {
   id: string;
@@ -111,27 +111,12 @@ export interface DiagramNode {
   role: string;
   detail: string;
   codeSnippet?: string;
+  color?: string;
   x: number;
   y: number;
   width?: number;
   height?: number;
   connections: DiagramConnection[];
-}
-
-// Calculate exact port coordinate given node geometry and side (Aligned with Whiteboard System)
-export function getDiagramPortCoordinate(node: DiagramNode, side: DiagramPortSide = "right"): { x: number; y: number } {
-  const width = node.width || 230;
-  const height = node.height || 92;
-  switch (side) {
-    case "top":
-      return { x: node.x + width / 2, y: node.y };
-    case "right":
-      return { x: node.x + width, y: node.y + height / 2 };
-    case "bottom":
-      return { x: node.x + width / 2, y: node.y + height };
-    case "left":
-      return { x: node.x, y: node.y + height / 2 };
-  }
 }
 
 function HighlightText({
@@ -707,6 +692,12 @@ export function DaxManagementPage() {
   const [diagramSaveSuccess, setDiagramSaveSuccess] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
 
+  // Diagram Connection Drag Tracking Refs (aligned with Whiteboard system)
+  const diagramDragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isDiagramWireDragRef = useRef<boolean>(false);
+  const diagramConnectingSourceRef = useRef<{ nodeId: string; fromSide: DiagramPortSide } | null>(null);
+  diagramConnectingSourceRef.current = connectingSource;
+
   // DELETE KEYBOARD SHORTCUT (Del / Backspace) for Diagram Modal
   useEffect(() => {
     if (!diagramModalOpen) return;
@@ -1027,43 +1018,218 @@ export function DaxManagementPage() {
     setDiagramModalOpen(true);
   }
 
-  // 4-Side Port Mouse Event Handlers
-  function handleDiagramPortMouseDown(e: React.MouseEvent, nodeId: string, side: DiagramPortSide) {
-    e.stopPropagation();
-    setConnectingSource({ nodeId, fromSide: side });
-    const srcNode = diagramNodes.find((n) => n.id === nodeId);
-    if (srcNode) {
-      const coord = getDiagramPortCoordinate(srcNode, side);
-      setLiveWireEnd(coord);
-    }
-  }
+  // Complete connection between two diagram nodes
+  const completeDiagramConnection = useCallback(
+    (sourceId: string, fromSide: DiagramPortSide, targetId: string, toSide: DiagramPortSide) => {
+      if (sourceId === targetId) {
+        setConnectingSource(null);
+        setLiveWireEnd(null);
+        return;
+      }
 
-  function handleDiagramPortMouseUp(nodeId: string, toSide: DiagramPortSide = "left") {
-    if (!connectingSource) return;
-    if (connectingSource.nodeId === nodeId) {
+      setDiagramNodes((prev) =>
+        prev.map((n) => {
+          if (n.id === sourceId) {
+            const current = n.connections || [];
+            if (!current.some((c) => c.targetId === targetId)) {
+              return {
+                ...n,
+                connections: [...current, { targetId, fromSide, toSide, label: "Evaluate" }],
+              };
+            }
+          }
+          return n;
+        })
+      );
+
       setConnectingSource(null);
       setLiveWireEnd(null);
+    },
+    []
+  );
+
+  // Connect directly to a diagram node (auto-selects best entrance port using getDiagramPortCoordinate)
+  const handleConnectToDiagramNode = useCallback(
+    (targetNodeId: string) => {
+      const src = diagramConnectingSourceRef.current;
+      if (!src || src.nodeId === targetNodeId) return;
+      const srcNode = diagramNodes.find((n) => n.id === src.nodeId);
+      const tgtNode = diagramNodes.find((n) => n.id === targetNodeId);
+      let bestSide: DiagramPortSide = "left";
+      if (srcNode && tgtNode) {
+        const dx = tgtNode.x - srcNode.x;
+        const dy = tgtNode.y - srcNode.y;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          bestSide = dx > 0 ? "left" : "right";
+        } else {
+          bestSide = dy > 0 ? "top" : "bottom";
+        }
+      }
+      completeDiagramConnection(src.nodeId, src.fromSide, targetNodeId, bestSide);
+    },
+    [diagramNodes, completeDiagramConnection]
+  );
+
+  // 4-Side Port Mouse Event Handlers with Click-to-Connect and Drag-to-Connect
+  function handleDiagramPortMouseDown(e: React.MouseEvent, nodeId: string, side: DiagramPortSide) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const src = diagramConnectingSourceRef.current;
+    if (src) {
+      if (src.nodeId !== nodeId) {
+        completeDiagramConnection(src.nodeId, src.fromSide, nodeId, side);
+        return;
+      } else if (src.fromSide === side) {
+        setConnectingSource(null);
+        setLiveWireEnd(null);
+        return;
+      }
+      setConnectingSource({ nodeId, fromSide: side });
+      const srcNode = diagramNodes.find((n) => n.id === nodeId);
+      if (srcNode) {
+        setLiveWireEnd(getDiagramPortCoordinate(srcNode as any, side));
+      }
       return;
     }
 
-    const { nodeId: srcId, fromSide } = connectingSource;
-    setDiagramNodes((prev) =>
-      prev.map((n) => {
-        if (n.id === srcId) {
-          const current = n.connections || [];
-          if (!current.some((c) => c.targetId === nodeId)) {
-            return {
-              ...n,
-              connections: [...current, { targetId: nodeId, fromSide, toSide, label: "Evaluate" }],
-            };
-          }
-        }
-        return n;
-      })
-    );
+    setConnectingSource({ nodeId, fromSide: side });
+    const srcNode = diagramNodes.find((n) => n.id === nodeId);
+    if (srcNode) {
+      const coord = getDiagramPortCoordinate(srcNode as any, side);
+      setLiveWireEnd(coord);
+    }
+    diagramDragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    isDiagramWireDragRef.current = true;
+  }
 
-    setConnectingSource(null);
-    setLiveWireEnd(null);
+  function handleDiagramPortMouseUp(nodeId: string, toSide: DiagramPortSide = "left") {
+    const src = diagramConnectingSourceRef.current;
+    if (!src) return;
+    if (src.nodeId === nodeId) {
+      return;
+    }
+    completeDiagramConnection(src.nodeId, src.fromSide, nodeId, toSide);
+  }
+
+  // Global mouse listeners for Diagram wire dragging & connecting via elementFromPoint
+  useEffect(() => {
+    if (!diagramModalOpen) return;
+
+    function handleGlobalMouseMove(e: MouseEvent) {
+      if (diagramConnectingSourceRef.current && canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const curX = (e.clientX - rect.left - diagramPan.x) / diagramZoom;
+        const curY = (e.clientY - rect.top - diagramPan.y) / diagramZoom;
+        setLiveWireEnd({ x: curX, y: curY });
+      }
+    }
+
+    function handleGlobalMouseUp(e: MouseEvent) {
+      if (isDiagramWireDragRef.current && diagramConnectingSourceRef.current) {
+        isDiagramWireDragRef.current = false;
+        const dist = Math.hypot(
+          e.clientX - diagramDragStartPosRef.current.x,
+          e.clientY - diagramDragStartPosRef.current.y
+        );
+
+        if (dist >= 6) {
+          const elem = document.elementFromPoint(e.clientX, e.clientY);
+
+          const portEl = elem?.closest<HTMLElement>("[data-diagram-port-node-id]");
+          if (portEl) {
+            const tgtNodeId = portEl.getAttribute("data-diagram-port-node-id");
+            const tgtSide = (portEl.getAttribute("data-diagram-port-side") || "left") as DiagramPortSide;
+            if (tgtNodeId && tgtNodeId !== diagramConnectingSourceRef.current.nodeId) {
+              completeDiagramConnection(
+                diagramConnectingSourceRef.current.nodeId,
+                diagramConnectingSourceRef.current.fromSide,
+                tgtNodeId,
+                tgtSide
+              );
+              return;
+            }
+          }
+
+          const nodeEl = elem?.closest<HTMLElement>("[data-diagram-node-id]");
+          if (nodeEl) {
+            const tgtNodeId = nodeEl.getAttribute("data-diagram-node-id");
+            if (tgtNodeId && tgtNodeId !== diagramConnectingSourceRef.current.nodeId) {
+              handleConnectToDiagramNode(tgtNodeId);
+              return;
+            }
+          }
+
+          setConnectingSource(null);
+          setLiveWireEnd(null);
+        }
+      }
+    }
+
+    window.addEventListener("mousemove", handleGlobalMouseMove);
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleGlobalMouseMove);
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+    };
+  }, [diagramModalOpen, diagramPan, diagramZoom, completeDiagramConnection, handleConnectToDiagramNode]);
+
+  // Export current AST diagram directly to Whiteboard system
+  function handleExportToWhiteboard(item: ItemRecord, nodes: DiagramNode[]) {
+    try {
+      const newBoardId = `board_dax_${Date.now()}`;
+      const mappedNodes: WhiteboardNode[] = nodes.map((dn) => {
+        let nodeType: any = "process";
+        if (dn.category === "source") nodeType = "database";
+        else if (dn.category === "measure_call") nodeType = "dax";
+        else if (dn.category === "filter") nodeType = "process";
+        else if (dn.category === "switch") nodeType = "decision";
+        else if (dn.category === "output") nodeType = "output";
+        else if (dn.category === "calculation") nodeType = "process";
+
+        return {
+          id: dn.id,
+          type: nodeType,
+          title: dn.title,
+          description: `${dn.role} • ${dn.detail}`,
+          color: dn.color || "#4f46e5",
+          x: dn.x,
+          y: dn.y,
+          width: dn.width || 230,
+          height: dn.height || 92,
+          connections: dn.connections.map((c) => ({
+            targetId: c.targetId,
+            fromSide: c.fromSide as any,
+            toSide: c.toSide as any,
+            label: c.label,
+          })),
+        };
+      });
+
+      const newBoard: WhiteboardBoard = {
+        id: newBoardId,
+        name: `DAX AST: [${item.name}]`,
+        folderId: "folder_financial",
+        folderName: "Financial & Cost DAX",
+        description: `Exported programming-grade AST workflow for measure [${item.name}] (${item.tableName})`,
+        updatedAt: new Date().toISOString(),
+        nodes: mappedNodes,
+      };
+
+      const saved = localStorage.getItem("powerbi_whiteboard_boards_v1");
+      const currentBoards = saved ? JSON.parse(saved) : [];
+      localStorage.setItem("powerbi_whiteboard_boards_v1", JSON.stringify([newBoard, ...currentBoards]));
+
+      fetch("/api/whiteboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ board: newBoard }),
+      }).catch(() => {});
+
+      window.open(`/whiteboard?boardId=${newBoardId}`, "_blank");
+    } catch (err) {
+      console.error("Failed to export AST diagram to whiteboard", err);
+    }
   }
 
   function handleRemoveDiagramConnection(srcId: string, targetId: string) {
@@ -1115,19 +1281,17 @@ export function DaxManagementPage() {
   function handleDiagramCanvasMouseUp() {
     setIsDiagramPanning(false);
     setDraggingNodeId(null);
-    if (connectingSource) {
-      setConnectingSource(null);
-      setLiveWireEnd(null);
-    }
   }
 
   // Node Click & Drag Start (Visual = Select & Move)
   function handleDiagramNodeMouseDown(e: React.MouseEvent, node: DiagramNode) {
     e.stopPropagation();
 
-    // If connecting wire in progress, clicking node connects to its left port
-    if (connectingSource && connectingSource.nodeId !== node.id) {
-      handleDiagramPortMouseUp(node.id, "left");
+    // If connecting wire in progress, clicking node finishes connection!
+    const src = diagramConnectingSourceRef.current;
+    if (src && src.nodeId !== node.id) {
+      e.preventDefault();
+      handleConnectToDiagramNode(node.id);
       return;
     }
 
@@ -2401,14 +2565,6 @@ export function DaxManagementPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleOpenDiagram(selectedItem)}
-                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
-                              >
-                                <Workflow className="h-2.5 w-2.5" />
-                                <span>Diagram</span>
-                              </button>
-                              <button
-                                type="button"
                                 onClick={() => copyText(selectedItem.id, sideboxForm.expression)}
                                 className="text-[9px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
                               >
@@ -2418,6 +2574,14 @@ export function DaxManagementPage() {
                                   <Copy className="h-2.5 w-2.5" />
                                 )}
                                 <span>{copiedId === selectedItem.id ? "Copied" : "Copy"}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDiagram(selectedItem)}
+                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
+                              >
+                                <Workflow className="h-2.5 w-2.5" />
+                                <span>Diagram</span>
                               </button>
                             </div>
                           </div>
@@ -2451,14 +2615,28 @@ export function DaxManagementPage() {
                             <h5 className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                               DAX Expression
                             </h5>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDiagram(selectedItem)}
-                              className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
-                            >
-                              <Workflow className="h-2.5 w-2.5" />
-                              <span>Diagram</span>
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => copyText(selectedItem.id, selectedItem.expression!)}
+                                className="text-[9px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
+                              >
+                                {copiedId === selectedItem.id ? (
+                                  <Check className="h-2.5 w-2.5 text-emerald-600" />
+                                ) : (
+                                  <Copy className="h-2.5 w-2.5" />
+                                )}
+                                <span>{copiedId === selectedItem.id ? "Copied" : "Copy"}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDiagram(selectedItem)}
+                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
+                              >
+                                <Workflow className="h-2.5 w-2.5" />
+                                <span>Diagram</span>
+                              </button>
+                            </div>
                           </div>
                           <DaxCodeViewer
                             code={selectedItem.expression}
@@ -2716,6 +2894,32 @@ export function DaxManagementPage() {
                   </button>
                 </div>
 
+                {/* Copy DAX Formula Button */}
+                <button
+                  type="button"
+                  onClick={() => copyText("diagram_expr_header", diagramTarget.expression || "")}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:text-blue-600 shadow-xs transition cursor-pointer"
+                  title="Copy DAX Expression"
+                >
+                  {copiedId === "diagram_expr_header" ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  <span>{copiedId === "diagram_expr_header" ? "Copied" : "Copy DAX"}</span>
+                </button>
+
+                {/* Open in Full Whiteboard Button */}
+                <button
+                  type="button"
+                  onClick={() => handleExportToWhiteboard(diagramTarget, diagramNodes)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 shadow-xs transition cursor-pointer"
+                  title="Open this AST diagram in Whiteboard with infinite canvas and rich editing tools"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>Open in Whiteboard</span>
+                </button>
+
                 {/* Save Diagram Button */}
                 <button
                   type="button"
@@ -2904,6 +3108,17 @@ export function DaxManagementPage() {
                       >
                         <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb" />
                       </marker>
+                      <marker
+                        id="astArrowLive"
+                        viewBox="0 0 10 10"
+                        refX="6"
+                        refY="5"
+                        markerWidth="6"
+                        markerHeight="6"
+                        orient="auto-start-reverse"
+                      >
+                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
+                      </marker>
                     </defs>
 
                     {/* Render Existing Connection Wires */}
@@ -3008,7 +3223,8 @@ export function DaxManagementPage() {
                             stroke="#f59e0b"
                             strokeWidth="2.5"
                             strokeDasharray="5 5"
-                            markerEnd="url(#astArrow)"
+                            markerEnd="url(#astArrowLive)"
+                            className="pointer-events-none"
                           />
                         );
                       })()
@@ -3021,6 +3237,7 @@ export function DaxManagementPage() {
                     const isHovered = hoveredNodeId === node.id;
                     const isDragging = draggingNodeId === node.id;
                     const isConnecting = Boolean(connectingSource);
+                    const isSourceNode = connectingSource?.nodeId === node.id;
 
                     const colorStyles =
                       node.category === "source"
@@ -3040,9 +3257,16 @@ export function DaxManagementPage() {
                     return (
                       <div
                         key={node.id}
+                        data-diagram-node-id={node.id}
                         onMouseEnter={() => setHoveredNodeId(node.id)}
                         onMouseLeave={() => setHoveredNodeId((curr) => (curr === node.id ? null : curr))}
                         onMouseDown={(e) => handleDiagramNodeMouseDown(e, node)}
+                        onClick={(e) => {
+                          if (connectingSource && connectingSource.nodeId !== node.id) {
+                            e.stopPropagation();
+                            handleConnectToDiagramNode(node.id);
+                          }
+                        }}
                         style={{
                           position: "absolute",
                           left: `${node.x}px`,
@@ -3065,13 +3289,22 @@ export function DaxManagementPage() {
                             {/* Top Port */}
                             <button
                               type="button"
+                              data-diagram-port-node-id={node.id}
+                              data-diagram-port-side="top"
                               onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "top")}
                               onMouseUp={(e) => {
                                 e.stopPropagation();
                                 handleDiagramPortMouseUp(node.id, "top");
                               }}
                               title="Top Port (Connect)"
-                              className="absolute -top-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
+                              className={clsx(
+                                "absolute -top-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                isSourceNode && connectingSource?.fromSide === "top"
+                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
+                                  : isConnecting && !isSourceNode
+                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
+                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
+                              )}
                             >
                               +
                             </button>
@@ -3079,13 +3312,22 @@ export function DaxManagementPage() {
                             {/* Right Port */}
                             <button
                               type="button"
+                              data-diagram-port-node-id={node.id}
+                              data-diagram-port-side="right"
                               onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "right")}
                               onMouseUp={(e) => {
                                 e.stopPropagation();
                                 handleDiagramPortMouseUp(node.id, "right");
                               }}
                               title="Right Port (Connect)"
-                              className="absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
+                              className={clsx(
+                                "absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                isSourceNode && connectingSource?.fromSide === "right"
+                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
+                                  : isConnecting && !isSourceNode
+                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
+                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
+                              )}
                             >
                               +
                             </button>
@@ -3093,13 +3335,22 @@ export function DaxManagementPage() {
                             {/* Bottom Port */}
                             <button
                               type="button"
+                              data-diagram-port-node-id={node.id}
+                              data-diagram-port-side="bottom"
                               onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "bottom")}
                               onMouseUp={(e) => {
                                 e.stopPropagation();
                                 handleDiagramPortMouseUp(node.id, "bottom");
                               }}
                               title="Bottom Port (Connect)"
-                              className="absolute -bottom-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
+                              className={clsx(
+                                "absolute -bottom-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                isSourceNode && connectingSource?.fromSide === "bottom"
+                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
+                                  : isConnecting && !isSourceNode
+                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
+                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
+                              )}
                             >
                               +
                             </button>
@@ -3107,13 +3358,22 @@ export function DaxManagementPage() {
                             {/* Left Port */}
                             <button
                               type="button"
+                              data-diagram-port-node-id={node.id}
+                              data-diagram-port-side="left"
                               onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "left")}
                               onMouseUp={(e) => {
                                 e.stopPropagation();
                                 handleDiagramPortMouseUp(node.id, "left");
                               }}
                               title="Left Port (Connect)"
-                              className="absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-700 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold"
+                              className={clsx(
+                                "absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                isSourceNode && connectingSource?.fromSide === "left"
+                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
+                                  : isConnecting && !isSourceNode
+                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
+                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
+                              )}
                             >
                               +
                             </button>
