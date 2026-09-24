@@ -49,6 +49,7 @@ import {
   MoreVertical,
   Scissors,
   CheckCircle,
+  Loader2,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useTheme } from "@/context/ThemeContext";
@@ -454,6 +455,7 @@ export function WhiteboardPage() {
   // Boards State
   const [boards, setBoards] = useState<WhiteboardBoard[]>([]);
   const [activeBoardId, setActiveBoardId] = useState<string>("");
+  const [isLoadingBoards, setIsLoadingBoards] = useState<boolean>(true);
   const [isRenamingBoard, setIsRenamingBoard] = useState(false);
   const [boardTitleInput, setBoardTitleInput] = useState("");
   const [syncStatus, setSyncStatus] = useState<"saved" | "saving" | "offline">("saved");
@@ -534,6 +536,7 @@ export function WhiteboardPage() {
   useEffect(() => {
     let isMounted = true;
     async function loadBoards() {
+      setIsLoadingBoards(true);
       try {
         setSyncStatus("saving");
         const res = await fetch("/api/whiteboard");
@@ -549,11 +552,28 @@ export function WhiteboardPage() {
             nodes: b.nodes || [],
           }));
           if (isMounted) {
+            let targetId = mapped[0].id;
+            let openCanvas = false;
+            if (typeof window !== "undefined") {
+              const urlParams = new URLSearchParams(window.location.search);
+              const requestedId = urlParams.get("boardId");
+              if (requestedId) {
+                const found = mapped.find((b) => b.id === requestedId);
+                if (found) {
+                  targetId = found.id;
+                  openCanvas = true;
+                }
+              }
+            }
+
             setBoards(mapped);
-            setActiveBoardId(mapped[0].id);
-            setBoardTitleInput(mapped[0].name);
+            setActiveBoardId(targetId);
+            const activeB = mapped.find((b) => b.id === targetId) || mapped[0];
+            setBoardTitleInput(activeB.name);
+            if (openCanvas) setViewState("canvas");
             setSyncStatus("saved");
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(mapped));
+            setIsLoadingBoards(false);
             return;
           }
         }
@@ -568,10 +588,28 @@ export function WhiteboardPage() {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed) && parsed.length > 0) {
             if (isMounted) {
+              let targetId = parsed[0].id;
+              let openCanvas = false;
+              if (typeof window !== "undefined") {
+                const urlParams = new URLSearchParams(window.location.search);
+                const requestedId = urlParams.get("boardId");
+                if (requestedId) {
+                  const found = parsed.find((b: any) => b.id === requestedId);
+                  if (found) {
+                    targetId = found.id;
+                    openCanvas = true;
+                  }
+                }
+              }
+
               setBoards(parsed);
-              setActiveBoardId(parsed[0].id);
-              setBoardTitleInput(parsed[0].name);
+              setActiveBoardId(targetId);
+              const activeB = parsed.find((b: any) => b.id === targetId) || parsed[0];
+              setBoardTitleInput(activeB.name);
+              if (openCanvas) setViewState("canvas");
               setSyncStatus("saved");
+              setIsLoadingBoards(false);
+
               // Sync local boards to Supabase in background
               fetch("/api/whiteboard", {
                 method: "POST",
@@ -590,6 +628,7 @@ export function WhiteboardPage() {
         setActiveBoardId(DEFAULT_BOARDS[0].id);
         setBoardTitleInput(DEFAULT_BOARDS[0].name);
         setSyncStatus("saved");
+        setIsLoadingBoards(false);
         fetch("/api/whiteboard", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -997,6 +1036,13 @@ export function WhiteboardPage() {
                 ...n,
                 connections: [...current, { targetId, fromSide, toSide, label: "Flow" }],
               };
+            } else {
+              return {
+                ...n,
+                connections: current.map((c) =>
+                  c.targetId === targetId ? { ...c, fromSide, toSide } : c
+                ),
+              };
             }
           }
           return n;
@@ -1385,12 +1431,29 @@ export function WhiteboardPage() {
     });
   }, [boards, boardSearchQuery, selectedFolderFilter]);
 
+  // Loading State - Always show loading screen until boards are loaded
+  if (isLoadingBoards) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center h-full bg-[#f8fafc] animate-in fade-in duration-200">
+        <div className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white border border-slate-200/80 shadow-xl max-w-sm w-full mx-4 text-center">
+          <div className="h-14 w-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-inner">
+            <Loader2 className="h-7 w-7 animate-spin text-blue-600" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-black text-slate-800 tracking-tight">Loading Whiteboards</h3>
+            <p className="text-xs text-slate-500 font-medium">Synchronizing canvas workspace from cloud storage...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // =========================================================================
   // VIEW 1: WORKSPACE BOARDS GALLERY (GRID, LIST, TREE VIEWS + FOLDERS)
   // =========================================================================
   if (viewState === "list") {
     return (
-      <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-y-auto">
+      <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-y-auto animate-in fade-in duration-200 ease-out">
         {/* Toast Notification */}
         {toastMessage && (
           <div className="fixed top-5 right-5 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-xl border border-slate-700 animate-in fade-in slide-in-from-top-2">
@@ -1950,7 +2013,7 @@ export function WhiteboardPage() {
   // VIEW 2: INTERACTIVE UNLIMITED CANVAS VIEW
   // =========================================================================
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-hidden select-none relative">
+    <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-hidden select-none relative animate-in fade-in zoom-in-[0.98] duration-300 ease-out">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-xl border border-slate-700 animate-in fade-in slide-in-from-top-2">
@@ -2352,15 +2415,23 @@ export function WhiteboardPage() {
               position: "absolute",
               left: 0,
               top: 0,
-              width: 0,
-              height: 0,
-              overflow: "visible",
+              width: "50000px",
+              height: "50000px",
+              pointerEvents: "none",
             }}
           >
             {/* SVG Connecting Curves */}
             <svg
-              className="absolute inset-0 pointer-events-none"
-              style={{ overflow: "visible", left: 0, top: 0, width: 0, height: 0 }}
+              className="pointer-events-none"
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: "50000px",
+                height: "50000px",
+                overflow: "visible",
+                zIndex: 1,
+              }}
             >
               <defs>
                 <marker
@@ -2372,7 +2443,7 @@ export function WhiteboardPage() {
                   markerHeight="6"
                   orient="auto-start-reverse"
                 >
-                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb" />
                 </marker>
                 <marker
                   id="arrow-whiteboard-live"
@@ -2427,15 +2498,15 @@ export function WhiteboardPage() {
                         d={pathD}
                         fill="none"
                         stroke="transparent"
-                        strokeWidth="16"
+                        strokeWidth="20"
                         className="pointer-events-auto cursor-pointer"
                         onClick={() => setEditingConnection({ sourceId: node.id, targetId: conn.targetId })}
                       />
                       <path
                         d={pathD}
                         fill="none"
-                        stroke="#3b82f6"
-                        strokeWidth="2.5"
+                        stroke="#2563eb"
+                        strokeWidth="3"
                         strokeDasharray={node.type === "sticky" ? "4 4" : undefined}
                         markerEnd="url(#arrow-whiteboard)"
                       />
@@ -2485,7 +2556,7 @@ export function WhiteboardPage() {
                       d={`M ${srcCoord.x} ${srcCoord.y} Q ${(srcCoord.x + liveWireEnd.x) / 2} ${(srcCoord.y + liveWireEnd.y) / 2 - 30}, ${liveWireEnd.x} ${liveWireEnd.y}`}
                       fill="none"
                       stroke="#f59e0b"
-                      strokeWidth="3"
+                      strokeWidth="3.5"
                       strokeDasharray="6 4"
                       markerEnd="url(#arrow-whiteboard-live)"
                       className="pointer-events-none"
@@ -2529,9 +2600,10 @@ export function WhiteboardPage() {
                     backgroundColor: node.type === "sticky" ? node.color || "#fef08a" : node.type === "text" ? "transparent" : "#ffffff",
                     borderColor: node.color || "#e2e8f0",
                     cursor: isConnecting ? "crosshair" : "move",
+                    zIndex: isSelected ? 30 : 10,
                   }}
                   className={clsx(
-                    "select-none transition-shadow relative flex flex-col justify-between group",
+                    "pointer-events-auto select-none transition-shadow relative flex flex-col justify-between group",
                     node.type === "sticky"
                       ? "p-3 rounded-xl shadow-md border border-black/10 text-slate-900"
                       : node.type === "text"

@@ -1248,8 +1248,9 @@ export function DaxManagementPage() {
         nodes: mappedNodes,
       };
 
-      const saved = localStorage.getItem("powerbi_whiteboard_boards_v1");
+      const saved = localStorage.getItem("powerbi_whiteboard_boards_v2") || localStorage.getItem("powerbi_whiteboard_boards_v1");
       const currentBoards = saved ? JSON.parse(saved) : [];
+      localStorage.setItem("powerbi_whiteboard_boards_v2", JSON.stringify([newBoard, ...currentBoards]));
       localStorage.setItem("powerbi_whiteboard_boards_v1", JSON.stringify([newBoard, ...currentBoards]));
 
       fetch("/api/whiteboard", {
