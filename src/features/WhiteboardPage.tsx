@@ -471,8 +471,12 @@ export function WhiteboardPage() {
   const [clipboardNode, setClipboardNode] = useState<WhiteboardNode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Right-Click Context Menu State
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: WhiteboardNode } | null>(null);
+  // Right-Click Context Menu State (Supports both card and empty canvas)
+  const [contextMenu, setContextMenu] = useState<
+    | { type: "node"; x: number; y: number; node: WhiteboardNode }
+    | { type: "canvas"; x: number; y: number; canvasX: number; canvasY: number }
+    | null
+  >(null);
 
   // In-Node Direct Double Click Editing State
   const [inlineEditing, setInlineEditing] = useState<{ nodeId: string; field: "title" | "description" } | null>(null);
@@ -1084,7 +1088,7 @@ export function WhiteboardPage() {
   function handleNodeMouseDown(e: React.MouseEvent, node: WhiteboardNode) {
     e.stopPropagation();
 
-    // If connecting wire in progress, clicking node finishes connection to left port
+    // If connecting wire in progress, clicking node finishes connection
     if (connectingSource && connectingSource.nodeId !== node.id) {
       handlePortMouseUp(node.id, "left");
       return;
@@ -1101,12 +1105,82 @@ export function WhiteboardPage() {
     });
   }
 
-  // Right Click on Node
+  // Node Mouse Up (Handles wire connection dropped onto node)
+  function handleNodeMouseUp(e: React.MouseEvent, node: WhiteboardNode) {
+    if (connectingSource && connectingSource.nodeId !== node.id) {
+      e.stopPropagation();
+      const srcNode = activeBoard?.nodes.find((n) => n.id === connectingSource.nodeId);
+      let bestSide: PortSide = "left";
+      if (srcNode) {
+        const dx = node.x - srcNode.x;
+        const dy = node.y - srcNode.y;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          bestSide = dx > 0 ? "left" : "right";
+        } else {
+          bestSide = dy > 0 ? "top" : "bottom";
+        }
+      }
+      handlePortMouseUp(node.id, bestSide);
+    }
+  }
+
+  // Right Click on Node Card
   function handleNodeContextMenu(e: React.MouseEvent, node: WhiteboardNode) {
     e.preventDefault();
     e.stopPropagation();
     setSelectedNodeId(node.id);
-    setContextMenu({ x: e.clientX, y: e.clientY, node });
+    setContextMenu({ type: "node", x: e.clientX, y: e.clientY, node });
+  }
+
+  // Right Click on Empty Canvas Space
+  function handleCanvasContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canvasContainerRef.current) return;
+    const rect = canvasContainerRef.current.getBoundingClientRect();
+    const canvasX = Math.round((e.clientX - rect.left - pan.x) / zoom);
+    const canvasY = Math.round((e.clientY - rect.top - pan.y) / zoom);
+    setContextMenu({ type: "canvas", x: e.clientX, y: e.clientY, canvasX, canvasY });
+  }
+
+  // Paste Element at exact Canvas (X, Y) coordinates
+  function handlePasteAt(canvasX: number, canvasY: number) {
+    if (!clipboardNode) {
+      showToast("Clipboard is empty! Select a card and press Ctrl+C first.");
+      return;
+    }
+    const newNode: WhiteboardNode = {
+      ...clipboardNode,
+      id: `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      x: canvasX,
+      y: canvasY,
+      connections: [],
+    };
+    updateActiveNodes((nodes) => [...nodes, newNode]);
+    setSelectedNodeId(newNode.id);
+    setContextMenu(null);
+    showToast(`Pasted "${newNode.title}"`);
+  }
+
+  // Quick Add Element at exact Canvas (X, Y) coordinates
+  function handleAddNodeAt(type: WhiteboardNode["type"], canvasX: number, canvasY: number) {
+    const tmpl = NODE_TEMPLATES[type] || NODE_TEMPLATES.process;
+    const newNode: WhiteboardNode = {
+      id: `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      type,
+      title: type === "value" ? "KPI Metric" : type === "text" ? "Note Header" : `New ${type.toUpperCase()}`,
+      description: type === "value" ? "฿1,250,000" : "Click or double-click to configure...",
+      x: canvasX,
+      y: canvasY,
+      width: tmpl.width,
+      height: tmpl.height,
+      color: type === "value" ? "#059669" : type === "decision" ? "#d97706" : "#2563eb",
+      connections: [],
+    };
+    updateActiveNodes((nodes) => [...nodes, newNode]);
+    setSelectedNodeId(newNode.id);
+    setContextMenu(null);
+    showToast(`Added ${type} element`);
   }
 
   // Fit View / Recenter All Elements
@@ -2127,6 +2201,7 @@ export function WhiteboardPage() {
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
+          onContextMenu={handleCanvasContextMenu}
           className={clsx(
             "flex-1 w-full h-full relative overflow-hidden select-none",
             isPanning ? "cursor-grabbing" : "cursor-grab"
@@ -2293,6 +2368,7 @@ export function WhiteboardPage() {
                   onMouseEnter={() => setHoveredNodeId(node.id)}
                   onMouseLeave={() => setHoveredNodeId((curr) => (curr === node.id ? null : curr))}
                   onMouseDown={(e) => handleNodeMouseDown(e, node)}
+                  onMouseUp={(e) => handleNodeMouseUp(e, node)}
                   onContextMenu={(e) => handleNodeContextMenu(e, node)}
                   style={{
                     position: "absolute",
@@ -2302,7 +2378,7 @@ export function WhiteboardPage() {
                     minHeight: `${node.height}px`,
                     backgroundColor: node.type === "sticky" ? node.color || "#fef08a" : node.type === "text" ? "transparent" : "#ffffff",
                     borderColor: node.color || "#e2e8f0",
-                    cursor: "move",
+                    cursor: isConnecting ? "crosshair" : "move",
                   }}
                   className={clsx(
                     "select-none transition-shadow relative flex flex-col justify-between group",
@@ -2312,7 +2388,7 @@ export function WhiteboardPage() {
                       ? "p-2 rounded-xl text-slate-800 border-2 border-dashed border-slate-300 hover:border-blue-400 bg-white/60 backdrop-blur-2xs"
                       : "p-3 rounded-2xl shadow-md border-2 text-slate-800 bg-white",
                     isSelected && "ring-3 ring-blue-600 shadow-2xl",
-                    isConnecting && connectingSource?.nodeId !== node.id && "hover:ring-2 hover:ring-amber-500"
+                    isConnecting && connectingSource?.nodeId !== node.id && "ring-2 ring-amber-400 bg-amber-50/20"
                   )}
                 >
                   {/* ================= 4 CONNECTION PORTS (TOP, RIGHT, BOTTOM, LEFT) ================= */}
@@ -2326,8 +2402,19 @@ export function WhiteboardPage() {
                           e.stopPropagation();
                           handlePortMouseUp(node.id, "top");
                         }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (connectingSource && connectingSource.nodeId !== node.id) {
+                            handlePortMouseUp(node.id, "top");
+                          }
+                        }}
                         title="Top Connection Port"
-                        className="absolute -top-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-blue-500 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-600 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px]"
+                        className={clsx(
+                          "absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
+                          isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
+                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                        )}
                       >
                         +
                       </button>
@@ -2340,8 +2427,19 @@ export function WhiteboardPage() {
                           e.stopPropagation();
                           handlePortMouseUp(node.id, "right");
                         }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (connectingSource && connectingSource.nodeId !== node.id) {
+                            handlePortMouseUp(node.id, "right");
+                          }
+                        }}
                         title="Right Connection Port"
-                        className="absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-blue-500 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-600 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px]"
+                        className={clsx(
+                          "absolute -right-2.5 top-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
+                          isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
+                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                        )}
                       >
                         +
                       </button>
@@ -2354,8 +2452,19 @@ export function WhiteboardPage() {
                           e.stopPropagation();
                           handlePortMouseUp(node.id, "bottom");
                         }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (connectingSource && connectingSource.nodeId !== node.id) {
+                            handlePortMouseUp(node.id, "bottom");
+                          }
+                        }}
                         title="Bottom Connection Port"
-                        className="absolute -bottom-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full bg-blue-500 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-600 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px]"
+                        className={clsx(
+                          "absolute -bottom-2.5 left-1/2 -translate-x-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
+                          isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
+                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                        )}
                       >
                         +
                       </button>
@@ -2368,8 +2477,19 @@ export function WhiteboardPage() {
                           e.stopPropagation();
                           handlePortMouseUp(node.id, "left");
                         }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (connectingSource && connectingSource.nodeId !== node.id) {
+                            handlePortMouseUp(node.id, "left");
+                          }
+                        }}
                         title="Left Connection Port"
-                        className="absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-blue-500 border-2 border-white shadow-md hover:scale-130 hover:bg-blue-600 transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px]"
+                        className={clsx(
+                          "absolute -left-2.5 top-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
+                          isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
+                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                        )}
                       >
                         +
                       </button>
@@ -2496,7 +2616,7 @@ export function WhiteboardPage() {
           </div>
 
           {/* ================= RIGHT-CLICK CARD CONTEXT MENU ================= */}
-          {contextMenu && (
+          {contextMenu && contextMenu.type === "node" && (
             <div
               style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
               onClick={(e) => e.stopPropagation()}
@@ -2665,6 +2785,98 @@ export function WhiteboardPage() {
                 </div>
                 <span className="text-[10px] text-slate-400 font-mono">Del</span>
               </button>
+            </div>
+          )}
+
+          {/* ================= RIGHT-CLICK CANVAS CONTEXT MENU (EMPTY SPACE) ================= */}
+          {contextMenu && contextMenu.type === "canvas" && (
+            <div
+              style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+              onClick={(e) => e.stopPropagation()}
+              className="fixed z-50 bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 w-60 flex flex-col gap-1 text-xs animate-in fade-in zoom-in-95"
+            >
+              <div className="px-2 py-1 pb-1.5 border-b border-slate-100 flex items-center justify-between">
+                <span className="font-extrabold text-slate-800 text-[11px]">Canvas Options</span>
+                <span className="text-[9px] font-mono text-slate-400">
+                  {contextMenu.canvasX}, {contextMenu.canvasY}
+                </span>
+              </div>
+
+              {/* Paste from Clipboard (User requested: ก๊อปมาก็วางได้) */}
+              <button
+                type="button"
+                disabled={!clipboardNode}
+                onClick={() => handlePasteAt(contextMenu.canvasX, contextMenu.canvasY)}
+                className={clsx(
+                  "w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition cursor-pointer text-left",
+                  clipboardNode
+                    ? "hover:bg-blue-50 text-blue-700 font-bold"
+                    : "text-slate-400 opacity-60 cursor-not-allowed"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Copy className="h-3.5 w-3.5" />
+                  <span className="truncate">
+                    {clipboardNode ? `Paste "${clipboardNode.title}"` : "Paste Element"}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono">Ctrl+V</span>
+              </button>
+
+              {/* Quick Add Elements Submenu */}
+              <div className="pt-1.5 border-t border-slate-100 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 block">
+                  Add Element Here
+                </span>
+                <div className="grid grid-cols-2 gap-1 px-1">
+                  {(
+                    [
+                      { type: "process", label: "Process" },
+                      { type: "decision", label: "Decision" },
+                      { type: "value", label: "Value KPI" },
+                      { type: "sticky", label: "Sticky Note" },
+                      { type: "text", label: "Text Label" },
+                      { type: "database", label: "Database" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => handleAddNodeAt(item.type, contextMenu.canvasX, contextMenu.canvasY)}
+                      className="px-2 py-1 rounded-lg border border-slate-100 hover:bg-slate-50 text-slate-700 text-[10px] font-medium text-left cursor-pointer transition flex items-center gap-1"
+                    >
+                      <Plus className="h-2.5 w-2.5 text-blue-500" />
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Zoom & View Controls */}
+              <div className="pt-1.5 border-t border-slate-100 flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleFitToView();
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-700 text-left transition cursor-pointer"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Fit View (Recenter)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoom(1);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-700 text-left transition cursor-pointer"
+                >
+                  <ZoomIn className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Reset Zoom (100%)</span>
+                </button>
+              </div>
             </div>
           )}
 

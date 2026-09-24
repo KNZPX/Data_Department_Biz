@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import {
   Activity,
+  ArrowRight,
   Binary,
   BookOpen,
   Boxes,
@@ -567,6 +568,32 @@ export function DaxManagementPage() {
 
   // Floating Sidebar state
   const [floatSidebarOpen, setFloatSidebarOpen] = useState(true);
+
+  // Resizable Split View Width (drag to resize inspector)
+  const [splitWidth, setSplitWidth] = useState<number>(460);
+  const [isResizingSplit, setIsResizingSplit] = useState<boolean>(false);
+
+  const handleStartResizeSplit = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingSplit(true);
+    const startX = e.clientX;
+    const startWidth = splitWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX; // dragging left increases right pane width
+      const newWidth = Math.min(850, Math.max(320, startWidth + delta));
+      setSplitWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      setIsResizingSplit(false);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
 
   // Semantic Model Selection Screen Gate (True when model chosen, false to show landing selector)
   const [modelChosen, setModelChosen] = useState<boolean>(false);
@@ -1335,6 +1362,195 @@ export function DaxManagementPage() {
     );
   }, [meta.tables, tableSearchQuery]);
 
+  // =========================================================================
+  // VIEW 0: PRE-SELECTION LANDING SCREEN (CHOOSE SEMANTIC MODEL BEFORE WORKSPACE)
+  // =========================================================================
+  if (!modelChosen) {
+    return (
+      <div className="h-full w-full overflow-y-auto bg-slate-50 flex flex-col p-6 animate-in fade-in select-none">
+        {/* Top Header */}
+        <div className="max-w-5xl mx-auto w-full mb-8 text-center space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-bold uppercase tracking-wider">
+            <FunctionSquare className="h-4 w-4 text-blue-600" />
+            <span>Semantic Model Catalog</span>
+          </div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            Choose a Semantic Model to Explore
+          </h1>
+          <p className="text-sm text-slate-500 max-w-xl mx-auto">
+            Select an enterprise Power BI semantic model dataset to inspect measures, table schemas, relationships, and custom DAX formulations.
+          </p>
+        </div>
+
+        {/* Global Statistics Banner */}
+        <div className="max-w-5xl mx-auto w-full grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Datasets</span>
+            <span className="text-2xl font-black text-slate-800">2 Active</span>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Measures</span>
+            <span className="text-2xl font-black text-blue-600">1,455</span>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Columns</span>
+            <span className="text-2xl font-black text-indigo-600">3,336</span>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Supabase Sync</span>
+            <span className="text-sm font-bold text-emerald-600 flex items-center justify-center gap-1 mt-1">
+              <CheckCircle2 className="h-4 w-4" /> Connected
+            </span>
+          </div>
+        </div>
+
+        {/* Semantic Model Selection Cards */}
+        <div className="max-w-5xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Card 1: PKT-D01 Strategy */}
+          <div
+            onClick={() => {
+              setActiveModel("PKT-D01");
+              setModelChosen(true);
+            }}
+            className="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-blue-500 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="px-3 py-1 rounded-full text-xs font-black uppercase bg-blue-100 text-blue-800">
+                  PKT-D01
+                </span>
+                <span className="text-xs text-slate-400 font-mono">Strategy</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition">
+                  PKT-D01 Strategy Semantic Model
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                  Primary clinical and operational hospital dataset encompassing patient encounters, inpatient &amp; outpatient volume, and clinical quality metrics.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center font-mono">
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Measures</span>
+                  <span className="text-sm font-bold text-slate-800">849</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Columns</span>
+                  <span className="text-sm font-bold text-slate-800">1,877</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Tables</span>
+                  <span className="text-sm font-bold text-slate-800">191</span>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="mt-6 w-full py-2.5 rounded-xl bg-blue-50 group-hover:bg-blue-600 text-blue-700 group-hover:text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>Open Model Workspace</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Card 2: PKT-D02 Cost */}
+          <div
+            onClick={() => {
+              setActiveModel("PKT-D02");
+              setModelChosen(true);
+            }}
+            className="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-purple-500 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="px-3 py-1 rounded-full text-xs font-black uppercase bg-purple-100 text-purple-800">
+                  PKT-D02
+                </span>
+                <span className="text-xs text-slate-400 font-mono">Cost &amp; Finance</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-purple-600 transition">
+                  PKT-D02 Cost Semantic Model
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                  Healthcare financial analytics, hospital activity-based costing (ABC), revenue cycles, billing, and doctor fee calculations.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center font-mono">
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Measures</span>
+                  <span className="text-sm font-bold text-slate-800">606</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Columns</span>
+                  <span className="text-sm font-bold text-slate-800">1,459</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Tables</span>
+                  <span className="text-sm font-bold text-slate-800">130+</span>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="mt-6 w-full py-2.5 rounded-xl bg-purple-50 group-hover:bg-purple-600 text-purple-700 group-hover:text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>Open Model Workspace</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Card 3: Global Catalog */}
+          <div
+            onClick={() => {
+              setActiveModel("ALL");
+              setModelChosen(true);
+            }}
+            className="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-emerald-500 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
+          >
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-100 text-emerald-800">
+                  ALL MODELS
+                </span>
+                <span className="text-xs text-slate-400 font-mono">Global</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 group-hover:text-emerald-600 transition">
+                  Global Unified Catalog
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                  Unified cross-model search across all measures, columns, and custom DAX formulations across both Strategy and Financial models.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center font-mono">
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Measures</span>
+                  <span className="text-sm font-bold text-slate-800">1,455</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Columns</span>
+                  <span className="text-sm font-bold text-slate-800">3,336</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block font-sans">Datasets</span>
+                  <span className="text-sm font-bold text-slate-800">2</span>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="mt-6 w-full py-2.5 rounded-xl bg-emerald-50 group-hover:bg-emerald-600 text-emerald-700 group-hover:text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>Explore All Models</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full w-full overflow-hidden flex flex-col gap-3 font-sans select-none">
       {/* 1. TOP CONTROL BAR (Views & Global Controls - Console removed as requested) */}
@@ -1366,6 +1582,17 @@ export function DaxManagementPage() {
 
         {/* View Switcher: Table | Split (was Sidebox) | List (was Split) & Action buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Switch Model Button */}
+          <button
+            type="button"
+            onClick={() => setModelChosen(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
+            title="Switch Semantic Model"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
+            <span>Switch Model</span>
+          </button>
+
           {/* Add Custom DAX Button */}
           <button
             type="button"
@@ -1953,9 +2180,26 @@ export function DaxManagementPage() {
                   })}
                 </div>
 
-                {/* Right Compact Inspector Pane (COMPACT & CLEAN AS REQUESTED) */}
+                {/* Resizable Divider Handle (Drag left/right to resize inspector) */}
+                {selectedItem && (
+                  <div
+                    onMouseDown={handleStartResizeSplit}
+                    className={clsx(
+                      "w-2 hover:w-3 cursor-col-resize self-stretch my-1 rounded-full transition-all shrink-0 flex items-center justify-center group relative z-20",
+                      isResizingSplit ? "bg-blue-600" : "bg-slate-200/80 hover:bg-blue-400"
+                    )}
+                    title="Drag left/right to adjust Split View inspector width"
+                  >
+                    <div className="h-8 w-1 rounded-full bg-slate-400 group-hover:bg-white" />
+                  </div>
+                )}
+
+                {/* Right Compact Inspector Pane (RESIZABLE) */}
                 {selectedItem ? (
-                  <div className="w-80 lg:w-92 shrink-0 h-full border border-slate-200/80 rounded-2xl p-3.5 bg-slate-50/50 flex flex-col justify-between overflow-y-auto">
+                  <div
+                    style={{ width: `${splitWidth}px` }}
+                    className="shrink-0 h-full border border-slate-200/80 rounded-2xl p-3.5 bg-slate-50/50 flex flex-col justify-between overflow-y-auto transition-[width] duration-75"
+                  >
                     <div className="space-y-3">
                       {/* Header with Save Changes & Diagram Button */}
                       <div className="flex items-start justify-between pb-2 border-b border-slate-200 gap-2">
@@ -3052,7 +3296,7 @@ export function DaxManagementPage() {
       {/* ================= CUSTOM DAX MODAL (SPLIT-STYLED WITH FULL DAX AUTO-SPLIT) ================= */}
       {customDaxModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95 my-auto max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-5xl bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95 my-auto max-h-[92vh] overflow-y-auto">
             {/* Header matching Split style */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -3104,160 +3348,163 @@ export function DaxManagementPage() {
               </span>
             </div>
 
-            <form onSubmit={handleSaveCustomDax} className="space-y-3">
-              {/* Measure Name (Prominent font-mono input like Split header) */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
-                  Measure Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  placeholder="e.g. day_remaining"
-                  className="w-full px-3 py-2 text-sm font-mono font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
-                />
-              </div>
+            <form onSubmit={handleSaveCustomDax} className="space-y-4">
+              {/* DUAL-COLUMN GRID TO FIT ON SCREEN WITHOUT VERTICAL SCROLLBAR */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* LEFT COLUMN: METADATA & DESCRIPTIONS */}
+                <div className="space-y-2.5">
+                  {/* Measure Name */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                      Measure Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={customName}
+                      onChange={(e) => setCustomName(e.target.value)}
+                      placeholder="e.g. day_remaining"
+                      className="w-full px-3 py-1.5 text-xs font-mono font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                    />
+                  </div>
 
-              {/* Compact Metadata Grid matching Split layout */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
-                    Table Name *
-                  </label>
-                  <TableSearchDropdown
-                    tables={meta.tables || []}
-                    value={customTable}
-                    onChange={(t) => setCustomTable(t)}
-                    placeholder="Select or search table..."
-                    allowAll={false}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
-                    Data Type
-                  </label>
-                  <select
-                    value={customDataType}
-                    onChange={(e) => setCustomDataType(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs font-mono font-bold"
-                  >
-                    <option value="Decimal">Decimal</option>
-                    <option value="Integer">Integer</option>
-                    <option value="String">String</option>
-                    <option value="Currency">Currency</option>
-                    <option value="Percentage">Percentage</option>
-                  </select>
-                </div>
-              </div>
+                  {/* Table & Type */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                        Table Name *
+                      </label>
+                      <TableSearchDropdown
+                        tables={meta.tables || []}
+                        value={customTable}
+                        onChange={(t) => setCustomTable(t)}
+                        placeholder="Select table..."
+                        allowAll={false}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                        Data Type
+                      </label>
+                      <select
+                        value={customDataType}
+                        onChange={(e) => setCustomDataType(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-mono font-bold"
+                      >
+                        <option value="Decimal">Decimal</option>
+                        <option value="Integer">Integer</option>
+                        <option value="String">String</option>
+                        <option value="Currency">Currency</option>
+                        <option value="Percentage">Percentage</option>
+                      </select>
+                    </div>
+                  </div>
 
-              {/* Business Definition */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
-                  Business Definition / Meaning
-                </label>
-                <textarea
-                  rows={2}
-                  value={customBusiness}
-                  onChange={(e) => setCustomBusiness(e.target.value)}
-                  placeholder="Business rationale, definition..."
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y shadow-2xs"
-                />
-              </div>
+                  {/* Business Definition */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                      Business Definition / Meaning
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={customBusiness}
+                      onChange={(e) => setCustomBusiness(e.target.value)}
+                      placeholder="Business rationale, definition..."
+                      className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none shadow-2xs"
+                    />
+                  </div>
 
-              {/* Mathematical Formulation */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
-                  Mathematical Formulation
-                </label>
-                <textarea
-                  rows={2}
-                  value={customMath}
-                  onChange={(e) => setCustomMath(e.target.value)}
-                  placeholder="Formula notation (e.g. SUM(A)/COUNT(B))..."
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y shadow-2xs"
-                />
-              </div>
+                  {/* Mathematical Formulation */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                      Mathematical Formulation
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={customMath}
+                      onChange={(e) => setCustomMath(e.target.value)}
+                      placeholder="Formula notation (e.g. SUM(A)/COUNT(B))..."
+                      className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono resize-none shadow-2xs"
+                    />
+                  </div>
 
-              {/* Technical Notes */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
-                  Technical Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={customNotes}
-                  onChange={(e) => setCustomNotes(e.target.value)}
-                  placeholder="Optional governance notes, filter context rules..."
-                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y shadow-2xs"
-                />
-              </div>
-
-              {/* Custom DAX Expression Code Editor */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
-                    Custom DAX Expression *
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (customExpression.trim()) {
-                          setCustomExpression(formatDax(customExpression));
-                        }
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-300 transition cursor-pointer"
-                      title="Auto-indent & format DAX syntax"
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      <span>Auto-Format DAX</span>
-                    </button>
-                    <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
-                      Highlighted
-                    </span>
+                  {/* Technical Notes */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                      Technical Notes
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={customNotes}
+                      onChange={(e) => setCustomNotes(e.target.value)}
+                      placeholder="Filter context notes, dependencies..."
+                      className="w-full p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none shadow-2xs"
+                    />
                   </div>
                 </div>
-                <textarea
-                  required
-                  rows={4}
-                  value={customExpression}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    // Auto-split if user pasted into expression directly
-                    if (val.includes("=") && (!customName || customName === "New Measure")) {
-                      const eq = val.indexOf("=");
-                      const pName = val.slice(0, eq).trim().replace(/^[+|]+$/g, "");
-                      const pExpr = val.slice(eq + 1).trim();
-                      if (pName && pExpr) {
-                        setCustomName(pName);
-                        setCustomExpression(pExpr);
-                        setAutoSplitDetected(true);
-                        setTimeout(() => setAutoSplitDetected(false), 3000);
-                        return;
-                      }
-                    }
-                    setCustomExpression(val);
-                  }}
-                  placeholder="e.g. DIVIDE(SUM('fact_patient_visit'[total_hours]), 24, 0)"
-                  className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y shadow-inner leading-relaxed"
-                />
 
-                {customExpression.trim() && (
-                  <div className="space-y-1 pt-1">
+                {/* RIGHT COLUMN: DAX EXPRESSION & LIVE HIGHLIGHTED PREVIEW */}
+                <div className="space-y-2 flex flex-col justify-between">
+                  <div className="space-y-1 flex-1 flex flex-col">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
+                        Custom DAX Expression *
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (customExpression.trim()) {
+                              setCustomExpression(formatDax(customExpression));
+                            }
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-300 transition cursor-pointer"
+                          title="Auto-indent & format DAX syntax"
+                        >
+                          <Sparkles className="h-2.5 w-2.5 text-purple-600" />
+                          <span>Auto-Format</span>
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      required
+                      rows={5}
+                      value={customExpression}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.includes("=") && (!customName || customName === "New Measure")) {
+                          const eq = val.indexOf("=");
+                          const pName = val.slice(0, eq).trim().replace(/^\[+|\]+$/g, "");
+                          const pExpr = val.slice(eq + 1).trim();
+                          if (pName && pExpr) {
+                            setCustomName(pName);
+                            setCustomExpression(pExpr);
+                            setAutoSplitDetected(true);
+                            setTimeout(() => setAutoSplitDetected(false), 3000);
+                            return;
+                          }
+                        }
+                        setCustomExpression(val);
+                      }}
+                      placeholder="e.g. DIVIDE(SUM('fact_patient_visit'[total_hours]), 24, 0)"
+                      className="w-full p-2.5 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-none shadow-inner leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Live Syntax Highlighted Preview */}
+                  <div className="space-y-1">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
                       Live Syntax Highlighted Preview
                     </span>
                     <DaxCodeViewer
-                      code={customExpression}
-                      title="Preview"
-                      maxHeight="max-h-36"
-                      showLineNumbers={false}
+                      code={customExpression || "-- Type or paste DAX to preview"}
+                      title="Syntax Preview"
+                      maxHeight="max-h-40"
+                      showLineNumbers={true}
                       allowFormat={false}
                     />
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Actions Footer */}
