@@ -371,7 +371,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Save Custom DAX Measure
     if (action === "save_custom") {
-      const { id, datasetId, tableName, name, expression, formatString, mathDefinition, businessDefinition, notes, user } = body;
+      const { id, datasetId, tableName, name, expression, formatString, dataType, mathDefinition, businessDefinition, notes, user } = body;
       if (!name || !expression) {
         return NextResponse.json({ error: "Name and Expression are required" }, { status: 400 });
       }
@@ -384,6 +384,7 @@ export async function POST(request: NextRequest) {
         name: name.trim(),
         expression: expression.trim(),
         formatString: formatString || null,
+        dataType: dataType || "Decimal",
         itemType: "custom_dax",
         mathDefinition,
         businessDefinition,

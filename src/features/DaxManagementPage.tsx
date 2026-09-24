@@ -659,9 +659,11 @@ export function DaxManagementPage() {
   const [loadingSamplesId, setLoadingSamplesId] = useState<string | null>(null);
   const [sampleErrorMap, setSampleErrorMap] = useState<Record<string, string>>({});
 
-  // Sidebox / Split Inline Editing State
+  // Sidebox / Split Inline Editing State (Everything Editable)
   const [sideboxForm, setSideboxForm] = useState({
     name: "",
+    tableName: "",
+    dataType: "Decimal",
     businessDefinition: "",
     mathDefinition: "",
     notes: "",
@@ -785,6 +787,8 @@ export function DaxManagementPage() {
     if (selectedItem) {
       setSideboxForm({
         name: selectedItem.name || "",
+        tableName: selectedItem.tableName || "",
+        dataType: selectedItem.dataType || "Decimal",
         businessDefinition: selectedItem.businessDefinition || "",
         mathDefinition: selectedItem.mathDefinition || "",
         notes: selectedItem.notes || "",
@@ -794,22 +798,34 @@ export function DaxManagementPage() {
     }
   }, [selectedItem?.id]);
 
-  // Check if Split inspector has unsaved changes
+  // Check if Split inspector has unsaved changes across ALL editable fields
   const isSideboxDirty = useMemo(() => {
     if (!selectedItem) return false;
     const origName = selectedItem.name || "";
+    const origTable = selectedItem.tableName || "";
+    const origType = selectedItem.dataType || "Decimal";
     const origBus = selectedItem.businessDefinition || "";
     const origMath = selectedItem.mathDefinition || "";
     const origNotes = selectedItem.notes || "";
     const origExpr = selectedItem.expression || "";
 
-    const hasNameChanged = selectedItem.isCustom && sideboxForm.name.trim() !== origName;
+    const hasNameChanged = sideboxForm.name.trim() !== origName;
+    const hasTableChanged = sideboxForm.tableName.trim() !== origTable;
+    const hasTypeChanged = sideboxForm.dataType !== origType;
     const hasBusChanged = sideboxForm.businessDefinition !== origBus;
     const hasMathChanged = sideboxForm.mathDefinition !== origMath;
     const hasNotesChanged = sideboxForm.notes !== origNotes;
-    const hasExprChanged = selectedItem.isCustom && sideboxForm.expression !== origExpr;
+    const hasExprChanged = sideboxForm.expression !== origExpr;
 
-    return hasNameChanged || hasBusChanged || hasMathChanged || hasNotesChanged || hasExprChanged;
+    return (
+      hasNameChanged ||
+      hasTableChanged ||
+      hasTypeChanged ||
+      hasBusChanged ||
+      hasMathChanged ||
+      hasNotesChanged ||
+      hasExprChanged
+    );
   }, [selectedItem, sideboxForm]);
 
   // Instant Search Debounce Effect (250ms)
@@ -890,18 +906,26 @@ export function DaxManagementPage() {
     setShowUnsavedModal(false);
   }
 
-  // Save Split inspector changes directly (Supports Custom Name Edits)
+  // Save Split inspector changes directly (Supports Full Editing of Name, Table, Type, Expression, and Definitions)
   async function handleSaveSidebox() {
     if (!selectedItem) return;
     setIsSavingSidebox(true);
     setSideboxSaveSuccess(false);
 
     try {
-      const finalName = selectedItem.isCustom
-        ? (sideboxForm.name.trim() || selectedItem.name)
-        : selectedItem.name;
+      const finalName = sideboxForm.name.trim() || selectedItem.name;
+      const finalTable = sideboxForm.tableName.trim() || selectedItem.tableName;
+      const finalDataType = sideboxForm.dataType || selectedItem.dataType || "Decimal";
+      const finalExpr = sideboxForm.expression;
 
-      if (selectedItem.isCustom) {
+      // Has structural / code fields changed?
+      const isStructureChanged =
+        finalName !== selectedItem.name ||
+        finalTable !== selectedItem.tableName ||
+        finalDataType !== selectedItem.dataType ||
+        (selectedItem.expression !== null && finalExpr !== selectedItem.expression);
+
+      if (selectedItem.isCustom || isStructureChanged) {
         const res = await fetch("/api/powerbi/dax", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -909,10 +933,10 @@ export function DaxManagementPage() {
             action: "save_custom",
             id: selectedItem.id,
             datasetId: selectedItem.modelCode,
-            tableName: selectedItem.tableName,
+            tableName: finalTable,
             name: finalName,
-            expression: sideboxForm.expression,
-            dataType: selectedItem.dataType,
+            expression: finalExpr || selectedItem.expression || "",
+            dataType: finalDataType,
             mathDefinition: sideboxForm.mathDefinition,
             businessDefinition: sideboxForm.businessDefinition,
             notes: sideboxForm.notes,
@@ -928,8 +952,8 @@ export function DaxManagementPage() {
             action: "save_annotation",
             id: selectedItem.id,
             modelCode: selectedItem.modelCode,
-            tableName: selectedItem.tableName,
-            objectName: selectedItem.name,
+            tableName: finalTable,
+            objectName: finalName,
             objectType: selectedItem.type,
             mathDefinition: sideboxForm.mathDefinition,
             businessDefinition: sideboxForm.businessDefinition,
@@ -947,10 +971,13 @@ export function DaxManagementPage() {
             ? {
                 ...it,
                 name: finalName,
+                tableName: finalTable,
+                dataType: finalDataType,
                 businessDefinition: sideboxForm.businessDefinition,
                 mathDefinition: sideboxForm.mathDefinition,
                 notes: sideboxForm.notes,
-                expression: selectedItem.isCustom ? sideboxForm.expression : it.expression,
+                expression: finalExpr,
+                isCustom: selectedItem.isCustom || isStructureChanged,
               }
             : it
         )
@@ -961,10 +988,13 @@ export function DaxManagementPage() {
           ? {
               ...prev,
               name: finalName,
+              tableName: finalTable,
+              dataType: finalDataType,
               businessDefinition: sideboxForm.businessDefinition,
               mathDefinition: sideboxForm.mathDefinition,
               notes: sideboxForm.notes,
-              expression: selectedItem.isCustom ? sideboxForm.expression : prev.expression,
+              expression: finalExpr,
+              isCustom: selectedItem.isCustom || isStructureChanged,
             }
           : null
       );
@@ -973,7 +1003,7 @@ export function DaxManagementPage() {
       setTimeout(() => setSideboxSaveSuccess(false), 3000);
     } catch (err: any) {
       console.error("Save error:", err);
-      alert("Error saving definitions: " + (err.message || "Unknown error"));
+      alert("Error saving: " + (err.message || "Unknown error"));
     } finally {
       setIsSavingSidebox(false);
     }
@@ -2345,30 +2375,41 @@ export function DaxManagementPage() {
                               {selectedItem.type}
                             </span>
                           </div>
-                          {/* TITLE: Editable for Custom by User, static for Semantic Models */}
-                          {selectedItem.isCustom ? (
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between">
-                                <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
-                                  Custom Measure Name
-                                </label>
-                                <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.2 rounded-md border border-purple-200">
-                                  Editable
-                                </span>
-                              </div>
-                              <input
-                                type="text"
-                                value={sideboxForm.name}
-                                onChange={(e) => setSideboxForm({ ...sideboxForm, name: e.target.value })}
-                                placeholder="Measure name..."
-                                className="w-full px-2.5 py-1 text-xs font-mono font-bold rounded-xl bg-purple-50/40 border border-purple-300 text-purple-950 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-inner"
-                              />
+                          {/* Measure / Column Name (Fully Editable) */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <label
+                                className={clsx(
+                                  "text-[10px] font-extrabold uppercase tracking-wider block",
+                                  selectedItem.isCustom ? "text-purple-800" : "text-slate-700"
+                                )}
+                              >
+                                {selectedItem.isCustom ? "Custom Measure Name" : "Measure / Column Name"}
+                              </label>
+                              <span
+                                className={clsx(
+                                  "text-[9px] font-bold px-1.5 py-0.2 rounded-md border",
+                                  selectedItem.isCustom
+                                    ? "text-purple-600 bg-purple-50 border-purple-200"
+                                    : "text-blue-600 bg-blue-50 border-blue-200"
+                                )}
+                              >
+                                Editable
+                              </span>
                             </div>
-                          ) : (
-                            <h3 className="font-mono text-sm font-bold text-slate-900 break-words leading-tight">
-                              {selectedItem.name}
-                            </h3>
-                          )}
+                            <input
+                              type="text"
+                              value={sideboxForm.name}
+                              onChange={(e) => setSideboxForm({ ...sideboxForm, name: e.target.value })}
+                              placeholder="Name..."
+                              className={clsx(
+                                "w-full px-2.5 py-1 text-xs font-mono font-bold rounded-xl border focus:outline-none focus:ring-2 shadow-inner",
+                                selectedItem.isCustom
+                                  ? "bg-purple-50/40 border-purple-300 text-purple-950 focus:ring-purple-400"
+                                  : "bg-slate-50 border-slate-300 text-slate-900 focus:ring-blue-400"
+                              )}
+                            />
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -2425,19 +2466,49 @@ export function DaxManagementPage() {
                         </div>
                       )}
 
-                      {/* Compact Metadata Grid */}
+                      {/* Fully Editable Metadata Grid: Table Name & Data Type */}
                       <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="p-2 rounded-xl bg-white border border-slate-200/70">
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Table</span>
-                          <span className="font-mono font-bold text-slate-800 truncate block text-[11px]">
-                            {selectedItem.tableName}
-                          </span>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                              Table Name
+                            </label>
+                            <span className="text-[8px] font-bold text-blue-600 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                              Editable
+                            </span>
+                          </div>
+                          <TableSearchDropdown
+                            tables={meta.tables || []}
+                            value={sideboxForm.tableName}
+                            onChange={(t) => setSideboxForm({ ...sideboxForm, tableName: t })}
+                            placeholder="Select table..."
+                            allowAll={false}
+                          />
                         </div>
-                        <div className="p-2 rounded-xl bg-white border border-slate-200/70">
-                          <span className="text-[9px] text-slate-400 font-bold block uppercase">Data Type</span>
-                          <span className="font-mono font-bold text-slate-800 truncate block text-[11px]">
-                            {selectedItem.dataType}
-                          </span>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                              Data Type
+                            </label>
+                            <span className="text-[8px] font-bold text-blue-600 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                              Editable
+                            </span>
+                          </div>
+                          <select
+                            value={sideboxForm.dataType}
+                            onChange={(e) => setSideboxForm({ ...sideboxForm, dataType: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-white border border-slate-200 text-slate-800 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                          >
+                            <option value="Decimal">Decimal</option>
+                            <option value="Integer">Integer</option>
+                            <option value="String">String</option>
+                            <option value="Currency">Currency</option>
+                            <option value="Percentage">Percentage</option>
+                            <option value="Date">Date</option>
+                            <option value="DateTime">DateTime</option>
+                            <option value="Boolean">Boolean</option>
+                          </select>
                         </div>
                       </div>
 
@@ -2542,12 +2613,12 @@ export function DaxManagementPage() {
                         />
                       </div>
 
-                      {/* DAX Formula with Full Syntax Highlighting & Auto-Indentation */}
-                      {selectedItem.isCustom ? (
+                      {/* DAX Formula with Full Syntax Highlighting & Auto-Indentation (Fully Editable) */}
+                      {selectedItem.type === "Measure" || selectedItem.expression ? (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
-                              Custom DAX Expression
+                              {selectedItem.isCustom ? "Custom DAX Expression" : "DAX Expression"}
                             </label>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {/* Edit vs Preview Toggle */}
@@ -2598,7 +2669,7 @@ export function DaxManagementPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => copyText(selectedItem.id, sideboxForm.expression)}
+                                onClick={() => copyText(selectedItem.id, sideboxForm.expression || selectedItem.expression || "")}
                                 className="text-[9px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
                               >
                                 {copiedId === selectedItem.id ? (
@@ -2630,52 +2701,13 @@ export function DaxManagementPage() {
                             />
                           ) : (
                             <DaxCodeViewer
-                              code={sideboxForm.expression || "-- No expression"}
+                              code={sideboxForm.expression || selectedItem.expression || "-- No expression"}
                               title="Live Preview"
-                              maxHeight="max-h-56"
+                              maxHeight="max-h-60"
                               showLineNumbers={true}
                               allowFormat={false}
                             />
                           )}
-                        </div>
-                      ) : selectedItem.expression ? (
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <h5 className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                              DAX Expression
-                            </h5>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => copyText(selectedItem.id, selectedItem.expression!)}
-                                className="text-[9px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
-                              >
-                                {copiedId === selectedItem.id ? (
-                                  <Check className="h-2.5 w-2.5 text-emerald-600" />
-                                ) : (
-                                  <Copy className="h-2.5 w-2.5" />
-                                )}
-                                <span>{copiedId === selectedItem.id ? "Copied" : "Copy"}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenDiagram(selectedItem)}
-                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
-                              >
-                                <Workflow className="h-2.5 w-2.5" />
-                                <span>Diagram</span>
-                              </button>
-                            </div>
-                          </div>
-                          <DaxCodeViewer
-                            code={selectedItem.expression}
-                            title="DAX Expression"
-                            maxHeight="max-h-60"
-                            showLineNumbers={true}
-                            allowFormat={true}
-                            defaultFormatted={true}
-                            onCopy={() => copyText(selectedItem.id, selectedItem.expression!)}
-                          />
                         </div>
                       ) : null}
                     </div>
