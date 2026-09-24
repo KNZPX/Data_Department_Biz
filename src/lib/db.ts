@@ -1136,3 +1136,140 @@ export async function restoreChangeLog(
 
   return { success: true, message: `Successfully restored ${entity_table} record #${entity_id}` };
 }
+
+// =============================================================================
+// 8. WHITEBOARD BOARDS REPOSITORY (SUPABASE + SQLITE)
+// =============================================================================
+export interface WhiteboardBoardDb {
+  id: string;
+  name: string;
+  folder_id: string;
+  folder_name: string;
+  description?: string;
+  nodes: any[];
+  updated_at: string;
+  created_at?: string;
+}
+
+export async function getDbWhiteboardBoards(): Promise<WhiteboardBoardDb[]> {
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("whiteboard_boards")
+        .select("*")
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        console.error("Supabase get whiteboard boards error:", error);
+        return [];
+      }
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        folder_id: row.folder_id || "folder_general",
+        folder_name: row.folder_name || "General Workflows",
+        description: row.description || "",
+        nodes: typeof row.nodes === "string" ? JSON.parse(row.nodes) : row.nodes || [],
+        updated_at: row.updated_at,
+        created_at: row.created_at,
+      }));
+    } catch (err) {
+      console.error("Error reading whiteboard boards from Supabase:", err);
+      return [];
+    }
+  }
+
+  try {
+    const db = getSqliteDb();
+    const rows: any[] = db
+      .query("SELECT * FROM whiteboard_boards ORDER BY updated_at DESC")
+      .all();
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      folder_id: row.folder_id || "folder_general",
+      folder_name: row.folder_name || "General Workflows",
+      description: row.description || "",
+      nodes: typeof row.nodes === "string" ? JSON.parse(row.nodes) : row.nodes || [],
+      updated_at: row.updated_at,
+      created_at: row.created_at,
+    }));
+  } catch (err) {
+    console.error("Error reading whiteboard boards from SQLite:", err);
+    return [];
+  }
+}
+
+export async function saveDbWhiteboardBoard(board: {
+  id: string;
+  name: string;
+  folder_id?: string;
+  folder_name?: string;
+  description?: string;
+  nodes: any[];
+}): Promise<void> {
+  const provider = getDbProvider();
+  const now = new Date().toISOString();
+  const folder_id = board.folder_id || "folder_general";
+  const folder_name = board.folder_name || "General Workflows";
+
+  if (provider === "supabase") {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from("whiteboard_boards").upsert(
+      {
+        id: board.id,
+        name: board.name,
+        folder_id,
+        folder_name,
+        description: board.description || "",
+        nodes: board.nodes || [],
+        updated_at: now,
+      },
+      { onConflict: "id" }
+    );
+    if (error) {
+      console.error("Supabase upsert whiteboard board error:", error);
+      throw error;
+    }
+    return;
+  }
+
+  const db = getSqliteDb();
+  const stmt = db.query(`
+    INSERT INTO whiteboard_boards (id, name, folder_id, folder_name, description, nodes, updated_at, created_at)
+    VALUES ($id, $name, $folder_id, $folder_name, $description, $nodes, $updated_at, $created_at)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      folder_id = excluded.folder_id,
+      folder_name = excluded.folder_name,
+      description = excluded.description,
+      nodes = excluded.nodes,
+      updated_at = excluded.updated_at
+  `);
+  stmt.run({
+    $id: board.id,
+    $name: board.name,
+    $folder_id: folder_id,
+    $folder_name: folder_name,
+    $description: board.description || "",
+    $nodes: JSON.stringify(board.nodes || []),
+    $updated_at: now,
+    $created_at: now,
+  });
+}
+
+export async function deleteDbWhiteboardBoard(boardId: string): Promise<void> {
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from("whiteboard_boards").delete().eq("id", boardId);
+    if (error) throw error;
+    return;
+  }
+
+  const db = getSqliteDb();
+  db.query("DELETE FROM whiteboard_boards WHERE id = $id").run({ $id: boardId });
+}
+

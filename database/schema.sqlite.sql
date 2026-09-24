@@ -115,3 +115,19 @@ CREATE TABLE IF NOT EXISTS powerbi_licenses (
 
 CREATE INDEX IF NOT EXISTS powerbi_licenses_hospital_idx ON powerbi_licenses (hospital);
 CREATE INDEX IF NOT EXISTS powerbi_licenses_email_idx ON powerbi_licenses (email);
+
+-- 5. Whiteboard Boards (Visual workflow canvases with folders)
+CREATE TABLE IF NOT EXISTS whiteboard_boards (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  folder_id TEXT NOT NULL DEFAULT 'folder_general',
+  folder_name TEXT NOT NULL DEFAULT 'General Workflows',
+  description TEXT,
+  nodes TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS whiteboard_boards_folder_idx ON whiteboard_boards (folder_id);
+CREATE INDEX IF NOT EXISTS whiteboard_boards_updated_idx ON whiteboard_boards (updated_at DESC);
+

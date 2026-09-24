@@ -116,14 +116,32 @@ create table if not exists public.powerbi_licenses (
 create index if not exists powerbi_licenses_hospital_idx on public.powerbi_licenses (hospital);
 create index if not exists powerbi_licenses_email_idx on public.powerbi_licenses (email);
 
+-- 5. Whiteboard Boards (Visual workflow canvases with folders)
+create table if not exists public.whiteboard_boards (
+  id text primary key,
+  name text not null,
+  folder_id text not null default 'folder_general',
+  folder_name text not null default 'General Workflows',
+  description text,
+  nodes jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists whiteboard_boards_folder_idx on public.whiteboard_boards (folder_id);
+create index if not exists whiteboard_boards_updated_idx on public.whiteboard_boards (updated_at desc);
+
 -- Row Level Security (RLS) policies for Supabase anon client
 alter table public.powerbi_token enable row level security;
 alter table public.powerbi_items enable row level security;
 alter table public.change_log enable row level security;
 alter table public.powerbi_licenses enable row level security;
+alter table public.whiteboard_boards enable row level security;
 
 -- Open policies for anon access (Internal Portal usage)
 create policy "powerbi_token open all" on public.powerbi_token for all to anon using (true) with check (true);
 create policy "powerbi_items open all" on public.powerbi_items for all to anon using (true) with check (true);
 create policy "change_log open all" on public.change_log for all to anon using (true) with check (true);
 create policy "powerbi_licenses open all" on public.powerbi_licenses for all to anon using (true) with check (true);
+create policy "whiteboard_boards open all" on public.whiteboard_boards for all to anon using (true) with check (true);
+
