@@ -1609,8 +1609,8 @@ export function DaxManagementPage() {
             onClick={() => setFloatSidebarOpen(!floatSidebarOpen)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
           >
-            <Layers className="h-3.5 w-3.5 text-blue-600" />
-            <span>{floatSidebarOpen ? "Hide Datasets" : "Show Datasets"}</span>
+            <TableIcon className="h-3.5 w-3.5 text-blue-600" />
+            <span>{floatSidebarOpen ? "Hide Tables" : "Show Tables"}</span>
           </button>
 
           {/* View Modes (Table | Split | List) */}
@@ -1663,76 +1663,34 @@ export function DaxManagementPage() {
 
       {/* 2. BODY CONTENT */}
       <div className="flex-1 min-h-0 flex gap-3 overflow-hidden relative">
-        {/* FLOAT DATASET SIDEBAR */}
+        {/* TABLES NAVIGATOR SIDEBAR */}
         {floatSidebarOpen && (
-          <aside className="w-60 lg:w-64 shrink-0 bg-white rounded-3xl p-3 shadow-xs border border-slate-200/80 flex flex-col gap-3 overflow-hidden z-20">
+          <aside className="w-60 lg:w-64 shrink-0 bg-white rounded-3xl p-3 shadow-xs border border-slate-200/80 flex flex-col gap-2.5 overflow-hidden z-20">
+            {/* Header: Tables in Model */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Database className="h-4 w-4 text-blue-600" />
+                <TableIcon className="h-4 w-4 text-blue-600" />
                 <span className="text-xs font-bold text-slate-800">
-                  Semantic Models ({models.length})
+                  Tables in Model
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => fetchItems()}
-                title="Reload Models"
-                className="text-slate-400 hover:text-slate-600 transition cursor-pointer"
-              >
-                <RefreshCw className={clsx("h-3.5 w-3.5", loading && "animate-spin")} />
-              </button>
-            </div>
-
-            {/* Model Selector Cards */}
-            <div className="space-y-1.5">
-              {models.map((m) => {
-                const isActive = activeModel === m.code;
-                return (
-                  <div
-                    key={m.code}
-                    onClick={() => {
-                      if (isSideboxDirty) {
-                        alert("Please save or discard your changes in Split view before switching models.");
-                        return;
-                      }
-                      setActiveModel(m.code);
-                      setSelectedTable("all");
-                    }}
-                    className={clsx(
-                      "p-2.5 rounded-2xl border transition cursor-pointer flex flex-col gap-1 text-left",
-                      isActive
-                        ? "border-blue-600 bg-blue-50/70 shadow-xs ring-2 ring-blue-500/20"
-                        : "border-slate-200/80 hover:border-slate-300 bg-slate-50/50"
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="inline-block px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-blue-600 text-white">
-                        {m.code}
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-mono">
-                        ID: {m.id.slice(0, 8)}...
-                      </span>
-                    </div>
-                    <h3 className="text-xs font-bold text-slate-900 leading-snug line-clamp-1">
-                      {m.name}
-                    </h3>
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/50">
-                      <span className="text-blue-700 font-semibold">{m.totalMeasures} Measures</span>
-                      <span>{m.totalColumns} Columns</span>
-                    </div>
-                  </div>
-                );
-              })}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold text-slate-500 px-1.5 py-0.5 rounded-md bg-slate-100">
+                  {meta.tables?.length || 0} Total
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fetchItems()}
+                  title="Reload Tables & Measures"
+                  className="text-slate-400 hover:text-slate-600 transition cursor-pointer p-0.5"
+                >
+                  <RefreshCw className={clsx("h-3.5 w-3.5", loading && "animate-spin")} />
+                </button>
+              </div>
             </div>
 
             {/* Table Filter List with Dedicated Search */}
-            <div className="flex-1 min-h-0 flex flex-col gap-2 pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">Tables in Model</span>
-                <span className="text-[10px] text-slate-400">
-                  {meta.tables?.length || 0} Total
-                </span>
-              </div>
+            <div className="flex-1 min-h-0 flex flex-col gap-2">
 
               {/* Table Search Input */}
               <div className="relative">
