@@ -63,6 +63,8 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useTheme } from "@/context/ThemeContext";
+import { DaxCodeViewer } from "@/components/powerbi/DaxCodeViewer";
+import { formatDax } from "@/lib/daxFormatter";
 
 interface ItemRecord {
   id: string;
@@ -2171,14 +2173,30 @@ export function DaxManagementPage() {
                         />
                       </div>
 
-                      {/* DAX Formula */}
+                      {/* DAX Formula with Full Syntax Highlighting & Auto-Indentation */}
                       {selectedItem.isCustom ? (
-                        <div className="space-y-1">
+                        <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">
+                            <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
                               Custom DAX Expression
                             </label>
                             <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (sideboxForm.expression) {
+                                    setSideboxForm({
+                                      ...sideboxForm,
+                                      expression: formatDax(sideboxForm.expression),
+                                    });
+                                  }
+                                }}
+                                className="text-[9px] font-bold text-purple-700 hover:text-purple-800 bg-purple-100 hover:bg-purple-200 border border-purple-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
+                                title="Auto-indent & format DAX syntax"
+                              >
+                                <Sparkles className="h-2.5 w-2.5 text-purple-600" />
+                                <span>Format</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleOpenDiagram(selectedItem)}
@@ -2197,7 +2215,7 @@ export function DaxManagementPage() {
                                 ) : (
                                   <Copy className="h-2.5 w-2.5" />
                                 )}
-                                <span>{copiedId === selectedItem.id ? "Copied" : "Copy DAX"}</span>
+                                <span>{copiedId === selectedItem.id ? "Copied" : "Copy"}</span>
                               </button>
                             </div>
                           </div>
@@ -2207,8 +2225,23 @@ export function DaxManagementPage() {
                             onChange={(e) =>
                               setSideboxForm({ ...sideboxForm, expression: e.target.value })
                             }
-                            className="w-full p-2 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs border border-slate-800 focus:outline-none resize-y"
+                            placeholder="e.g. CALCULATE(COUNTROWS(...), ...)"
+                            className="w-full p-2.5 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y shadow-inner"
                           />
+                          {sideboxForm.expression.trim() && (
+                            <div className="space-y-1 pt-1">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                                Syntax Highlighted Preview
+                              </span>
+                              <DaxCodeViewer
+                                code={sideboxForm.expression}
+                                title="Live Preview"
+                                maxHeight="max-h-40"
+                                showLineNumbers={false}
+                                allowFormat={false}
+                              />
+                            </div>
+                          )}
                         </div>
                       ) : selectedItem.expression ? (
                         <div className="space-y-1">
@@ -2216,37 +2249,24 @@ export function DaxManagementPage() {
                             <h5 className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                               DAX Expression
                             </h5>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenDiagram(selectedItem)}
-                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
-                              >
-                                <Workflow className="h-2.5 w-2.5" />
-                                <span>Diagram</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => copyText(selectedItem.id, selectedItem.expression!)}
-                                className="text-[9px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
-                              >
-                                {copiedId === selectedItem.id ? (
-                                  <>
-                                    <Check className="h-2.5 w-2.5 text-emerald-600" />
-                                    <span className="text-emerald-700">Copied!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="h-2.5 w-2.5" />
-                                    <span>Copy</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDiagram(selectedItem)}
+                              className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <Workflow className="h-2.5 w-2.5" />
+                              <span>Diagram</span>
+                            </button>
                           </div>
-                          <div className="p-2.5 rounded-xl bg-slate-900 text-emerald-400 font-mono text-[11px] overflow-x-auto border border-slate-800 shadow-inner max-h-36">
-                            <pre className="whitespace-pre-wrap">{selectedItem.expression}</pre>
-                          </div>
+                          <DaxCodeViewer
+                            code={selectedItem.expression}
+                            title="DAX Expression"
+                            maxHeight="max-h-60"
+                            showLineNumbers={true}
+                            allowFormat={true}
+                            defaultFormatted={true}
+                            onCopy={() => copyText(selectedItem.id, selectedItem.expression!)}
+                          />
                         </div>
                       ) : null}
                     </div>
@@ -2366,8 +2386,16 @@ export function DaxManagementPage() {
                     )}
 
                     {it.expression && (
-                      <div className="p-2.5 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs border border-slate-800 overflow-x-auto shadow-inner">
-                        <pre className="whitespace-pre-wrap">{it.expression}</pre>
+                      <div className="mt-2">
+                        <DaxCodeViewer
+                          code={it.expression}
+                          title={it.name}
+                          maxHeight="max-h-44"
+                          showLineNumbers={true}
+                          allowFormat={true}
+                          defaultFormatted={true}
+                          onCopy={() => copyText(it.id, it.expression!)}
+                        />
                       </div>
                     )}
                   </div>
@@ -3167,14 +3195,29 @@ export function DaxManagementPage() {
               </div>
 
               {/* Custom DAX Expression Code Editor */}
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
                     Custom DAX Expression *
                   </label>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    DAX Syntax Highlighted
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customExpression.trim()) {
+                          setCustomExpression(formatDax(customExpression));
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-300 transition cursor-pointer"
+                      title="Auto-indent & format DAX syntax"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      <span>Auto-Format DAX</span>
+                    </button>
+                    <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
+                      Highlighted
+                    </span>
+                  </div>
                 </div>
                 <textarea
                   required
@@ -3198,8 +3241,23 @@ export function DaxManagementPage() {
                     setCustomExpression(val);
                   }}
                   placeholder="e.g. DIVIDE(SUM('fact_patient_visit'[total_hours]), 24, 0)"
-                  className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-y shadow-inner leading-relaxed"
+                  className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y shadow-inner leading-relaxed"
                 />
+
+                {customExpression.trim() && (
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Live Syntax Highlighted Preview
+                    </span>
+                    <DaxCodeViewer
+                      code={customExpression}
+                      title="Preview"
+                      maxHeight="max-h-36"
+                      showLineNumbers={false}
+                      allowFormat={false}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Actions Footer */}
