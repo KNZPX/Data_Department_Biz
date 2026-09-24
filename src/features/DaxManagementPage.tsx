@@ -757,6 +757,8 @@ export function DaxManagementPage() {
   const [customError, setCustomError] = useState<string | null>(null);
   const [fullDaxPasteInput, setFullDaxPasteInput] = useState("");
   const [autoSplitDetected, setAutoSplitDetected] = useState(false);
+  const [customDaxTab, setCustomDaxTab] = useState<"edit" | "preview">("edit");
+  const [sideboxDaxTab, setSideboxDaxTab] = useState<"edit" | "preview">("edit");
 
   // Auto-detect and parse full DAX paste (everything before first '=' is name, after is expression)
   function handleFullDaxPaste(rawText: string) {
@@ -1456,6 +1458,7 @@ export function DaxManagementPage() {
       setCustomNotes("");
     }
     setCustomError(null);
+    setCustomDaxTab("edit");
     setCustomDaxModalOpen(true);
   }
 
@@ -2546,7 +2549,37 @@ export function DaxManagementPage() {
                             <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
                               Custom DAX Expression
                             </label>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {/* Edit vs Preview Toggle */}
+                              <div className="flex items-center bg-purple-50 border border-purple-200 rounded-lg p-0.5 shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setSideboxDaxTab("edit")}
+                                  className={clsx(
+                                    "px-2 py-0.5 rounded-md text-[9px] font-bold transition flex items-center gap-1 cursor-pointer",
+                                    sideboxDaxTab === "edit"
+                                      ? "bg-white text-purple-900 shadow-xs"
+                                      : "text-purple-600 hover:text-purple-900"
+                                  )}
+                                >
+                                  <Pencil className="h-2 w-2" />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSideboxDaxTab("preview")}
+                                  className={clsx(
+                                    "px-2 py-0.5 rounded-md text-[9px] font-bold transition flex items-center gap-1 cursor-pointer",
+                                    sideboxDaxTab === "preview"
+                                      ? "bg-white text-purple-900 shadow-xs"
+                                      : "text-purple-600 hover:text-purple-900"
+                                  )}
+                                >
+                                  <Eye className="h-2 w-2" />
+                                  <span>Preview</span>
+                                </button>
+                              </div>
+
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2585,28 +2618,24 @@ export function DaxManagementPage() {
                               </button>
                             </div>
                           </div>
-                          <textarea
-                            rows={3}
-                            value={sideboxForm.expression}
-                            onChange={(e) =>
-                              setSideboxForm({ ...sideboxForm, expression: e.target.value })
-                            }
-                            placeholder="e.g. CALCULATE(COUNTROWS(...), ...)"
-                            className="w-full p-2.5 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y shadow-inner"
-                          />
-                          {sideboxForm.expression.trim() && (
-                            <div className="space-y-1 pt-1">
-                              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
-                                Syntax Highlighted Preview
-                              </span>
-                              <DaxCodeViewer
-                                code={sideboxForm.expression}
-                                title="Live Preview"
-                                maxHeight="max-h-40"
-                                showLineNumbers={false}
-                                allowFormat={false}
-                              />
-                            </div>
+                          {sideboxDaxTab === "edit" ? (
+                            <textarea
+                              rows={6}
+                              value={sideboxForm.expression}
+                              onChange={(e) =>
+                                setSideboxForm({ ...sideboxForm, expression: e.target.value })
+                              }
+                              placeholder="e.g. CALCULATE(COUNTROWS(...), ...)"
+                              className="w-full p-2.5 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-y shadow-inner leading-relaxed"
+                            />
+                          ) : (
+                            <DaxCodeViewer
+                              code={sideboxForm.expression || "-- No expression"}
+                              title="Live Preview"
+                              maxHeight="max-h-56"
+                              showLineNumbers={true}
+                              allowFormat={false}
+                            />
                           )}
                         </div>
                       ) : selectedItem.expression ? (
@@ -3661,14 +3690,44 @@ export function DaxManagementPage() {
                   </div>
                 </div>
 
-                {/* RIGHT COLUMN: DAX EXPRESSION & LIVE HIGHLIGHTED PREVIEW */}
+                {/* RIGHT COLUMN: SINGLE-CONTAINER DAX EDITOR WITH EDIT / PREVIEW TABS (NO DOUBLE SCROLLBARS) */}
                 <div className="space-y-2 flex flex-col justify-between">
                   <div className="space-y-1 flex-1 flex flex-col">
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
                         Custom DAX Expression *
                       </label>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
+                        {/* Segmented View Mode Tabs: Edit vs Preview */}
+                        <div className="flex items-center bg-purple-50 border border-purple-200 rounded-lg p-0.5 shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={() => setCustomDaxTab("edit")}
+                            className={clsx(
+                              "px-2.5 py-0.5 rounded-md text-[10px] font-bold transition flex items-center gap-1 cursor-pointer",
+                              customDaxTab === "edit"
+                                ? "bg-white text-purple-900 shadow-xs"
+                                : "text-purple-600 hover:text-purple-900"
+                            )}
+                          >
+                            <Pencil className="h-2.5 w-2.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCustomDaxTab("preview")}
+                            className={clsx(
+                              "px-2.5 py-0.5 rounded-md text-[10px] font-bold transition flex items-center gap-1 cursor-pointer",
+                              customDaxTab === "preview"
+                                ? "bg-white text-purple-900 shadow-xs"
+                                : "text-purple-600 hover:text-purple-900"
+                            )}
+                          >
+                            <Eye className="h-2.5 w-2.5" />
+                            <span>Preview</span>
+                          </button>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => {
@@ -3684,43 +3743,43 @@ export function DaxManagementPage() {
                         </button>
                       </div>
                     </div>
-                    <textarea
-                      required
-                      rows={5}
-                      value={customExpression}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val.includes("=") && (!customName || customName === "New Measure")) {
-                          const eq = val.indexOf("=");
-                          const pName = val.slice(0, eq).trim().replace(/^\[+|\]+$/g, "");
-                          const pExpr = val.slice(eq + 1).trim();
-                          if (pName && pExpr) {
-                            setCustomName(pName);
-                            setCustomExpression(pExpr);
-                            setAutoSplitDetected(true);
-                            setTimeout(() => setAutoSplitDetected(false), 3000);
-                            return;
-                          }
-                        }
-                        setCustomExpression(val);
-                      }}
-                      placeholder="e.g. DIVIDE(SUM('fact_patient_visit'[total_hours]), 24, 0)"
-                      className="w-full p-2.5 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-none shadow-inner leading-relaxed"
-                    />
-                  </div>
 
-                  {/* Live Syntax Highlighted Preview */}
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Live Syntax Highlighted Preview
-                    </span>
-                    <DaxCodeViewer
-                      code={customExpression || "-- Type or paste DAX to preview"}
-                      title="Syntax Preview"
-                      maxHeight="max-h-40"
-                      showLineNumbers={true}
-                      allowFormat={false}
-                    />
+                    {/* Single Clean Editor Container */}
+                    {customDaxTab === "edit" ? (
+                      <textarea
+                        required
+                        rows={11}
+                        value={customExpression}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val.includes("=") && (!customName || customName === "New Measure")) {
+                            const eq = val.indexOf("=");
+                            const pName = val.slice(0, eq).trim().replace(/^\[+|\]+$/g, "");
+                            const pExpr = val.slice(eq + 1).trim();
+                            if (pName && pExpr) {
+                              setCustomName(pName);
+                              setCustomExpression(pExpr);
+                              setAutoSplitDetected(true);
+                              setTimeout(() => setAutoSplitDetected(false), 3000);
+                              return;
+                            }
+                          }
+                          setCustomExpression(val);
+                        }}
+                        placeholder="e.g. DIVIDE(SUM('fact_patient_visit'[total_hours]), 24, 0)"
+                        className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-none shadow-inner leading-relaxed min-h-[260px]"
+                      />
+                    ) : (
+                      <div className="flex-1 min-h-[260px]">
+                        <DaxCodeViewer
+                          code={customExpression || "-- Type or paste DAX in Edit tab to preview"}
+                          title="Syntax Preview"
+                          maxHeight="max-h-[300px]"
+                          showLineNumbers={true}
+                          allowFormat={false}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
