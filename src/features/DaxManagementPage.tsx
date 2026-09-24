@@ -566,8 +566,23 @@ export function DaxManagementPage() {
   // Floating Sidebar state
   const [floatSidebarOpen, setFloatSidebarOpen] = useState(true);
 
-  // Active Model: "PKT-D01" | "PKT-D02"
+  // Semantic Model Selection Screen Gate (True when model chosen, false to show landing selector)
+  const [modelChosen, setModelChosen] = useState<boolean>(false);
+
+  // Active Model: "PKT-D01" | "PKT-D02" | "ALL"
   const [activeModel, setActiveModel] = useState<string>("PKT-D01");
+
+  // Read URL query parameter for model on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const m = params.get("model");
+      if (m && (m === "PKT-D01" || m === "PKT-D02" || m === "ALL")) {
+        setActiveModel(m);
+        setModelChosen(true);
+      }
+    }
+  }, []);
 
   // View Mode: "table" | "split" (was sidebox) | "list" (was split)
   const [viewMode, setViewMode] = useState<"table" | "split" | "list">("split");
@@ -632,6 +647,7 @@ export function DaxManagementPage() {
 
   // Sidebox / Split Inline Editing State
   const [sideboxForm, setSideboxForm] = useState({
+    name: "",
     businessDefinition: "",
     mathDefinition: "",
     notes: "",
@@ -719,11 +735,34 @@ export function DaxManagementPage() {
   const [customNotes, setCustomNotes] = useState("");
   const [isSavingCustom, setIsSavingCustom] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
+  const [fullDaxPasteInput, setFullDaxPasteInput] = useState("");
+  const [autoSplitDetected, setAutoSplitDetected] = useState(false);
+
+  // Auto-detect and parse full DAX paste (everything before first '=' is name, after is expression)
+  function handleFullDaxPaste(rawText: string) {
+    setFullDaxPasteInput(rawText);
+    if (!rawText.trim()) return;
+
+    const equalIdx = rawText.indexOf("=");
+    if (equalIdx > 0) {
+      let parsedName = rawText.slice(0, equalIdx).trim();
+      // Strip surrounding brackets [ ] or quotes
+      parsedName = parsedName.replace(/^[+|]+$/g, "").trim();
+      const parsedExpr = rawText.slice(equalIdx + 1).trim();
+
+      if (parsedName) setCustomName(parsedName);
+      if (parsedExpr) setCustomExpression(parsedExpr);
+
+      setAutoSplitDetected(true);
+      setTimeout(() => setAutoSplitDetected(false), 3500);
+    }
+  }
 
   // Synchronize Split Form when selected item changes
   useEffect(() => {
     if (selectedItem) {
       setSideboxForm({
+        name: selectedItem.name || "",
         businessDefinition: selectedItem.businessDefinition || "",
         mathDefinition: selectedItem.mathDefinition || "",
         notes: selectedItem.notes || "",
@@ -736,17 +775,19 @@ export function DaxManagementPage() {
   // Check if Split inspector has unsaved changes
   const isSideboxDirty = useMemo(() => {
     if (!selectedItem) return false;
+    const origName = selectedItem.name || "";
     const origBus = selectedItem.businessDefinition || "";
     const origMath = selectedItem.mathDefinition || "";
     const origNotes = selectedItem.notes || "";
     const origExpr = selectedItem.expression || "";
 
+    const hasNameChanged = selectedItem.isCustom && sideboxForm.name.trim() !== origName;
     const hasBusChanged = sideboxForm.businessDefinition !== origBus;
     const hasMathChanged = sideboxForm.mathDefinition !== origMath;
     const hasNotesChanged = sideboxForm.notes !== origNotes;
     const hasExprChanged = selectedItem.isCustom && sideboxForm.expression !== origExpr;
 
-    return hasBusChanged || hasMathChanged || hasNotesChanged || hasExprChanged;
+    return hasNameChanged || hasBusChanged || hasMathChanged || hasNotesChanged || hasExprChanged;
   }, [selectedItem, sideboxForm]);
 
   // Instant Search Debounce Effect (250ms)
@@ -827,13 +868,17 @@ export function DaxManagementPage() {
     setShowUnsavedModal(false);
   }
 
-  // Save Split inspector changes directly
+  // Save Split inspector changes directly (Supports Custom Name Edits)
   async function handleSaveSidebox() {
     if (!selectedItem) return;
     setIsSavingSidebox(true);
     setSideboxSaveSuccess(false);
 
     try {
+      const finalName = selectedItem.isCustom
+        ? (sideboxForm.name.trim() || selectedItem.name)
+        : selectedItem.name;
+
       if (selectedItem.isCustom) {
         const res = await fetch("/api/powerbi/dax", {
           method: "POST",
@@ -843,7 +888,7 @@ export function DaxManagementPage() {
             id: selectedItem.id,
             datasetId: selectedItem.modelCode,
             tableName: selectedItem.tableName,
-            name: selectedItem.name,
+            name: finalName,
             expression: sideboxForm.expression,
             dataType: selectedItem.dataType,
             mathDefinition: sideboxForm.mathDefinition,
@@ -879,6 +924,7 @@ export function DaxManagementPage() {
           it.id === selectedItem.id
             ? {
                 ...it,
+                name: finalName,
                 businessDefinition: sideboxForm.businessDefinition,
                 mathDefinition: sideboxForm.mathDefinition,
                 notes: sideboxForm.notes,
@@ -892,6 +938,7 @@ export function DaxManagementPage() {
         prev
           ? {
               ...prev,
+              name: finalName,
               businessDefinition: sideboxForm.businessDefinition,
               mathDefinition: sideboxForm.mathDefinition,
               notes: sideboxForm.notes,
@@ -1927,10 +1974,30 @@ export function DaxManagementPage() {
                               {selectedItem.type}
                             </span>
                           </div>
-                          {/* COMPACT CLEAN TITLE: break-words rather than break-all */}
-                          <h3 className="font-mono text-sm font-bold text-slate-900 break-words leading-tight">
-                            {selectedItem.name}
-                          </h3>
+                          {/* TITLE: Editable for Custom by User, static for Semantic Models */}
+                          {selectedItem.isCustom ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
+                                  Custom Measure Name
+                                </label>
+                                <span className="text-[9px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.2 rounded-md border border-purple-200">
+                                  Editable
+                                </span>
+                              </div>
+                              <input
+                                type="text"
+                                value={sideboxForm.name}
+                                onChange={(e) => setSideboxForm({ ...sideboxForm, name: e.target.value })}
+                                placeholder="Measure name..."
+                                className="w-full px-2.5 py-1 text-xs font-mono font-bold rounded-xl bg-purple-50/40 border border-purple-300 text-purple-950 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-inner"
+                              />
+                            </div>
+                          ) : (
+                            <h3 className="font-mono text-sm font-bold text-slate-900 break-words leading-tight">
+                              {selectedItem.name}
+                            </h3>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -2954,26 +3021,25 @@ export function DaxManagementPage() {
         </div>
       )}
 
-      {/* ================= CUSTOM DAX MODAL WITH SEARCHABLE TABLE DROPDOWN ================= */}
+      {/* ================= CUSTOM DAX MODAL (SPLIT-STYLED WITH FULL DAX AUTO-SPLIT) ================= */}
       {customDaxModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95 my-auto max-h-[90vh] overflow-y-auto">
+            {/* Header matching Split style */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <Plus className="h-5 w-5 text-blue-600" />
-                <div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200 block w-fit mb-0.5">
-                    CUSTOM DAX AUTHORING
-                  </span>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    {customDaxTarget ? "Edit Custom DAX Measure" : "Create New Custom DAX Measure"}
-                  </h3>
-                </div>
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                  <User className="h-3 w-3" />
+                  <span>CUSTOM</span>
+                </span>
+                <span className="text-[10px] font-extrabold uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200">
+                  CUSTOM DAX AUTHORING
+                </span>
               </div>
               <button
                 type="button"
                 onClick={() => setCustomDaxModalOpen(false)}
-                className="h-7 w-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 grid place-items-center transition cursor-pointer"
+                className="h-8 w-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 grid place-items-center transition cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -2985,29 +3051,69 @@ export function DaxManagementPage() {
               </div>
             )}
 
+            {/* FULL DAX AUTO-SPLIT PASTE CARD */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50/50 to-blue-50 border border-purple-200/80 space-y-1.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-purple-900 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-purple-600" />
+                  <span>Paste Entire DAX Definition (Auto-Splits Name &amp; Expression)</span>
+                </label>
+                {autoSplitDetected && (
+                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                    <Check className="h-3 w-3" /> Auto-split applied!
+                  </span>
+                )}
+              </div>
+              <textarea
+                rows={2}
+                value={fullDaxPasteInput}
+                onChange={(e) => handleFullDaxPaste(e.target.value)}
+                placeholder="Paste whole DAX here, e.g. day_remaining = VAR _year = MAX('dim_date'[Year]) ... RETURN ..."
+                className="w-full p-2.5 text-xs rounded-xl bg-white border border-purple-200 text-slate-800 font-mono placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-inner resize-none"
+              />
+              <span className="text-[10px] text-purple-700/80 block">
+                Everything before the first "=" becomes the <b>Measure Name</b>, and everything after becomes the <b>Expression</b>.
+              </span>
+            </div>
+
             <form onSubmit={handleSaveCustomDax} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Measure Name *
+              {/* Measure Name (Prominent font-mono input like Split header) */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Measure Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="e.g. day_remaining"
+                  className="w-full px-3 py-2 text-sm font-mono font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                />
+              </div>
+
+              {/* Compact Metadata Grid matching Split layout */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                    Table Name *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="e.g. Average Length of Stay (Days)"
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                  <TableSearchDropdown
+                    tables={meta.tables || []}
+                    value={customTable}
+                    onChange={(t) => setCustomTable(t)}
+                    placeholder="Select or search table..."
+                    allowAll={false}
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
                     Data Type
                   </label>
                   <select
                     value={customDataType}
                     onChange={(e) => setCustomDataType(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                    className="w-full px-3 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs font-mono font-bold"
                   >
                     <option value="Decimal">Decimal</option>
                     <option value="Integer">Integer</option>
@@ -3018,91 +3124,104 @@ export function DaxManagementPage() {
                 </div>
               </div>
 
-              {/* Searchable Table Dropdown in Custom DAX Modal */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Home Table Name *
+              {/* Business Definition */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Business Definition / Meaning
                 </label>
-                <TableSearchDropdown
-                  tables={meta.tables || []}
-                  value={customTable}
-                  onChange={(t) => setCustomTable(t)}
-                  placeholder="Select or search existing table in model..."
-                  allowAll={false}
+                <textarea
+                  rows={2}
+                  value={customBusiness}
+                  onChange={(e) => setCustomBusiness(e.target.value)}
+                  placeholder="Business rationale, definition..."
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y shadow-2xs"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Select an existing table from the model, or type a custom name.
-                </span>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  DAX Formula / Expression *
+              {/* Mathematical Formulation */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Mathematical Formulation
                 </label>
+                <textarea
+                  rows={2}
+                  value={customMath}
+                  onChange={(e) => setCustomMath(e.target.value)}
+                  placeholder="Formula notation (e.g. SUM(A)/COUNT(B))..."
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y shadow-2xs"
+                />
+              </div>
+
+              {/* Technical Notes */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                  Technical Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={customNotes}
+                  onChange={(e) => setCustomNotes(e.target.value)}
+                  placeholder="Optional governance notes, filter context rules..."
+                  className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y shadow-2xs"
+                />
+              </div>
+
+              {/* Custom DAX Expression Code Editor */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
+                    Custom DAX Expression *
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    DAX Syntax Highlighted
+                  </span>
+                </div>
                 <textarea
                   required
                   rows={4}
                   value={customExpression}
-                  onChange={(e) => setCustomExpression(e.target.value)}
-                  placeholder="e.g. DIVIDE(SUM('Fact_Inpatient'[Total_Stay_Hours]), 24, 0)"
-                  className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-y shadow-inner"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Auto-split if user pasted into expression directly
+                    if (val.includes("=") && (!customName || customName === "New Measure")) {
+                      const eq = val.indexOf("=");
+                      const pName = val.slice(0, eq).trim().replace(/^[+|]+$/g, "");
+                      const pExpr = val.slice(eq + 1).trim();
+                      if (pName && pExpr) {
+                        setCustomName(pName);
+                        setCustomExpression(pExpr);
+                        setAutoSplitDetected(true);
+                        setTimeout(() => setAutoSplitDetected(false), 3000);
+                        return;
+                      }
+                    }
+                    setCustomExpression(val);
+                  }}
+                  placeholder="e.g. DIVIDE(SUM('fact_patient_visit'[total_hours]), 24, 0)"
+                  className="w-full p-3 text-xs rounded-xl bg-slate-900 font-mono text-emerald-400 border border-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-y shadow-inner leading-relaxed"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Business Definition
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={customBusiness}
-                    onChange={(e) => setCustomBusiness(e.target.value)}
-                    placeholder="Clinical or operational logic..."
-                    className="w-full p-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none shadow-2xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Mathematical Formulation
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={customMath}
-                    onChange={(e) => setCustomMath(e.target.value)}
-                    placeholder="Formula notation (e.g. Sum / Count)..."
-                    className="w-full p-2.5 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono text-purple-900 focus:outline-none focus:ring-1 focus:ring-purple-500 resize-none shadow-2xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Notes
-                </label>
-                <input
-                  type="text"
-                  value={customNotes}
-                  onChange={(e) => setCustomNotes(e.target.value)}
-                  placeholder="Optional governance or refresh notes..."
-                  className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              {/* Actions Footer */}
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setCustomDaxModalOpen(false)}
-                  className="px-4 py-2 rounded-full text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSavingCustom}
-                  className="px-5 py-2 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition disabled:opacity-50 cursor-pointer"
+                  disabled={isSavingCustom || !customName.trim() || !customExpression.trim()}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
                 >
-                  {isSavingCustom ? "Saving..." : "Save Custom DAX"}
+                  {isSavingCustom ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  <span>Save Custom DAX</span>
                 </button>
               </div>
             </form>
