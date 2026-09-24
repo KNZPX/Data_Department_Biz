@@ -486,6 +486,12 @@ export function WhiteboardPage() {
   const [liveWireEnd, setLiveWireEnd] = useState<{ x: number; y: number } | null>(null);
   const [editingConnection, setEditingConnection] = useState<{ sourceId: string; targetId: string } | null>(null);
 
+  // Connection Drag tracking refs
+  const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isWireDragRef = useRef<boolean>(false);
+  const connectingSourceRef = useRef<{ nodeId: string; fromSide: PortSide } | null>(null);
+  connectingSourceRef.current = connectingSource;
+
   // Color Palette Popover / State
   const [customHexInput, setCustomHexInput] = useState<string>("#2563eb");
   const [showColorPicker, setShowColorPicker] = useState<boolean>(false);
@@ -751,6 +757,8 @@ export function WhiteboardPage() {
     return () => window.removeEventListener("click", handleGlobalClick);
   }, [contextMenu]);
 
+
+
   // Open Canvas for specific board
   function handleOpenBoard(boardId: string) {
     setActiveBoardId(boardId);
@@ -965,45 +973,177 @@ export function WhiteboardPage() {
     showToast("Color updated");
   }
 
+  // Complete connection between two nodes
+  const completeConnection = useCallback(
+    (sourceId: string, fromSide: PortSide, targetId: string, toSide: PortSide) => {
+      if (sourceId === targetId) {
+        setConnectingSource(null);
+        setLiveWireEnd(null);
+        return;
+      }
+
+      const srcNode = activeBoard?.nodes.find((n) => n.id === sourceId);
+      const tgtNode = activeBoard?.nodes.find((n) => n.id === targetId);
+
+      updateActiveNodes((nodes) =>
+        nodes.map((n) => {
+          if (n.id === sourceId) {
+            const current = n.connections || [];
+            if (!current.some((c) => c.targetId === targetId)) {
+              return {
+                ...n,
+                connections: [...current, { targetId, fromSide, toSide, label: "Flow" }],
+              };
+            }
+          }
+          return n;
+        })
+      );
+
+      setConnectingSource(null);
+      setLiveWireEnd(null);
+      showToast(`Connected: ${srcNode?.title || "Node"} → ${tgtNode?.title || "Node"}`);
+    },
+    [activeBoard, updateActiveNodes, showToast]
+  );
+
+  // Connect directly to a node (auto-selects best entrance port based on relative position)
+  const handleConnectToNode = useCallback(
+    (targetNodeId: string) => {
+      const src = connectingSourceRef.current;
+      if (!src || src.nodeId === targetNodeId) return;
+      const srcNode = activeBoard?.nodes.find((n) => n.id === src.nodeId);
+      const tgtNode = activeBoard?.nodes.find((n) => n.id === targetNodeId);
+      let bestSide: PortSide = "left";
+      if (srcNode && tgtNode) {
+        const dx = tgtNode.x - srcNode.x;
+        const dy = tgtNode.y - srcNode.y;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          bestSide = dx > 0 ? "left" : "right";
+        } else {
+          bestSide = dy > 0 ? "top" : "bottom";
+        }
+      }
+      completeConnection(src.nodeId, src.fromSide, targetNodeId, bestSide);
+    },
+    [activeBoard, completeConnection]
+  );
+
   // 4-Side Port Interactive Wiring Handlers
   function handlePortMouseDown(e: React.MouseEvent, nodeId: string, side: PortSide) {
     e.stopPropagation();
+    e.preventDefault();
+
+    // If ALREADY connecting from another node, complete the connection immediately!
+    const src = connectingSourceRef.current;
+    if (src) {
+      if (src.nodeId !== nodeId) {
+        completeConnection(src.nodeId, src.fromSide, nodeId, side);
+        return;
+      } else if (src.fromSide === side) {
+        // Clicked exact same port -> toggle cancel
+        setConnectingSource(null);
+        setLiveWireEnd(null);
+        return;
+      }
+      // Clicked different port on same source node -> switch port
+      setConnectingSource({ nodeId, fromSide: side });
+      const srcNode = activeBoard?.nodes.find((n) => n.id === nodeId);
+      if (srcNode) {
+        setLiveWireEnd(getPortCoordinate(srcNode, side));
+      }
+      return;
+    }
+
+    // Start new connection / drag
     setConnectingSource({ nodeId, fromSide: side });
     const srcNode = activeBoard?.nodes.find((n) => n.id === nodeId);
     if (srcNode) {
       const coord = getPortCoordinate(srcNode, side);
       setLiveWireEnd(coord);
     }
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    isWireDragRef.current = true;
   }
 
   function handlePortMouseUp(nodeId: string, toSide: PortSide = "left") {
-    if (!connectingSource) return;
-    if (connectingSource.nodeId === nodeId) {
-      setConnectingSource(null);
-      setLiveWireEnd(null);
+    const src = connectingSourceRef.current;
+    if (!src) return;
+    if (src.nodeId === nodeId) {
+      // Releasing on same node where drag started - do not cancel immediately; let pointerup handle click vs drag
       return;
     }
-
-    const { nodeId: srcId, fromSide } = connectingSource;
-    updateActiveNodes((nodes) =>
-      nodes.map((n) => {
-        if (n.id === srcId) {
-          const current = n.connections || [];
-          if (!current.some((c) => c.targetId === nodeId)) {
-            return {
-              ...n,
-              connections: [...current, { targetId: nodeId, fromSide, toSide, label: "Flow" }],
-            };
-          }
-        }
-        return n;
-      })
-    );
-
-    setConnectingSource(null);
-    setLiveWireEnd(null);
-    showToast("Connected wire");
+    completeConnection(src.nodeId, src.fromSide, nodeId, toSide);
   }
+
+  // Global mouse listeners for wire dragging & connecting via elementFromPoint
+  useEffect(() => {
+    if (viewState !== "canvas") return;
+
+    function handleGlobalMouseMove(e: MouseEvent) {
+      if (connectingSourceRef.current && canvasContainerRef.current) {
+        const rect = canvasContainerRef.current.getBoundingClientRect();
+        const curX = (e.clientX - rect.left - pan.x) / zoom;
+        const curY = (e.clientY - rect.top - pan.y) / zoom;
+        setLiveWireEnd({ x: curX, y: curY });
+      }
+    }
+
+    function handleGlobalMouseUp(e: MouseEvent) {
+      if (isWireDragRef.current && connectingSourceRef.current) {
+        isWireDragRef.current = false;
+        const dist = Math.hypot(
+          e.clientX - dragStartPosRef.current.x,
+          e.clientY - dragStartPosRef.current.y
+        );
+
+        // If user actually dragged (> 6px away from starting port)
+        if (dist >= 6) {
+          const elem = document.elementFromPoint(e.clientX, e.clientY);
+
+          // 1. Target Port directly under pointer?
+          const portEl = elem?.closest<HTMLElement>("[data-port-node-id]");
+          if (portEl) {
+            const tgtNodeId = portEl.getAttribute("data-port-node-id");
+            const tgtSide = (portEl.getAttribute("data-port-side") || "left") as PortSide;
+            if (tgtNodeId && tgtNodeId !== connectingSourceRef.current.nodeId) {
+              completeConnection(
+                connectingSourceRef.current.nodeId,
+                connectingSourceRef.current.fromSide,
+                tgtNodeId,
+                tgtSide
+              );
+              return;
+            }
+          }
+
+          // 2. Target Node card directly under pointer?
+          const nodeEl = elem?.closest<HTMLElement>("[data-node-id]");
+          if (nodeEl) {
+            const tgtNodeId = nodeEl.getAttribute("data-node-id");
+            if (tgtNodeId && tgtNodeId !== connectingSourceRef.current.nodeId) {
+              handleConnectToNode(tgtNodeId);
+              return;
+            }
+          }
+
+          // Released on empty space after dragging -> cancel wire
+          setConnectingSource(null);
+          setLiveWireEnd(null);
+        } else {
+          // Single Click on port without dragging: enter Click-to-Connect mode!
+          showToast("Port active! Click any card or port to connect, or Esc to cancel.");
+        }
+      }
+    }
+
+    window.addEventListener("mousemove", handleGlobalMouseMove);
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleGlobalMouseMove);
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+    };
+  }, [viewState, pan, zoom, completeConnection, handleConnectToNode, showToast]);
 
   function handleRemoveConnection(srcId: string, targetId: string) {
     updateActiveNodes((nodes) =>
@@ -1078,19 +1218,17 @@ export function WhiteboardPage() {
   function handleCanvasMouseUp() {
     setIsPanning(false);
     setDraggingNodeId(null);
-    if (connectingSource) {
-      setConnectingSource(null);
-      setLiveWireEnd(null);
-    }
   }
 
   // Node Click & Drag Start (Select & Move)
   function handleNodeMouseDown(e: React.MouseEvent, node: WhiteboardNode) {
     e.stopPropagation();
 
-    // If connecting wire in progress, clicking node finishes connection
-    if (connectingSource && connectingSource.nodeId !== node.id) {
-      handlePortMouseUp(node.id, "left");
+    // If connecting wire in progress, clicking node finishes connection!
+    const src = connectingSourceRef.current;
+    if (src && src.nodeId !== node.id) {
+      e.preventDefault();
+      handleConnectToNode(node.id);
       return;
     }
 
@@ -1107,20 +1245,10 @@ export function WhiteboardPage() {
 
   // Node Mouse Up (Handles wire connection dropped onto node)
   function handleNodeMouseUp(e: React.MouseEvent, node: WhiteboardNode) {
-    if (connectingSource && connectingSource.nodeId !== node.id) {
+    const src = connectingSourceRef.current;
+    if (src && src.nodeId !== node.id) {
       e.stopPropagation();
-      const srcNode = activeBoard?.nodes.find((n) => n.id === connectingSource.nodeId);
-      let bestSide: PortSide = "left";
-      if (srcNode) {
-        const dx = node.x - srcNode.x;
-        const dy = node.y - srcNode.y;
-        if (Math.abs(dx) > Math.abs(dy)) {
-          bestSide = dx > 0 ? "left" : "right";
-        } else {
-          bestSide = dy > 0 ? "top" : "bottom";
-        }
-      }
-      handlePortMouseUp(node.id, bestSide);
+      handleConnectToNode(node.id);
     }
   }
 
@@ -2243,6 +2371,17 @@ export function WhiteboardPage() {
                 >
                   <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
                 </marker>
+                <marker
+                  id="arrow-whiteboard-live"
+                  viewBox="0 0 10 10"
+                  refX="6"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
+                </marker>
               </defs>
 
               {/* RENDER EXISTING WIRES */}
@@ -2343,9 +2482,10 @@ export function WhiteboardPage() {
                       d={`M ${srcCoord.x} ${srcCoord.y} Q ${(srcCoord.x + liveWireEnd.x) / 2} ${(srcCoord.y + liveWireEnd.y) / 2 - 30}, ${liveWireEnd.x} ${liveWireEnd.y}`}
                       fill="none"
                       stroke="#f59e0b"
-                      strokeWidth="2.5"
-                      strokeDasharray="5 5"
-                      markerEnd="url(#arrow-whiteboard)"
+                      strokeWidth="3"
+                      strokeDasharray="6 4"
+                      markerEnd="url(#arrow-whiteboard-live)"
+                      className="pointer-events-none"
                     />
                   );
                 })()
@@ -2365,10 +2505,17 @@ export function WhiteboardPage() {
               return (
                 <div
                   key={node.id}
+                  data-node-id={node.id}
                   onMouseEnter={() => setHoveredNodeId(node.id)}
                   onMouseLeave={() => setHoveredNodeId((curr) => (curr === node.id ? null : curr))}
                   onMouseDown={(e) => handleNodeMouseDown(e, node)}
                   onMouseUp={(e) => handleNodeMouseUp(e, node)}
+                  onClick={(e) => {
+                    if (connectingSourceRef.current && connectingSourceRef.current.nodeId !== node.id) {
+                      e.stopPropagation();
+                      handleConnectToNode(node.id);
+                    }
+                  }}
                   onContextMenu={(e) => handleNodeContextMenu(e, node)}
                   style={{
                     position: "absolute",
@@ -2388,7 +2535,7 @@ export function WhiteboardPage() {
                       ? "p-2 rounded-xl text-slate-800 border-2 border-dashed border-slate-300 hover:border-blue-400 bg-white/60 backdrop-blur-2xs"
                       : "p-3 rounded-2xl shadow-md border-2 text-slate-800 bg-white",
                     isSelected && "ring-3 ring-blue-600 shadow-2xl",
-                    isConnecting && connectingSource?.nodeId !== node.id && "ring-2 ring-amber-400 bg-amber-50/20"
+                    isConnecting && connectingSource?.nodeId !== node.id && "ring-2 ring-emerald-400 bg-emerald-50/20"
                   )}
                 >
                   {/* ================= 4 CONNECTION PORTS (TOP, RIGHT, BOTTOM, LEFT) ================= */}
@@ -2397,6 +2544,8 @@ export function WhiteboardPage() {
                       {/* Top Port */}
                       <button
                         type="button"
+                        data-port-node-id={node.id}
+                        data-port-side="top"
                         onMouseDown={(e) => handlePortMouseDown(e, node.id, "top")}
                         onMouseUp={(e) => {
                           e.stopPropagation();
@@ -2404,16 +2553,18 @@ export function WhiteboardPage() {
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (connectingSource && connectingSource.nodeId !== node.id) {
-                            handlePortMouseUp(node.id, "top");
+                          if (connectingSourceRef.current && connectingSourceRef.current.nodeId !== node.id) {
+                            completeConnection(connectingSourceRef.current.nodeId, connectingSourceRef.current.fromSide, node.id, "top");
                           }
                         }}
                         title="Top Connection Port"
                         className={clsx(
-                          "absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
-                          isConnecting && connectingSource?.nodeId !== node.id
-                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
-                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                          "absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair flex items-center justify-center text-white text-[10px] font-bold select-none",
+                          connectingSource?.nodeId === node.id && connectingSource?.fromSide === "top"
+                            ? "h-6 w-6 bg-amber-500 ring-4 ring-amber-300 scale-130 z-40"
+                            : isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-6 w-6 bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-125 z-30"
+                            : "h-5 w-5 bg-blue-500 hover:scale-130 hover:bg-blue-600 z-20"
                         )}
                       >
                         +
@@ -2422,6 +2573,8 @@ export function WhiteboardPage() {
                       {/* Right Port */}
                       <button
                         type="button"
+                        data-port-node-id={node.id}
+                        data-port-side="right"
                         onMouseDown={(e) => handlePortMouseDown(e, node.id, "right")}
                         onMouseUp={(e) => {
                           e.stopPropagation();
@@ -2429,16 +2582,18 @@ export function WhiteboardPage() {
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (connectingSource && connectingSource.nodeId !== node.id) {
-                            handlePortMouseUp(node.id, "right");
+                          if (connectingSourceRef.current && connectingSourceRef.current.nodeId !== node.id) {
+                            completeConnection(connectingSourceRef.current.nodeId, connectingSourceRef.current.fromSide, node.id, "right");
                           }
                         }}
                         title="Right Connection Port"
                         className={clsx(
-                          "absolute -right-2.5 top-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
-                          isConnecting && connectingSource?.nodeId !== node.id
-                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
-                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                          "absolute -right-3 top-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair flex items-center justify-center text-white text-[10px] font-bold select-none",
+                          connectingSource?.nodeId === node.id && connectingSource?.fromSide === "right"
+                            ? "h-6 w-6 bg-amber-500 ring-4 ring-amber-300 scale-130 z-40"
+                            : isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-6 w-6 bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-125 z-30"
+                            : "h-5 w-5 bg-blue-500 hover:scale-130 hover:bg-blue-600 z-20"
                         )}
                       >
                         +
@@ -2447,6 +2602,8 @@ export function WhiteboardPage() {
                       {/* Bottom Port */}
                       <button
                         type="button"
+                        data-port-node-id={node.id}
+                        data-port-side="bottom"
                         onMouseDown={(e) => handlePortMouseDown(e, node.id, "bottom")}
                         onMouseUp={(e) => {
                           e.stopPropagation();
@@ -2454,16 +2611,18 @@ export function WhiteboardPage() {
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (connectingSource && connectingSource.nodeId !== node.id) {
-                            handlePortMouseUp(node.id, "bottom");
+                          if (connectingSourceRef.current && connectingSourceRef.current.nodeId !== node.id) {
+                            completeConnection(connectingSourceRef.current.nodeId, connectingSourceRef.current.fromSide, node.id, "bottom");
                           }
                         }}
                         title="Bottom Connection Port"
                         className={clsx(
-                          "absolute -bottom-2.5 left-1/2 -translate-x-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
-                          isConnecting && connectingSource?.nodeId !== node.id
-                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
-                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                          "absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair flex items-center justify-center text-white text-[10px] font-bold select-none",
+                          connectingSource?.nodeId === node.id && connectingSource?.fromSide === "bottom"
+                            ? "h-6 w-6 bg-amber-500 ring-4 ring-amber-300 scale-130 z-40"
+                            : isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-6 w-6 bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-125 z-30"
+                            : "h-5 w-5 bg-blue-500 hover:scale-130 hover:bg-blue-600 z-20"
                         )}
                       >
                         +
@@ -2472,6 +2631,8 @@ export function WhiteboardPage() {
                       {/* Left Port */}
                       <button
                         type="button"
+                        data-port-node-id={node.id}
+                        data-port-side="left"
                         onMouseDown={(e) => handlePortMouseDown(e, node.id, "left")}
                         onMouseUp={(e) => {
                           e.stopPropagation();
@@ -2479,16 +2640,18 @@ export function WhiteboardPage() {
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (connectingSource && connectingSource.nodeId !== node.id) {
-                            handlePortMouseUp(node.id, "left");
+                          if (connectingSourceRef.current && connectingSourceRef.current.nodeId !== node.id) {
+                            completeConnection(connectingSourceRef.current.nodeId, connectingSourceRef.current.fromSide, node.id, "left");
                           }
                         }}
                         title="Left Connection Port"
                         className={clsx(
-                          "absolute -left-2.5 top-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[9px] font-bold",
-                          isConnecting && connectingSource?.nodeId !== node.id
-                            ? "h-5 w-5 bg-blue-600 ring-4 ring-blue-300 animate-pulse scale-125"
-                            : "h-4 w-4 bg-blue-500 hover:scale-130 hover:bg-blue-600"
+                          "absolute -left-3 top-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md transition cursor-crosshair flex items-center justify-center text-white text-[10px] font-bold select-none",
+                          connectingSource?.nodeId === node.id && connectingSource?.fromSide === "left"
+                            ? "h-6 w-6 bg-amber-500 ring-4 ring-amber-300 scale-130 z-40"
+                            : isConnecting && connectingSource?.nodeId !== node.id
+                            ? "h-6 w-6 bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-125 z-30"
+                            : "h-5 w-5 bg-blue-500 hover:scale-130 hover:bg-blue-600 z-20"
                         )}
                       >
                         +
