@@ -58,10 +58,11 @@ const DEFAULT_OPD_RATIOS: Record<string, number> = {
   "CoE Cancer": 0.35,
   "SBU Women's Health": 0.60,
   "SBU Child": 0.80,
+  "Outreach Clinic & BTL": 0.95,
   "SBU PPSI": 0.55,
   "SBU Wellness": 0.90,
+  "SBU Urology": 0.70,
   "Elective Surgery": 0.30,
-  "NCDs Focus": 0.85,
   "Usual Business": 0.65,
 };
 
@@ -95,6 +96,9 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
   });
 
   const pktSiteChildren = ["BPK", "BSI", "DBK (Premium)"];
+  const pktTargetRev27 = 7550 * 1_000_000; // 7,550.0 MB
+  const pktGrowthRevPct = pktBaseRev26 > 0 ? ((pktTargetRev27 - pktBaseRev26) / pktBaseRev26) * 100 : 6.90;
+
   tree["PKT"] = {
     id: "PKT",
     level: "pkt",
@@ -106,20 +110,27 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
     priorRev25: pktPriorRev25,
     baseVisits26: pktBaseVisits26,
     priorVisits25: pktPriorVisits25,
-    method: "growth_pct",
-    inputVal: 10.70, // Default base case growth ~ +10.7%
-    unitType: "pct",
+    method: "fixed_amount",
+    inputVal: 7550.0, // 7,550.0 MB
+    unitType: "MB",
     isOverridden: false,
-    targetRev27: pktBaseRev26 * 1.107,
-    targetVisits27: pktBaseVisits26 * 1.054,
-    growthRevPct: 10.70,
-    growthVisitsPct: 5.4,
+    targetRev27: pktTargetRev27,
+    targetVisits27: pktBaseVisits26 * (1 + (pktGrowthRevPct * 0.5) / 100),
+    growthRevPct: Number(pktGrowthRevPct.toFixed(2)),
+    growthVisitsPct: Number((pktGrowthRevPct * 0.5).toFixed(2)),
     delegatedChildrenRev: 0,
     allocationGap: 0,
     allocationStatus: "balanced",
   };
 
   // 2. Level 1: Sites (BPK, BSI, DBK)
+  const SITE_TARGETS_MB: Record<string, number> = {
+    BPK: 5140.0,
+    BSI: 2035.0,
+    "DBK (Premium)": 375.0,
+    DBK: 375.0,
+  };
+
   pktSiteChildren.forEach((site) => {
     const siteUnits = TARGET_UNITS.filter((u) => u.site === site);
     let sBaseRev = 0;
@@ -137,7 +148,9 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
     });
 
     const coeChildren = siteUnits.map((u) => `${site}||${u.coe}`);
-    const defaultSiteGrowth = site === "BPK" ? 8.93 : site === "BSI" ? 10.92 : 38.20;
+    const siteTargetMB = SITE_TARGETS_MB[site] || 0;
+    const siteTargetRev27 = siteTargetMB * 1_000_000;
+    const siteGrowthRevPct = sBaseRev > 0 ? ((siteTargetRev27 - sBaseRev) / sBaseRev) * 100 : 0;
 
     tree[site] = {
       id: site,
@@ -151,14 +164,14 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
       priorRev25: sPriorRev,
       baseVisits26: sBaseVisits,
       priorVisits25: sPriorVisits,
-      method: "growth_pct",
-      inputVal: defaultSiteGrowth,
-      unitType: "pct",
+      method: "fixed_amount",
+      inputVal: siteTargetMB,
+      unitType: "MB",
       isOverridden: false,
-      targetRev27: sBaseRev * (1 + defaultSiteGrowth / 100),
-      targetVisits27: sBaseVisits * (1 + (defaultSiteGrowth * 0.5) / 100),
-      growthRevPct: defaultSiteGrowth,
-      growthVisitsPct: defaultSiteGrowth * 0.5,
+      targetRev27: siteTargetRev27,
+      targetVisits27: sBaseVisits * (1 + (siteGrowthRevPct * 0.5) / 100),
+      growthRevPct: Number(siteGrowthRevPct.toFixed(2)),
+      growthVisitsPct: Number((siteGrowthRevPct * 0.5).toFixed(2)),
       delegatedChildrenRev: 0,
       allocationGap: 0,
       allocationStatus: "balanced",
@@ -169,7 +182,6 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
       const coeKey = `${site}||${u.coe}`;
       const settingChildren = [`${coeKey}||OPD`, `${coeKey}||IPD`];
 
-      // Prior year rev & visits from monthly data
       let uPriorRev = 0;
       let uPriorVisits = 0;
       u.months.forEach((m) => {
@@ -177,14 +189,29 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
         uPriorVisits += m.visit25 || 0;
       });
 
-      // Default growth from verified base case
-      const verifiedGrowth =
-        VERIFIED_BASE_CASE?.snap?.rev?.unit?.[coeKey]?.value !== undefined
-          ? parseFloat(VERIFIED_BASE_CASE.snap.rev.unit[coeKey].value)
-          : defaultSiteGrowth;
+      // Default strategic target from Revise 2027 (V2)
+      const unitSnap = VERIFIED_BASE_CASE?.snap?.rev?.unit?.[coeKey];
+      let coeTargetRev = u.base_rev * (1 + siteGrowthRevPct / 100);
+      let coeInputVal = Number(siteGrowthRevPct.toFixed(2));
+      let coeMethod: TargetMethod = "growth_pct";
+      let coeUnitType: "MB" | "pct" = "pct";
 
-      const coeTargetRev = u.base_rev * (1 + verifiedGrowth / 100);
-      const coeTargetVisits = u.base_visit * (1 + (verifiedGrowth * 0.55) / 100);
+      if (unitSnap && unitSnap.mode === "amount" && unitSnap.value) {
+        const mbVal = parseFloat(unitSnap.value);
+        coeTargetRev = mbVal * 1_000_000;
+        coeInputVal = mbVal;
+        coeMethod = "fixed_amount";
+        coeUnitType = "MB";
+      } else if (unitSnap && unitSnap.mode === "growth" && unitSnap.value) {
+        const pctVal = parseFloat(unitSnap.value);
+        coeTargetRev = u.base_rev * (1 + pctVal / 100);
+        coeInputVal = pctVal;
+        coeMethod = "growth_pct";
+        coeUnitType = "pct";
+      }
+
+      const coeGrowthRevPct = u.base_rev > 0 ? ((coeTargetRev - u.base_rev) / u.base_rev) * 100 : 0;
+      const coeTargetVisits = u.base_visit * (1 + (coeGrowthRevPct * 0.55) / 100);
 
       tree[coeKey] = {
         id: coeKey,
@@ -199,14 +226,14 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
         priorRev25: uPriorRev || u.base_rev * 0.9,
         baseVisits26: u.base_visit,
         priorVisits25: uPriorVisits || u.base_visit * 0.95,
-        method: "growth_pct",
-        inputVal: verifiedGrowth,
-        unitType: "pct",
+        method: coeMethod,
+        inputVal: coeInputVal,
+        unitType: coeUnitType,
         isOverridden: false,
         targetRev27: coeTargetRev,
         targetVisits27: coeTargetVisits,
-        growthRevPct: verifiedGrowth,
-        growthVisitsPct: verifiedGrowth * 0.55,
+        growthRevPct: Number(coeGrowthRevPct.toFixed(2)),
+        growthVisitsPct: Number((coeGrowthRevPct * 0.55).toFixed(2)),
         delegatedChildrenRev: 0,
         allocationGap: 0,
         allocationStatus: "balanced",
@@ -221,7 +248,7 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
         const ratio = setting === "OPD" ? opdRatio : ipdRatio;
         const setBaseRev = u.base_rev * ratio;
         const setPriorRev = (uPriorRev || u.base_rev * 0.9) * ratio;
-        const setBaseVisits = u.base_visit * (setting === "OPD" ? 0.85 : 0.15); // OPD has far more visits
+        const setBaseVisits = u.base_visit * (setting === "OPD" ? 0.85 : 0.15);
         const setPriorVisits = setBaseVisits * 0.95;
 
         const setTargetRev = coeTargetRev * ratio;
@@ -247,25 +274,28 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
           baseVisits26: setBaseVisits,
           priorVisits25: setPriorVisits,
           method: "growth_pct",
-          inputVal: verifiedGrowth,
+          inputVal: Number(coeGrowthRevPct.toFixed(2)),
           unitType: "pct",
           isOverridden: false,
           targetRev27: setTargetRev,
           targetVisits27: setTargetVisits,
-          growthRevPct: verifiedGrowth,
-          growthVisitsPct: verifiedGrowth * 0.55,
+          growthRevPct: Number(coeGrowthRevPct.toFixed(2)),
+          growthVisitsPct: Number((coeGrowthRevPct * 0.55).toFixed(2)),
           delegatedChildrenRev: 0,
           allocationGap: 0,
           allocationStatus: "balanced",
         };
 
         // 5. Level 4: Market Segments (Thai, Expat, Fly-in)
-        const siteMktRatios = DEFAULT_SITE_MARKET_RATIOS[site] || DEFAULT_SITE_MARKET_RATIOS.BPK;
+        const siteMarketRatios = DEFAULT_SITE_MARKET_RATIOS[site] || {
+          Thai: 0.5,
+          Expat: 0.25,
+          "Fly-in": 0.25,
+        };
 
-        ["Thai", "Expat", "Fly-in"].forEach((mkt) => {
+        (["Thai", "Expat", "Fly-in"] as const).forEach((mkt) => {
           const mktKey = `${settingKey}||${mkt}`;
-          const mktRatio = (siteMktRatios as any)[mkt] || 0.33;
-
+          const mktRatio = siteMarketRatios[mkt] || 0.3333;
           const mktBaseRev = setBaseRev * mktRatio;
           const mktPriorRev = setPriorRev * mktRatio;
           const mktBaseVisits = setBaseVisits * mktRatio;
@@ -277,7 +307,7 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
           tree[mktKey] = {
             id: mktKey,
             level: "market",
-            name: `${setting} - ${mkt}`,
+            name: `${u.coe} - ${setting} (${mkt})`,
             code: mkt,
             site,
             group: u.group,
@@ -288,13 +318,13 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
             baseVisits26: mktBaseVisits,
             priorVisits25: mktPriorVisits,
             method: "growth_pct",
-            inputVal: verifiedGrowth,
+            inputVal: Number(coeGrowthRevPct.toFixed(2)),
             unitType: "pct",
             isOverridden: false,
             targetRev27: mktTargetRev,
             targetVisits27: mktTargetVisits,
-            growthRevPct: verifiedGrowth,
-            growthVisitsPct: verifiedGrowth * 0.55,
+            growthRevPct: Number(coeGrowthRevPct.toFixed(2)),
+            growthVisitsPct: Number((coeGrowthRevPct * 0.55).toFixed(2)),
             delegatedChildrenRev: 0,
             allocationGap: 0,
             allocationStatus: "balanced",
@@ -304,7 +334,6 @@ export function buildInitialTargetTree(): Record<string, TargetTreeNode> {
     });
   });
 
-  // Reconcile and calculate gaps
   return recalculateTargetTree(tree);
 }
 
@@ -529,10 +558,21 @@ export function recalculateTargetTree(
  *  - "proportional": distribute according to each child's 2026 base revenue share
  *  - "equal_growth": apply the parent's overall growth % to all children
  */
+export type DelegationMode =
+  | "scaled_profile"   // Method 1: Scaled Profile Allocation (Preserve Strategic Priority - Recommended)
+  | "tiered_weighted"  // Method 2: Strategic Tiered Weights (CoE 1.5x, SBU 1.0x, Usual 0.5x)
+  | "plug_usual"       // Method 3: Core Lock + Plug to Usual Business
+  | "flat_base"        // Method 4: Historical Base Proportional (Old flat growth method)
+  | "proportional"     // Alias for flat_base
+  | "equal_growth";    // Alias for flat_base
+
+/**
+ * Delegate parent target down to its children using corporate finance allocation methods
+ */
 export function delegateTargetDown(
   tree: Record<string, TargetTreeNode>,
   parentKey: string,
-  mode: "proportional" | "equal_growth" = "proportional"
+  mode: DelegationMode = "scaled_profile"
 ): Record<string, TargetTreeNode> {
   const updated: Record<string, TargetTreeNode> = { ...tree };
   const parent = updated[parentKey];
@@ -540,45 +580,128 @@ export function delegateTargetDown(
 
   const targetToDistribute = parent.targetRev27;
   const parentBaseRev = parent.baseRev26;
+  const children = parent.childrenKeys.map((k) => updated[k]).filter(Boolean);
+  if (children.length === 0) return tree;
 
-  parent.childrenKeys.forEach((childKey) => {
-    const child = updated[childKey];
-    if (!child) return;
+  if (mode === "scaled_profile") {
+    // Method 1: Preserved Strategic Profile
+    // Scales each child's current strategic target proportionally so sum equals parent target.
+    // Preserves higher growth for CoE / DBK and doesn't flatten everyone to the same growth rate!
+    const curChildrenTargetSum = children.reduce((s, c) => s + (c.targetRev27 || c.baseRev26), 0);
+    const scale = curChildrenTargetSum > 0 ? targetToDistribute / curChildrenTargetSum : (parentBaseRev > 0 ? targetToDistribute / parentBaseRev : 1);
 
-    if (mode === "proportional") {
-      const childShare = parentBaseRev > 0 ? child.baseRev26 / parentBaseRev : 1 / parent.childrenKeys.length;
+    children.forEach((child) => {
+      const childTargetRev = (child.targetRev27 || child.baseRev26) * scale;
+      const growthRevPct = child.baseRev26 > 0 ? ((childTargetRev - child.baseRev26) / child.baseRev26) * 100 : parent.growthRevPct;
+      const mbVal = Number((childTargetRev / 1_000_000).toFixed(2));
+
+      updated[child.id] = {
+        ...child,
+        method: "fixed_amount",
+        inputVal: mbVal,
+        unitType: "MB",
+        targetRev27: childTargetRev,
+        growthRevPct: Number(growthRevPct.toFixed(2)),
+        isOverridden: true,
+      };
+
+      if (child.childrenKeys && child.childrenKeys.length > 0) {
+        const subUpdated = delegateTargetDown(updated, child.id, "scaled_profile");
+        Object.assign(updated, subUpdated);
+      }
+    });
+  } else if (mode === "tiered_weighted") {
+    // Method 2: Strategic Tiered Allocation
+    // Gives higher growth quota to CoE (1.5x) and SBU (1.0x), and lower to Usual Business (0.5x)
+    const getTierWeight = (node: TargetTreeNode): number => {
+      if (node.level === "site") {
+        return node.code === "DBK (Premium)" || node.code === "DBK" ? 2.5 : node.code === "BSI" ? 1.1 : 1.0;
+      }
+      if (node.group === "CoE") return 1.5;
+      if (node.group === "SBU") return 1.0;
+      if (node.group === "Hospital Focus") return 1.3;
+      return 0.5; // Usual Business
+    };
+
+    const deltaTarget = targetToDistribute - parentBaseRev;
+    const totalWeightedBase = children.reduce((s, c) => s + c.baseRev26 * getTierWeight(c), 0);
+
+    children.forEach((child) => {
+      const weight = getTierWeight(child);
+      const childShare = totalWeightedBase > 0 ? (child.baseRev26 * weight) / totalWeightedBase : 1 / children.length;
+      const childDelta = deltaTarget * childShare;
+      const childTargetRev = child.baseRev26 + childDelta;
+      const growthRevPct = child.baseRev26 > 0 ? (childDelta / child.baseRev26) * 100 : parent.growthRevPct;
+      const mbVal = Number((childTargetRev / 1_000_000).toFixed(2));
+
+      updated[child.id] = {
+        ...child,
+        method: "fixed_amount",
+        inputVal: mbVal,
+        unitType: "MB",
+        targetRev27: childTargetRev,
+        growthRevPct: Number(growthRevPct.toFixed(2)),
+        isOverridden: true,
+      };
+
+      if (child.childrenKeys && child.childrenKeys.length > 0) {
+        const subUpdated = delegateTargetDown(updated, child.id, "scaled_profile");
+        Object.assign(updated, subUpdated);
+      }
+    });
+  } else if (mode === "plug_usual") {
+    // Method 3: Core Lock + Plug to Usual Business
+    // Keep strategic CoE & SBU locked; remainder goes into Usual Business
+    const usualChild = children.find((c) => c.name.includes("Usual Business"));
+    if (usualChild) {
+      const otherChildrenSum = children
+        .filter((c) => c.id !== usualChild.id)
+        .reduce((s, c) => s + c.targetRev27, 0);
+
+      const usualTargetRev = Math.max(0, targetToDistribute - otherChildrenSum);
+      const usualGrowthPct = usualChild.baseRev26 > 0 ? ((usualTargetRev - usualChild.baseRev26) / usualChild.baseRev26) * 100 : 0;
+
+      updated[usualChild.id] = {
+        ...usualChild,
+        method: "fixed_amount",
+        inputVal: Number((usualTargetRev / 1_000_000).toFixed(2)),
+        unitType: "MB",
+        targetRev27: usualTargetRev,
+        growthRevPct: Number(usualGrowthPct.toFixed(2)),
+        isOverridden: true,
+      };
+
+      if (usualChild.childrenKeys && usualChild.childrenKeys.length > 0) {
+        const subUpdated = delegateTargetDown(updated, usualChild.id, "scaled_profile");
+        Object.assign(updated, subUpdated);
+      }
+    } else {
+      // Fallback to scaled profile if no usual business node
+      return delegateTargetDown(tree, parentKey, "scaled_profile");
+    }
+  } else {
+    // Method 4: Flat Base Proportional (Old Method)
+    children.forEach((child) => {
+      const childShare = parentBaseRev > 0 ? child.baseRev26 / parentBaseRev : 1 / children.length;
       const childTargetRev = targetToDistribute * childShare;
       const growthRevPct = child.baseRev26 > 0 ? ((childTargetRev - child.baseRev26) / child.baseRev26) * 100 : parent.growthRevPct;
 
-      updated[childKey] = {
+      updated[child.id] = {
         ...child,
         method: "growth_pct",
         inputVal: Number(growthRevPct.toFixed(2)),
+        unitType: "pct",
         targetRev27: childTargetRev,
-        growthRevPct,
+        growthRevPct: Number(growthRevPct.toFixed(2)),
         isOverridden: true,
       };
-    } else {
-      // equal_growth
-      const growthRevPct = parent.growthRevPct;
-      const childTargetRev = child.baseRev26 * (1 + growthRevPct / 100);
 
-      updated[childKey] = {
-        ...child,
-        method: "growth_pct",
-        inputVal: Number(growthRevPct.toFixed(2)),
-        targetRev27: childTargetRev,
-        growthRevPct,
-        isOverridden: true,
-      };
-    }
-
-    // Recursively cascade down if child has children
-    if (child.childrenKeys && child.childrenKeys.length > 0) {
-      const subUpdated = delegateTargetDown(updated, childKey, mode);
-      Object.assign(updated, subUpdated);
-    }
-  });
+      if (child.childrenKeys && child.childrenKeys.length > 0) {
+        const subUpdated = delegateTargetDown(updated, child.id, mode);
+        Object.assign(updated, subUpdated);
+      }
+    });
+  }
 
   return recalculateTargetTree(updated);
 }

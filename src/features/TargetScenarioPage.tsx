@@ -38,6 +38,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Filter,
+  X,
 } from "lucide-react";
 import { clsx } from "clsx";
 import {
@@ -53,6 +54,7 @@ import {
   buildInitialTargetTree,
   recalculateTargetTree,
   delegateTargetDown,
+  DelegationMode,
 } from "@/lib/targetScenarioEngine";
 
 // Helper for formatting Millions THB
@@ -99,7 +101,7 @@ export function TargetScenarioPage() {
   // 5. Scenarios State from Supabase
   const [scenarios, setScenarios] = useState<any[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string>("base_case");
-  const [activeScenarioName, setActiveScenarioName] = useState<string>("2027 Base Case (Verified)");
+  const [activeScenarioName, setActiveScenarioName] = useState<string>("Revise 2027 (V2)");
   const [syncStatus, setSyncStatus] = useState<"synced" | "saving" | "offline">("synced");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -107,6 +109,10 @@ export function TargetScenarioPage() {
   const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
   const [newScenarioName, setNewScenarioName] = useState<string>("");
   const [newScenarioDesc, setNewScenarioDesc] = useState<string>("");
+
+  // 7. Target Delegation Modal
+  const [delegateModalNodeId, setDelegateModalNodeId] = useState<string | null>(null);
+  const [selectedDelegationMode, setSelectedDelegationMode] = useState<DelegationMode>("scaled_profile");
 
   // Toast Helper
   const showToast = useCallback((msg: string) => {
@@ -159,20 +165,33 @@ export function TargetScenarioPage() {
     });
   }
 
-  // Delegate target down to children
-  function handleDelegateDown(nodeId: string, mode: "proportional" | "equal_growth") {
+  // Open delegation modal
+  function handleOpenDelegateModal(nodeId: string) {
+    setDelegateModalNodeId(nodeId);
+    setSelectedDelegationMode("scaled_profile");
+  }
+
+  // Execute delegation with selected method
+  function handleExecuteDelegation(nodeId: string, mode: DelegationMode) {
     setTree((prev) => {
       const updated = delegateTargetDown(prev, nodeId, mode);
-      showToast(`Delegated target down from ${tree[nodeId]?.name || nodeId} (${mode})`);
+      const labels: Record<string, string> = {
+        scaled_profile: "Preserved Strategic Profile (สัดส่วนกลยุทธ์เดิม)",
+        tiered_weighted: "Strategic Tiered Weights (CoE 1.5x / SBU 1.0x / Usual 0.5x)",
+        plug_usual: "Core Lock + Plug to Usual Business",
+        flat_base: "Historical Base Proportional",
+      };
+      showToast(`Delegated ${prev[nodeId]?.name || nodeId} (${labels[mode] || mode})`);
       return updated;
     });
+    setDelegateModalNodeId(null);
   }
 
   // Reset entire tree to verified base case
   function handleResetBaseCase() {
     setTree(buildInitialTargetTree());
     setActiveScenarioId("base_case");
-    setActiveScenarioName("2027 Base Case (Verified)");
+    setActiveScenarioName("Revise 2027 (V2)");
     showToast("Reset all targets to 2027 Base Case");
   }
 
@@ -431,7 +450,7 @@ export function TargetScenarioPage() {
                 }}
                 className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer max-w-[180px] truncate"
               >
-                <option value="base_case">2027 Base Case (Verified)</option>
+                <option value="base_case">Revise 2027 (V2) - 7,550 MB</option>
                 {scenarios.map((sc) => (
                   <option key={sc.id} value={sc.id}>
                     {sc.name}
@@ -591,7 +610,7 @@ export function TargetScenarioPage() {
               </span>
               <button
                 type="button"
-                onClick={() => handleDelegateDown("PKT", "proportional")}
+                onClick={() => handleOpenDelegateModal("PKT")}
                 className="text-[10px] text-blue-600 hover:underline font-bold"
               >
                 Auto-Balance
@@ -888,7 +907,7 @@ export function TargetScenarioPage() {
                             {hasChildren && (
                               <button
                                 type="button"
-                                onClick={() => handleDelegateDown(node.id, "proportional")}
+                                onClick={() => handleOpenDelegateModal(node.id)}
                                 className="px-2 py-1 rounded-md text-[10px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
                                 title="Distribute target down to child nodes based on 2026 proportions"
                               >
@@ -931,7 +950,7 @@ export function TargetScenarioPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleDelegateDown("PKT", "proportional")}
+                    onClick={() => handleOpenDelegateModal("PKT")}
                     className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <span>Delegate to 3 Sites</span>
@@ -956,7 +975,7 @@ export function TargetScenarioPage() {
                             <span>{formatPct(sNode?.growthRevPct || 0)} YoY</span>
                             <button
                               type="button"
-                              onClick={() => handleDelegateDown(site, "proportional")}
+                              onClick={() => handleOpenDelegateModal(site)}
                               className="text-blue-600 hover:underline font-bold text-[10px]"
                             >
                               Delegate to CoE ↓
@@ -1288,6 +1307,169 @@ export function TargetScenarioPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: TARGET DELEGATION METHOD SELECTOR ================= */}
+      {delegateModalNodeId && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <GitBranch className="h-5 w-5 text-blue-600" />
+                  <span>กระจายเป้าหมาย (Target Delegation)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  โหนด: <span className="font-bold text-slate-800">{tree[delegateModalNodeId]?.name}</span> • เป้าหมาย: <span className="font-black text-blue-700">฿{formatMB(tree[delegateModalNodeId]?.targetRev27 || 0)} MB</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDelegateModalNodeId(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-700 font-bold mb-3">
+              เลือกวิธีกระจายเป้าหมายสู่หน่วยงานย่อย ({tree[delegateModalNodeId]?.childrenKeys.length || 0} หน่วย):
+            </p>
+
+            <div className="space-y-2.5 mb-5 max-h-[60vh] overflow-y-auto pr-1">
+              {/* Method 1: scaled_profile */}
+              <label
+                onClick={() => setSelectedDelegationMode("scaled_profile")}
+                className={clsx(
+                  "p-3 rounded-xl border text-left cursor-pointer flex items-start gap-3 transition",
+                  selectedDelegationMode === "scaled_profile"
+                    ? "bg-blue-50/80 border-blue-400 ring-2 ring-blue-100"
+                    : "bg-white border-slate-200 hover:bg-slate-50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="delegation_mode"
+                  checked={selectedDelegationMode === "scaled_profile"}
+                  onChange={() => setSelectedDelegationMode("scaled_profile")}
+                  className="mt-0.5 text-blue-600 cursor-pointer"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-slate-900">
+                      1. Preserved Strategic Profile (สัดส่วนกลยุทธ์เดิม)
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      แนะนำมาตรฐาน
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    ขยาย/ลดตามเป้ากลยุทธ์เดิมของแต่ละแผนก (Scaling Ratio) <strong>รักษาความแตกต่างของ CoE เติบโตสูง (เช่น Trauma, Cancer, Elective Surgery, DBK)</strong> ไม่ให้เลขแบนราบเหมือนกันหมด
+                  </p>
+                </div>
+              </label>
+
+              {/* Method 2: tiered_weighted */}
+              <label
+                onClick={() => setSelectedDelegationMode("tiered_weighted")}
+                className={clsx(
+                  "p-3 rounded-xl border text-left cursor-pointer flex items-start gap-3 transition",
+                  selectedDelegationMode === "tiered_weighted"
+                    ? "bg-blue-50/80 border-blue-400 ring-2 ring-blue-100"
+                    : "bg-white border-slate-200 hover:bg-slate-50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="delegation_mode"
+                  checked={selectedDelegationMode === "tiered_weighted"}
+                  onChange={() => setSelectedDelegationMode("tiered_weighted")}
+                  className="mt-0.5 text-blue-600 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-black text-slate-900">
+                    2. Strategic Tiered Weighted (แบ่งน้ำหนักตามระดับกลยุทธ์)
+                  </span>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    ให้โควตาการเติบโตตามระดับความสำคัญ: <strong>CoE ขับเคลื่อนการเติบโต (1.5x)</strong> ➔ <strong>SBU กลุ่มหลัก (1.0x)</strong> ➔ <strong>Usual Business ทรงตัว (0.5x)</strong>
+                  </p>
+                </div>
+              </label>
+
+              {/* Method 3: plug_usual */}
+              <label
+                onClick={() => setSelectedDelegationMode("plug_usual")}
+                className={clsx(
+                  "p-3 rounded-xl border text-left cursor-pointer flex items-start gap-3 transition",
+                  selectedDelegationMode === "plug_usual"
+                    ? "bg-blue-50/80 border-blue-400 ring-2 ring-blue-100"
+                    : "bg-white border-slate-200 hover:bg-slate-50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="delegation_mode"
+                  checked={selectedDelegationMode === "plug_usual"}
+                  onChange={() => setSelectedDelegationMode("plug_usual")}
+                  className="mt-0.5 text-blue-600 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-black text-slate-900">
+                    3. Core Lock + Plug to Usual (ล็อคเป้า CoE แล้วให้ Usual รับส่วนต่าง)
+                  </span>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    ตรึงเป้าหมาย CoE และ SBU ทั้งหมดตามที่แพทย์/แผนกกำหนด ส่วนต่างทั้งหมด (Surplus/Deficit) จะถูกส่งไปปรับที่ <strong>Usual Business</strong> เป็นตัวปรับดุล
+                  </p>
+                </div>
+              </label>
+
+              {/* Method 4: flat_base */}
+              <label
+                onClick={() => setSelectedDelegationMode("flat_base")}
+                className={clsx(
+                  "p-3 rounded-xl border text-left cursor-pointer flex items-start gap-3 transition",
+                  selectedDelegationMode === "flat_base"
+                    ? "bg-blue-50/80 border-blue-400 ring-2 ring-blue-100"
+                    : "bg-white border-slate-200 hover:bg-slate-50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="delegation_mode"
+                  checked={selectedDelegationMode === "flat_base"}
+                  onChange={() => setSelectedDelegationMode("flat_base")}
+                  className="mt-0.5 text-blue-600 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-black text-slate-900">
+                    4. Historical Base Proportional (ตามสัดส่วนฐานจริงเดิมปี 2026)
+                  </span>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    แจกตามสัดส่วนยอดจริงเดิม (ทำให้ทุกแผนกเติบโตด้วย Growth % เดียวกันทั้งหมด — เป็นวิธีเดิมที่เคยทำให้ตัวเลขดูแปลก)
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDelegateModalNodeId(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
+              >
+                ยกเลิก (Cancel)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExecuteDelegation(delegateModalNodeId, selectedDelegationMode)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <Check className="h-4 w-4" />
+                <span>ยืนยันการกระจายเป้า (Apply)</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
