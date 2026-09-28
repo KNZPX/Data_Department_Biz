@@ -1273,3 +1273,173 @@ export async function deleteDbWhiteboardBoard(boardId: string): Promise<void> {
   db.query("DELETE FROM whiteboard_boards WHERE id = $id").run({ $id: boardId });
 }
 
+// ==============================================================================
+// 9. TARGET SCENARIOS REPOSITORY (SUPABASE + SQLITE)
+// ==============================================================================
+
+export interface TargetScenarioDbRecord {
+  id: string;
+  store_key: string;
+  store_label: string;
+  name: string;
+  saved_at_label?: string | null;
+  sort_order?: number;
+  snapshot: any;
+  is_deleted?: boolean;
+  created_by?: string | null;
+  updated_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getDbTargetScenarios(): Promise<TargetScenarioDbRecord[]> {
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("target_scenarios")
+        .select("*")
+        .eq("is_deleted", false)
+        .order("sort_order", { ascending: true })
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        console.error("Supabase get target_scenarios error:", error);
+      } else if (data) {
+        return data.map((s: any) => ({
+          ...s,
+          snapshot: typeof s.snapshot === "string" ? JSON.parse(s.snapshot) : s.snapshot,
+          is_deleted: Boolean(s.is_deleted),
+        }));
+      }
+    } catch (err) {
+      console.error("Error reading target_scenarios from Supabase:", err);
+    }
+  }
+
+  try {
+    const db = getSqliteDb();
+    const rows = db
+      .query("SELECT * FROM target_scenarios WHERE is_deleted = 0 ORDER BY sort_order ASC, updated_at DESC")
+      .all() as any[];
+    return rows.map((r) => ({
+      ...r,
+      snapshot: typeof r.snapshot === "string" ? JSON.parse(r.snapshot) : r.snapshot,
+      is_deleted: Boolean(r.is_deleted),
+    }));
+  } catch (err) {
+    console.error("Error reading target_scenarios from SQLite:", err);
+    return [];
+  }
+}
+
+export async function saveDbTargetScenario(scenario: {
+  id?: string;
+  store_key?: string;
+  store_label?: string;
+  name: string;
+  saved_at_label?: string | null;
+  sort_order?: number;
+  snapshot: any;
+  created_by?: string | null;
+}): Promise<TargetScenarioDbRecord> {
+  const now = new Date().toISOString();
+  const id = scenario.id || `scn_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const store_key = scenario.store_key || "targetScenarioStep2Favorites_v1";
+  const store_label = scenario.store_label || "Rev Target";
+  const sort_order = scenario.sort_order ?? 0;
+
+  const record: TargetScenarioDbRecord = {
+    id,
+    store_key,
+    store_label,
+    name: scenario.name,
+    saved_at_label: scenario.saved_at_label || new Date().toLocaleString("th-TH"),
+    sort_order,
+    snapshot: scenario.snapshot,
+    is_deleted: false,
+    created_by: scenario.created_by || "web_user",
+    created_at: now,
+    updated_at: now,
+  };
+
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from("target_scenarios").upsert(
+        {
+          id: record.id,
+          store_key: record.store_key,
+          store_label: record.store_label,
+          name: record.name,
+          saved_at_label: record.saved_at_label,
+          sort_order: record.sort_order,
+          snapshot: record.snapshot,
+          is_deleted: false,
+          created_by: record.created_by,
+          updated_at: now,
+        },
+        { onConflict: "id" }
+      );
+      if (error) {
+        console.error("Supabase upsert target_scenario error:", error);
+      } else {
+        return record;
+      }
+    } catch (err) {
+      console.error("Supabase error in saveDbTargetScenario:", err);
+    }
+  }
+
+  const db = getSqliteDb();
+  const stmt = db.query(`
+    INSERT INTO target_scenarios (id, store_key, store_label, name, saved_at_label, sort_order, snapshot, is_deleted, created_by, updated_at, created_at)
+    VALUES ($id, $store_key, $store_label, $name, $saved_at_label, $sort_order, $snapshot, 0, $created_by, $updated_at, $created_at)
+    ON CONFLICT(id) DO UPDATE SET
+      store_key = excluded.store_key,
+      store_label = excluded.store_label,
+      name = excluded.name,
+      saved_at_label = excluded.saved_at_label,
+      sort_order = excluded.sort_order,
+      snapshot = excluded.snapshot,
+      is_deleted = 0,
+      updated_at = excluded.updated_at
+  `);
+  stmt.run({
+    $id: record.id,
+    $store_key: record.store_key,
+    $store_label: record.store_label,
+    $name: record.name,
+    $saved_at_label: record.saved_at_label,
+    $sort_order: record.sort_order,
+    $snapshot: JSON.stringify(record.snapshot),
+    $created_by: record.created_by,
+    $updated_at: now,
+    $created_at: now,
+  });
+
+  return record;
+}
+
+export async function deleteDbTargetScenario(scenarioId: string): Promise<void> {
+  const provider = getDbProvider();
+  if (provider === "supabase") {
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase
+        .from("target_scenarios")
+        .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+        .eq("id", scenarioId);
+      if (!error) return;
+    } catch (err) {
+      console.error("Supabase delete target_scenario error:", err);
+    }
+  }
+
+  const db = getSqliteDb();
+  db.query("UPDATE target_scenarios SET is_deleted = 1, deleted_at = datetime('now') WHERE id = $id").run({ $id: scenarioId });
+}
+
+

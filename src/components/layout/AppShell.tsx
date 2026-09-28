@@ -33,6 +33,7 @@ import {
   Workflow,
   X,
   Zap,
+  TrendingUp,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { TokenModal } from "@/components/TokenModal";
@@ -144,6 +145,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/reports", label: "Power BI Catalog", sub: "465 Workspaces & Reports", icon: LayoutGrid },
     { href: "/dax", label: "DAX Management", sub: "D01 & D02 Semantic Models", icon: FunctionSquare },
+    { href: "/target-scenario", label: "Target Scenario", sub: "BDMS Phuket 2027 Simulator", icon: TrendingUp },
     { href: "/whiteboard", label: "Whiteboard", sub: "Interactive Workflow Canvas", icon: Workflow },
     { href: "/licenses", label: "Team & Licenses", sub: "Capacity & Group Governance", icon: Users },
     { href: "/users", label: "User Management", sub: "Login Activity & Audit Logs", icon: ShieldCheck },

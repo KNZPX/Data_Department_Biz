@@ -131,3 +131,23 @@ CREATE TABLE IF NOT EXISTS whiteboard_boards (
 CREATE INDEX IF NOT EXISTS whiteboard_boards_folder_idx ON whiteboard_boards (folder_id);
 CREATE INDEX IF NOT EXISTS whiteboard_boards_updated_idx ON whiteboard_boards (updated_at DESC);
 
+-- 6. Target Scenarios (BDMS Phuket 2027 Scenario Simulator)
+CREATE TABLE IF NOT EXISTS target_scenarios (
+  id TEXT PRIMARY KEY,
+  store_key TEXT NOT NULL DEFAULT 'targetScenarioStep2Favorites_v1',
+  store_label TEXT NOT NULL DEFAULT 'Rev Target',
+  name TEXT NOT NULL,
+  saved_at_label TEXT,
+  sort_order INTEGER DEFAULT 0,
+  snapshot TEXT NOT NULL DEFAULT '{}',
+  is_deleted INTEGER DEFAULT 0,
+  created_by TEXT,
+  updated_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS target_scenarios_store_idx ON target_scenarios (store_key);
+CREATE INDEX IF NOT EXISTS target_scenarios_updated_idx ON target_scenarios (updated_at DESC);
+
