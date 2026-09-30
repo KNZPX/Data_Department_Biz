@@ -173,6 +173,7 @@ export function BoardCanvas({
   extraActions,
   onChange,
   backLabel = "All boards",
+  onEscapeIdle,
 }: {
   meta: BoardMeta;
   initial: El[];
@@ -183,6 +184,8 @@ export function BoardCanvas({
   /** Called after every local change with the full element list. */
   onChange?: (els: El[]) => void;
   backLabel?: string;
+  /** Esc pressed while nothing is selected or open (used to close embedded views). */
+  onEscapeIdle?: () => void;
 }) {
   const [elements, setElements] = useState<El[]>(initial);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
@@ -214,11 +217,16 @@ export function BoardCanvas({
   const clipboard = useRef<El[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interRef = useRef<Interaction | null>(null);
+  const escIdleRef = useRef(onEscapeIdle);
+  escIdleRef.current = onEscapeIdle;
+  const openUi = useRef(false);
 
   elRef.current = elements;
   camRef.current = camera;
   selRef.current = selection;
   interRef.current = interaction;
+
+  openUi.current = Boolean(menu || libraryOpen || shapeMenu || tool !== "select");
 
   const byId = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
 
@@ -485,6 +493,11 @@ export function BoardCanvas({
       } else if (k === "delete" || k === "backspace") {
         deleteSelection();
       } else if (k === "escape") {
+        // Esc peels back one layer at a time: menus, then selection/tool, then the view itself.
+        if (!openUi.current && selRef.current.length === 0) {
+          escIdleRef.current?.();
+          return;
+        }
         setSelection([]);
         setTool("select");
         setShapeMenu(false);

@@ -74,13 +74,7 @@ export function DaxDiagramBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !(e.target as HTMLElement).closest("textarea,input")) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+
 
   async function rebuild() {
     if (!window.confirm("Replace this diagram with a fresh one generated from the current formula? Your layout changes will be lost.")) return;
@@ -112,6 +106,7 @@ export function DaxDiagramBoard({
             initial={initial}
             onBack={onClose}
             backLabel="Close diagram (Esc)"
+            onEscapeIdle={onClose}
             onMetaChange={() => {}}
             onChange={(els) => {
               latest.current = els;
