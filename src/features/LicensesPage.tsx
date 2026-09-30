@@ -196,7 +196,7 @@ export function LicensesPage() {
               type="button"
               onClick={() => setPageViewMode("table")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-bold transition",
+                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
                 pageViewMode === "table" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
               )}
             >
@@ -206,7 +206,7 @@ export function LicensesPage() {
               type="button"
               onClick={() => setPageViewMode("permissions")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-bold transition",
+                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
                 pageViewMode === "permissions" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
               )}
             >
@@ -325,9 +325,9 @@ export function LicensesPage() {
         </EmptyState>
       ) : pageViewMode === "table" ? (
         /* Table View */
-        <div className="overflow-x-auto rounded-3xl border border-slate-200/90 bg-white shadow-xs">
+        <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white shadow-xs">
           <table className="table table-zebra table-xs w-full text-left">
-            <thead className="bg-slate-50 text-blue-600 font-bold border-b border-slate-200">
+            <thead className="bg-slate-50 text-blue-600 font-semibold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-3 whitespace-nowrap">#</th>
                 {activeColumns.map((col) => (
@@ -358,7 +358,7 @@ export function LicensesPage() {
                         ) : col.key === "status" ? (
                           <span
                             className={clsx(
-                              "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
                               val === "active"
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                 : "bg-amber-50 text-amber-700 border border-amber-200"
@@ -367,7 +367,7 @@ export function LicensesPage() {
                             {String(val || "active")}
                           </span>
                         ) : col.key === "license_type" ? (
-                          <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-bold text-blue-600 border border-blue-600/20">
+                          <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-semibold text-blue-600 border border-blue-600/20">
                             {String(val || "-")}
                           </span>
                         ) : (
@@ -420,28 +420,28 @@ export function LicensesPage() {
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-blue-600 text-white px-2 py-0.2 font-mono text-[10px] font-bold shadow-2xs">
+                        <span className="rounded-full bg-blue-600 text-white px-2 py-0.2 font-mono text-[11px] font-semibold shadow-2xs">
                           {lic.site || "PKT"}
                         </span>
-                        <h4 className="text-sm font-bold text-slate-900">{lic.display_name}</h4>
+                        <h4 className="text-sm font-semibold text-slate-900">{lic.display_name}</h4>
                       </div>
                       <p className="text-xs text-slate-500">{lic.department_name || lic.department_en}</p>
                     </div>
-                    <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 border border-blue-600/20">
+                    <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-semibold text-blue-600 border border-blue-600/20">
                       {lic.license_type}
                     </span>
                   </div>
 
                   {/* Permissions Chips */}
                   <div className="mt-3 space-y-1.5">
-                    <span className="text-[10px] font-bold uppercase text-slate-400">Assigned Security Groups:</span>
+                    <span className="text-[11px] font-semibold text-slate-400">Assigned Security Groups:</span>
                     <div className="flex flex-wrap gap-1">
                       {perms.length > 0 ? (
                         perms.map((p) => (
                           <span
                             key={p.code}
                             className={clsx(
-                              "rounded-full px-2 py-0.5 text-[10px] font-bold border",
+                              "rounded-full px-2 py-0.5 text-[11px] font-semibold border",
                               p.tone
                             )}
                           >
@@ -456,12 +456,12 @@ export function LicensesPage() {
 
                   {/* Workspaces accessible */}
                   <div className="mt-3 space-y-1.5">
-                    <span className="text-[10px] font-bold uppercase text-slate-400">Accessible Workspaces:</span>
+                    <span className="text-[11px] font-semibold text-slate-400">Accessible Workspaces:</span>
                     <div className="flex flex-wrap gap-1">
                       {workspaces.map((w) => (
                         <span
                           key={w}
-                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700"
+                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
                         >
                           {w}
                         </span>

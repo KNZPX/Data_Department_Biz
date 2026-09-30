@@ -233,7 +233,7 @@ export function PortalPage() {
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative z-10">
               <div className="space-y-3 max-w-md">
-                <h1 className="text-2xl sm:text-3xl font-bold text-amber-950 font-serif tracking-tight">
+                <h1 className="text-2xl sm:text-3xl font-semibold text-amber-950 font-serif tracking-tight">
                   Hello, {user?.name || "Scarlett"}!
                 </h1>
                 <p className="text-xs sm:text-sm text-amber-900/80 leading-relaxed font-sans">
@@ -264,11 +264,11 @@ export function PortalPage() {
                         backgroundColor: currentTheme.primary,
                         boxShadow: `0 12px 24px -4px ${currentTheme.primaryGlow}`,
                       }}
-                      className="h-16 w-16 rounded-3xl flex items-center justify-center text-white text-2xl font-bold shadow-lg transform -rotate-3 hover:rotate-0 transition duration-300"
+                      className="h-16 w-16 rounded-2xl flex items-center justify-center text-white text-2xl font-semibold shadow-lg transform -rotate-3 hover:rotate-0 transition duration-300"
                     >
                       <Sparkles className="h-8 w-8 text-white animate-pulse" />
                     </div>
-                    <span className="mt-2 text-[10px] font-bold text-amber-900/70 tracking-wider uppercase font-mono">
+                    <span className="mt-2 text-[11px] font-semibold text-amber-900/70 font-mono">
                       Biz-Analytic v2
                     </span>
                   </div>
@@ -280,7 +280,7 @@ export function PortalPage() {
           {/* 2. CONTROL SECTION ("Scarlett's Home" -> "Biz-Analytic Control & Workspaces") */}
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+              <h2 className="text-lg sm:text-xl font-semibold text-slate-900 tracking-tight">
                 Biz-Analytic Control & Workspaces
               </h2>
 
@@ -315,7 +315,7 @@ export function PortalPage() {
               {/* Card 1: Production Pipeline (Inactive White Card, ON Toggle) */}
               <div className="squircle-card p-4 bg-white flex flex-col justify-between h-32 hover:scale-[1.02] transition">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-slate-400">
                     {toggles.pipeline ? "ON" : "OFF"}
                   </span>
                   <button
@@ -342,7 +342,7 @@ export function PortalPage() {
                     style={{ color: currentTheme.primary }}
                     className="h-6 w-6 mb-1"
                   />
-                  <p className="text-xs font-bold text-slate-800">Production Pipeline</p>
+                  <p className="text-xs font-semibold text-slate-800">Production Pipeline</p>
                 </div>
               </div>
 
@@ -355,7 +355,7 @@ export function PortalPage() {
                 className="squircle-card p-4 text-white flex flex-col justify-between h-32 transform -translate-y-1 hover:scale-[1.03] transition duration-200 border-0"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-white/90 uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-white/90">
                     {toggles.scheduledSync ? "ON" : "OFF"}
                   </span>
                   <button
@@ -376,15 +376,15 @@ export function PortalPage() {
                 </div>
                 <div>
                   <Zap className="h-6 w-6 mb-1 text-white stroke-[2.5]" />
-                  <p className="text-xs font-bold text-white">Scheduled Sync</p>
-                  <p className="text-[10px] text-white/80">Active Realtime</p>
+                  <p className="text-xs font-semibold text-white">Scheduled Sync</p>
+                  <p className="text-[11px] text-white/80">Active Realtime</p>
                 </div>
               </div>
 
               {/* Card 3: Governance Alerts (White Card, OFF Toggle) */}
               <div className="squircle-card p-4 bg-white flex flex-col justify-between h-32 hover:scale-[1.02] transition">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-slate-400">
                     {toggles.alerts ? "ON" : "OFF"}
                   </span>
                   <button
@@ -408,14 +408,14 @@ export function PortalPage() {
                 </div>
                 <div>
                   <ShieldCheck className="h-6 w-6 mb-1 text-slate-400" />
-                  <p className="text-xs font-bold text-slate-700">Governance Alerts</p>
+                  <p className="text-xs font-semibold text-slate-700">Governance Alerts</p>
                 </div>
               </div>
 
               {/* Card 4: Audit Logs (White Card, OFF Toggle) */}
               <div className="squircle-card p-4 bg-white flex flex-col justify-between h-32 hover:scale-[1.02] transition">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-slate-400">
                     {toggles.auditLogs ? "ON" : "OFF"}
                   </span>
                   <button
@@ -439,7 +439,7 @@ export function PortalPage() {
                 </div>
                 <div>
                   <Activity className="h-6 w-6 mb-1 text-slate-400" />
-                  <p className="text-xs font-bold text-slate-700">Audit Stream</p>
+                  <p className="text-xs font-semibold text-slate-700">Audit Stream</p>
                 </div>
               </div>
             </div>
@@ -459,7 +459,7 @@ export function PortalPage() {
                   <Zap className="h-4.5 w-4.5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">
+                  <h3 className="text-sm font-semibold text-slate-900">
                     Refresh Cadence & SLA Dial
                   </h3>
                   <p className="text-[11px] text-slate-400">
@@ -470,7 +470,7 @@ export function PortalPage() {
 
               {/* Master Dial Switch */}
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-600 uppercase">
+                <span className="text-xs font-semibold text-slate-600">
                   {dialActive ? "ON" : "OFF"}
                 </span>
                 <button
@@ -501,7 +501,7 @@ export function PortalPage() {
                 type="button"
                 onClick={handleDecreaseDial}
                 disabled={!dialActive || dialValue <= dialMin}
-                className="h-12 w-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition active:scale-95 disabled:opacity-40"
+                className="h-12 w-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold flex items-center justify-center transition active:scale-95 disabled:opacity-40"
               >
                 <Minus className="h-5 w-5" />
               </button>
@@ -539,17 +539,17 @@ export function PortalPage() {
 
                   {/* Inner Circular Card with Shadow */}
                   <div className="absolute inset-8 rounded-full bg-white shadow-xl flex flex-col items-center justify-center text-center p-4 border border-slate-100">
-                    <span className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+                    <span className="text-3xl sm:text-4xl font-semibold text-slate-900 tracking-tight">
                       {dialValue} min
                     </span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                    <span className="text-[11px] font-semibold text-slate-400 mt-1">
                       Target Cadence
                     </span>
                   </div>
                 </div>
 
                 {/* Range Labels */}
-                <div className="w-full flex justify-between px-2 text-[11px] font-bold text-slate-400 mt-2">
+                <div className="w-full flex justify-between px-2 text-[11px] font-semibold text-slate-400 mt-2">
                   <span>05 min</span>
                   <span className="text-slate-600">15 min</span>
                   <span style={{ color: currentTheme.primary }}>{dialValue} min (Active)</span>
@@ -566,7 +566,7 @@ export function PortalPage() {
                   backgroundColor: currentTheme.primary,
                   boxShadow: `0 10px 20px -4px ${currentTheme.primaryGlow}`,
                 }}
-                className="h-12 w-12 rounded-2xl text-white font-bold flex items-center justify-center transition active:scale-95 disabled:opacity-40"
+                className="h-12 w-12 rounded-2xl text-white font-semibold flex items-center justify-center transition active:scale-95 disabled:opacity-40"
               >
                 <Plus className="h-5 w-5" />
               </button>
@@ -579,7 +579,7 @@ export function PortalPage() {
           {/* 1. MY WORKSPACES / ITEMS (2x2 Colorful Grid) */}
           <div className="squircle-card p-5 bg-white space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">My Workspaces</h3>
+              <h3 className="text-sm font-semibold text-slate-900">My Workspaces</h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                   ON
@@ -598,14 +598,14 @@ export function PortalPage() {
                 className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
               >
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="text-[11px] font-semibold">ON</span>
                   <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
                     <span className="h-3 w-3 rounded-full bg-white" />
                   </span>
                 </div>
                 <div>
                   <BarChart3 className="h-5 w-5 mb-1" />
-                  <p className="text-xs font-bold leading-tight truncate">Executive KPI</p>
+                  <p className="text-xs font-semibold leading-tight truncate">Executive KPI</p>
                 </div>
               </div>
 
@@ -618,14 +618,14 @@ export function PortalPage() {
                 className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
               >
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="text-[11px] font-semibold">ON</span>
                   <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
                     <span className="h-3 w-3 rounded-full bg-white" />
                   </span>
                 </div>
                 <div>
                   <Flame className="h-5 w-5 mb-1" />
-                  <p className="text-xs font-bold leading-tight truncate">Revenue BI</p>
+                  <p className="text-xs font-semibold leading-tight truncate">Revenue BI</p>
                 </div>
               </div>
 
@@ -638,14 +638,14 @@ export function PortalPage() {
                 className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
               >
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="text-[11px] font-semibold">ON</span>
                   <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
                     <span className="h-3 w-3 rounded-full bg-white" />
                   </span>
                 </div>
                 <div>
                   <Layers className="h-5 w-5 mb-1" />
-                  <p className="text-xs font-bold leading-tight truncate">Supply Chain</p>
+                  <p className="text-xs font-semibold leading-tight truncate">Supply Chain</p>
                 </div>
               </div>
 
@@ -658,14 +658,14 @@ export function PortalPage() {
                 className="p-3.5 rounded-2xl text-white flex flex-col justify-between h-28"
               >
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold uppercase tracking-wider">ON</span>
+                  <span className="text-[11px] font-semibold">ON</span>
                   <span className="h-4 w-7 rounded-full bg-white/30 p-0.5 flex items-center justify-end">
                     <span className="h-3 w-3 rounded-full bg-white" />
                   </span>
                 </div>
                 <div>
                   <Users className="h-5 w-5 mb-1" />
-                  <p className="text-xs font-bold leading-tight truncate">Customer CRM</p>
+                  <p className="text-xs font-semibold leading-tight truncate">Customer CRM</p>
                 </div>
               </div>
             </div>
@@ -674,7 +674,7 @@ export function PortalPage() {
           {/* 2. MEMBERS CARD */}
           <div className="squircle-card p-5 bg-white space-y-3.5">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">Members & Stewards</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Members & Stewards</h3>
               <Link href="/licenses" className="text-slate-400 hover:text-slate-600 transition">
                 <ChevronRight className="h-4 w-4" />
               </Link>
@@ -685,12 +685,12 @@ export function PortalPage() {
                 <div key={m.name} className="flex flex-col items-center space-y-1 shrink-0">
                   <div
                     style={{ backgroundColor: m.color }}
-                    className="h-10 w-10 rounded-full text-white font-bold text-xs flex items-center justify-center shadow-xs"
+                    className="h-10 w-10 rounded-full text-white font-semibold text-xs flex items-center justify-center shadow-xs"
                   >
                     {m.avatar}
                   </div>
-                  <span className="text-[11px] font-bold text-slate-800">{m.name}</span>
-                  <span className="text-[9px] text-slate-400 font-medium">{m.role}</span>
+                  <span className="text-[11px] font-semibold text-slate-800">{m.name}</span>
+                  <span className="text-[11px] text-slate-400 font-medium">{m.role}</span>
                 </div>
               ))}
             </div>
@@ -699,7 +699,7 @@ export function PortalPage() {
           {/* 3. POWER CONSERVED / WORKLOAD BEZIER AREA CHART */}
           <div className="squircle-card p-5 bg-white space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">Analytics Workload</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Analytics Workload</h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
@@ -718,7 +718,7 @@ export function PortalPage() {
                 />
                 <span>Daily Queries</span>
               </span>
-              <span className="font-bold text-slate-900">73% Velocity</span>
+              <span className="font-semibold text-slate-900">73% Velocity</span>
             </div>
 
             {/* Smooth Bezier SVG Area Chart */}
@@ -763,7 +763,7 @@ export function PortalPage() {
               </svg>
 
               {/* Month Labels */}
-              <div className="flex justify-between text-[10px] text-slate-400 pt-2 font-mono">
+              <div className="flex justify-between text-[11px] text-slate-400 pt-2 font-mono">
                 <span>Jan</span>
                 <span>Feb</span>
                 <span>Mar</span>
@@ -792,7 +792,7 @@ export function PortalPage() {
               <Inbox className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">
+              <h3 className="text-base font-semibold text-slate-900">
                 Power BI Certified Reports Catalog
               </h3>
               <p className="text-xs text-slate-500">
@@ -837,15 +837,15 @@ export function PortalPage() {
                       backgroundColor: currentTheme.primaryLight,
                       color: currentTheme.primary,
                     }}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl font-bold text-xs"
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl font-semibold text-xs"
                   >
                     BI
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-slate-900 group-hover:text-purple-600 transition truncate">
+                    <p className="text-xs font-semibold text-slate-900 group-hover:text-purple-600 transition truncate">
                       {report.name}
                     </p>
-                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
+                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
                       <span>{report.workspaceName}</span>
                       <span>&bull;</span>
                       <span className="font-mono">
@@ -856,7 +856,7 @@ export function PortalPage() {
                 </div>
 
                 <div className="flex items-center gap-2.5 self-end sm:self-center">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
                     <CheckCircle2 className="h-3 w-3" />
                     <span>Certified</span>
                   </span>
@@ -898,12 +898,12 @@ export function PortalPage() {
                         backgroundColor: currentTheme.primaryLight,
                         color: currentTheme.primary,
                       }}
-                      className="grid h-10 w-10 place-items-center rounded-2xl font-bold text-sm"
+                      className="grid h-10 w-10 place-items-center rounded-2xl font-semibold text-sm"
                     >
                       BI
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900">{activeDrawerItem.name}</h4>
+                      <h4 className="text-sm font-semibold text-slate-900">{activeDrawerItem.name}</h4>
                       <p className="text-[11px] text-slate-400">{activeDrawerItem.workspaceName}</p>
                     </div>
                   </div>
@@ -919,7 +919,7 @@ export function PortalPage() {
 
                 <div className="space-y-4 text-xs">
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                    <p className="font-bold text-slate-800">Report Metadata</p>
+                    <p className="font-semibold text-slate-800">Report Metadata</p>
                     <div className="space-y-1.5 text-[11px] text-slate-600">
                       <p>
                         <span className="text-slate-400 font-mono">ID:</span>{" "}
@@ -947,7 +947,7 @@ export function PortalPage() {
                     backgroundColor: currentTheme.primary,
                     boxShadow: `0 8px 16px -2px ${currentTheme.primaryGlow}`,
                   }}
-                  className="flex-1 py-3 rounded-full text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md transition hover:opacity-90"
+                  className="flex-1 py-3 rounded-full text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-md transition hover:opacity-90"
                 >
                   <ExternalLink className="h-4 w-4" />
                   <span>Open in Power BI</span>
@@ -959,7 +959,7 @@ export function PortalPage() {
                     setSelectedLogItem(activeDrawerItem);
                     setActiveDrawerItem(null);
                   }}
-                  className="px-5 py-3 rounded-full bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition"
+                  className="px-5 py-3 rounded-full bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition"
                 >
                   Logs
                 </button>

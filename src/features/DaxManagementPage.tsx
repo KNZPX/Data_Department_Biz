@@ -141,7 +141,7 @@ function HighlightText({
         part.toLowerCase() === query.toLowerCase() ? (
           <mark
             key={i}
-            className="bg-amber-200 text-slate-900 font-bold px-1 rounded-xs"
+            className="bg-amber-200 text-slate-900 font-semibold px-1 rounded-xs"
           >
             {part}
           </mark>
@@ -225,7 +225,7 @@ function TableSearchDropdown({
                       onChange(filterQuery.trim());
                       setIsOpen(false);
                     }}
-                    className="block mt-1 w-full text-blue-600 font-bold hover:underline"
+                    className="block mt-1 w-full text-blue-600 font-semibold hover:underline"
                   >
                     Use "{filterQuery.trim()}"
                   </button>
@@ -246,7 +246,7 @@ function TableSearchDropdown({
                     className={clsx(
                       "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono transition text-left",
                       isSelected
-                        ? "bg-blue-600 text-white font-bold"
+                        ? "bg-blue-600 text-white font-semibold"
                         : "text-slate-700 hover:bg-slate-100"
                     )}
                   >
@@ -1670,32 +1670,12 @@ export function DaxManagementPage() {
 
 
   return (
-    <div className="h-full w-full overflow-hidden flex flex-col gap-3 font-sans select-none">
+    <div className="h-full w-full overflow-hidden flex flex-col gap-3">
       {/* 1. TOP CONTROL BAR (Views & Global Controls - Console removed as requested) */}
-      <div className="shrink-0 bg-white rounded-3xl p-3 px-4 shadow-xs border border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div
-            style={{
-              backgroundColor: currentTheme.primaryLight,
-              color: currentTheme.primary,
-            }}
-            className="grid h-9 w-9 place-items-center rounded-2xl shadow-xs shrink-0"
-          >
-            <FunctionSquare className="h-4.5 w-4.5 stroke-[2.2]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-bold text-slate-900 tracking-tight">
-                DAX & Semantic Model Intelligence
-              </h1>
-              <span className="px-2 py-0.2 rounded-full bg-blue-50 text-blue-700 text-[10px] font-extrabold uppercase border border-blue-200">
-                Live Supabase + REST API
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Synced to Supabase DB &bull; Active: {currentModelMeta.name}
-            </p>
-          </div>
+      <div className="shrink-0 bg-white rounded-2xl px-4 py-2.5 ring-1 ring-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-blue-700">{currentModelMeta.code}</p>
+          <p className="truncate text-[15px] font-medium text-slate-900">{currentModelMeta.name}</p>
         </div>
 
         {/* View Switcher: Table | Split (was Sidebox) | List (was Split) & Action buttons */}
@@ -1704,7 +1684,7 @@ export function DaxManagementPage() {
           <button
             type="button"
             onClick={() => setModelChosen(false)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
             title="Switch Semantic Model"
           >
             <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
@@ -1715,7 +1695,7 @@ export function DaxManagementPage() {
           <button
             type="button"
             onClick={() => setImportOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
             title="Update this model from a .bim file"
           >
             <Upload className="h-3.5 w-3.5" />
@@ -1726,7 +1706,7 @@ export function DaxManagementPage() {
           <button
             type="button"
             onClick={() => openCustomDaxModal()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
             <span>Add Custom DAX</span>
@@ -1736,7 +1716,7 @@ export function DaxManagementPage() {
           <button
             type="button"
             onClick={() => setFloatSidebarOpen(!floatSidebarOpen)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
           >
             <TableIcon className="h-3.5 w-3.5 text-blue-600" />
             <span>{floatSidebarOpen ? "Hide Tables" : "Show Tables"}</span>
@@ -1749,7 +1729,7 @@ export function DaxManagementPage() {
               onClick={() => setViewMode("table")}
               title="Table View (Full Grid)"
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition cursor-pointer",
+                "flex items-center gap-1 px-3 py-1 rounded-full font-semibold transition cursor-pointer",
                 viewMode === "table"
                   ? "bg-white text-blue-600 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -1763,7 +1743,7 @@ export function DaxManagementPage() {
               onClick={() => setViewMode("split")}
               title="Split View (List + Editable Inspector)"
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition cursor-pointer",
+                "flex items-center gap-1 px-3 py-1 rounded-full font-semibold transition cursor-pointer",
                 viewMode === "split"
                   ? "bg-white text-blue-600 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -1777,7 +1757,7 @@ export function DaxManagementPage() {
               onClick={() => setViewMode("list")}
               title="List View (Full Stacked Cards)"
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-full font-bold transition cursor-pointer",
+                "flex items-center gap-1 px-3 py-1 rounded-full font-semibold transition cursor-pointer",
                 viewMode === "list"
                   ? "bg-white text-blue-600 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900"
@@ -1794,17 +1774,17 @@ export function DaxManagementPage() {
       <div className="flex-1 min-h-0 flex gap-3 overflow-hidden relative">
         {/* TABLES NAVIGATOR SIDEBAR */}
         {floatSidebarOpen && (
-          <aside className="w-60 lg:w-64 shrink-0 bg-white rounded-3xl p-3 shadow-xs border border-slate-200/80 flex flex-col gap-2.5 overflow-hidden z-20">
+          <aside className="w-60 lg:w-64 shrink-0 bg-white rounded-2xl p-3 shadow-xs border border-slate-200/80 flex flex-col gap-2.5 overflow-hidden z-20">
             {/* Header: Tables in Model */}
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <TableIcon className="h-4 w-4 text-blue-600" />
-                <span className="text-xs font-bold text-slate-800">
+                <span className="text-xs font-semibold text-slate-800">
                   Tables in Model
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-semibold text-slate-500 px-1.5 py-0.5 rounded-md bg-slate-100">
+                <span className="text-[11px] font-semibold text-slate-500 px-1.5 py-0.5 rounded-md bg-slate-100">
                   {meta.tables?.length || 0} Total
                 </span>
                 <button
@@ -1840,12 +1820,12 @@ export function DaxManagementPage() {
                   className={clsx(
                     "w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition text-left cursor-pointer",
                     selectedTable === "all"
-                      ? "bg-slate-900 text-white font-bold"
+                      ? "bg-slate-900 text-white font-semibold"
                       : "text-slate-600 hover:bg-slate-100"
                   )}
                 >
                   <span className="truncate">All Tables</span>
-                  <span className="text-[10px] opacity-75">{meta.total}</span>
+                  <span className="text-[11px] opacity-75">{meta.total}</span>
                 </button>
                 {filteredTables.map((t: string) => {
                   const isSel = selectedTable === t;
@@ -1857,7 +1837,7 @@ export function DaxManagementPage() {
                       className={clsx(
                         "w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-mono transition text-left truncate cursor-pointer",
                         isSel
-                          ? "bg-blue-600 text-white font-bold"
+                          ? "bg-blue-600 text-white font-semibold"
                           : "text-slate-600 hover:bg-slate-100"
                       )}
                     >
@@ -1868,25 +1848,21 @@ export function DaxManagementPage() {
               </div>
             </div>
 
-            <div className="shrink-0 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-              <span>Source: Azure Entra ID</span>
-              <span className="text-emerald-600 font-bold">&bull; 200 OK</span>
-            </div>
           </aside>
         )}
 
         {/* MAIN PANEL CONTENT */}
-        <main className="flex-1 min-w-0 bg-white rounded-3xl p-3.5 shadow-xs border border-slate-200/80 flex flex-col gap-3 overflow-hidden">
+        <main className="flex-1 min-w-0 bg-white rounded-2xl p-3.5 shadow-xs border border-slate-200/80 flex flex-col gap-3 overflow-hidden">
           {/* BULLET FILTERS ROW (POSITIONED DIRECTLY UNDER VIEWS AS REQUESTED) */}
           <div className="shrink-0 flex items-center justify-between gap-2 flex-wrap border-b border-slate-100 pb-2.5">
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap" role="group" aria-label="Filter by type">
               {[
-                { id: "all", label: "All Items", count: meta.total, dotColor: "bg-slate-400" },
-                { id: "semantic", label: "Semantic Model", count: meta.totalSemantic || (meta.totalMeasures + meta.totalColumns), dotColor: "bg-sky-500" },
-                { id: "custom", label: "Custom by User", count: meta.totalCustom || 0, dotColor: "bg-purple-500" },
-                { id: "measure", label: "Measures Only", count: meta.totalMeasures, dotColor: "bg-blue-500" },
-                { id: "column", label: "Columns Only", count: meta.totalColumns, dotColor: "bg-emerald-500" },
-                { id: "calculated_column", label: "Calculated Columns", count: null, dotColor: "bg-amber-500" },
+                { id: "all", label: "Everything", count: meta.total, dotColor: "" },
+                { id: "measure", label: "Measures", count: meta.totalMeasures, dotColor: "" },
+                { id: "column", label: "Columns", count: meta.totalColumns, dotColor: "" },
+                { id: "calculated_column", label: "Calculated columns", count: null, dotColor: "" },
+                { id: "semantic", label: "From the model", count: meta.totalSemantic || (meta.totalMeasures + meta.totalColumns), dotColor: "" },
+                { id: "custom", label: "Written by the team", count: meta.totalCustom || 0, dotColor: "" },
               ].map((pill) => {
                 const isSelected = selectedType === pill.id;
                 return (
@@ -1894,30 +1870,17 @@ export function DaxManagementPage() {
                     key={pill.id}
                     type="button"
                     onClick={() => setSelectedType(pill.id)}
+                    aria-pressed={isSelected}
                     className={clsx(
-                      "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition shadow-xs cursor-pointer select-none",
-                      isSelected
-                        ? "bg-blue-600 text-white shadow-blue-500/25 ring-2 ring-blue-500/30"
-                        : "bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/70"
+                      "relative inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[13px] transition cursor-pointer",
+                      isSelected ? "text-slate-900 font-medium" : "text-slate-500 hover:text-slate-800"
                     )}
                   >
-                    <span
-                      className={clsx(
-                        "h-2 w-2 rounded-full shrink-0",
-                        isSelected ? "bg-white ring-2 ring-white/40" : pill.dotColor
-                      )}
-                    />
                     <span>{pill.label}</span>
                     {pill.count !== null && (
-                      <span
-                        className={clsx(
-                          "px-1.5 py-0.2 rounded-full text-[10px] font-extrabold font-mono",
-                          isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
-                        )}
-                      >
-                        {pill.count}
-                      </span>
+                      <span className="tabular-nums text-xs text-slate-400">{Number(pill.count).toLocaleString()}</span>
                     )}
+                    {isSelected && <span className="absolute inset-x-2 -bottom-[11px] h-[2px] rounded-full bg-blue-600" />}
                   </button>
                 );
               })}
@@ -1925,7 +1888,7 @@ export function DaxManagementPage() {
 
             {/* Results Counter */}
             <span className="text-[11px] font-medium text-slate-500">
-              Showing <span className="font-bold text-slate-900">{items.length}</span> of {meta.total} results
+              Showing <span className="font-semibold text-slate-900">{items.length}</span> of {meta.total} results
             </span>
           </div>
 
@@ -1959,7 +1922,7 @@ export function DaxManagementPage() {
                   type="button"
                   onClick={() => setSearchMode("partial")}
                   className={clsx(
-                    "px-2.5 py-0.5 rounded-full font-bold transition cursor-pointer",
+                    "px-2.5 py-0.5 rounded-full font-semibold transition cursor-pointer",
                     searchMode === "partial"
                       ? "bg-white text-blue-600 shadow-2xs"
                       : "text-slate-600 hover:text-slate-900"
@@ -1971,7 +1934,7 @@ export function DaxManagementPage() {
                   type="button"
                   onClick={() => setSearchMode("exact")}
                   className={clsx(
-                    "px-2.5 py-0.5 rounded-full font-bold transition cursor-pointer",
+                    "px-2.5 py-0.5 rounded-full font-semibold transition cursor-pointer",
                     searchMode === "exact"
                       ? "bg-white text-blue-600 shadow-2xs"
                       : "text-slate-600 hover:text-slate-900"
@@ -1997,11 +1960,11 @@ export function DaxManagementPage() {
           <div className="shrink-0 flex items-center justify-between text-xs text-slate-500 pb-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span>Scope:</span>
-              <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.2 rounded-full text-[11px]">
+              <span className="font-semibold text-slate-800 bg-slate-100 px-2 py-0.2 rounded-full text-[11px]">
                 {activeModel} &bull; {selectedTable === "all" ? "All Tables" : selectedTable}
               </span>
               {searchQuery && (
-                <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.2 rounded-full font-semibold">
+                <span className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.2 rounded-full font-semibold">
                   Search: "{searchQuery}" ({searchMode}) &bull; Ranked by Relevance
                 </span>
               )}
@@ -2022,7 +1985,7 @@ export function DaxManagementPage() {
               /* ================= 1. TABLE VIEW ================= */
               <div className="h-full overflow-y-auto border border-slate-200/80 rounded-2xl">
                 <table className="w-full text-left text-xs text-slate-700 border-collapse">
-                  <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200/80 z-10">
+                  <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs text-[11px] font-semibold text-slate-500 border-b border-slate-200/80 z-10">
                     <tr>
                       <th className="py-2 px-3">Origin & Type</th>
                       <th className="py-2 px-3">Name</th>
@@ -2043,12 +2006,12 @@ export function DaxManagementPage() {
                         <td className="py-2 px-3 whitespace-nowrap">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {it.isCustom ? (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 border border-purple-200">
                                 <User className="h-2.5 w-2.5" />
                                 <span>Custom</span>
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800 border border-sky-200">
                                 <Database className="h-2.5 w-2.5" />
                                 <span>Semantic</span>
                               </span>
@@ -2056,7 +2019,7 @@ export function DaxManagementPage() {
 
                             <span
                               className={clsx(
-                                "px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase",
+                                "px-1.5 py-0.2 rounded-full text-[11px] font-semibold",
                                 it.type === "Measure"
                                   ? "bg-blue-50 text-blue-700 border border-blue-200"
                                   : it.type.includes("Calculated")
@@ -2068,7 +2031,7 @@ export function DaxManagementPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="py-2 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                        <td className="py-2 px-3 font-mono font-semibold text-slate-900 whitespace-nowrap">
                           <div>
                             <HighlightText
                               text={it.name}
@@ -2076,7 +2039,7 @@ export function DaxManagementPage() {
                               active={Boolean(searchQuery.trim())}
                             />
                             {it.matchReason && it.matchReason !== "Exact Name Match" && it.matchReason !== "Name Match" && it.matchReason !== "Name Prefix Match" && (
-                              <span className="block text-[9px] text-blue-600 font-sans font-normal mt-0.5">
+                              <span className="block text-[11px] text-blue-600 font-sans font-normal mt-0.5">
                                 &bull; {it.matchReason}
                               </span>
                             )}
@@ -2116,7 +2079,7 @@ export function DaxManagementPage() {
                                 sampleValuesMap[it.id].slice(0, 3).map((val, idx) => (
                                   <span
                                     key={idx}
-                                    className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 text-[10px] font-mono"
+                                    className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 text-[11px] font-mono"
                                   >
                                     {String(val)}
                                   </span>
@@ -2126,7 +2089,7 @@ export function DaxManagementPage() {
                                   type="button"
                                   onClick={() => handleFetchColumnSamples(it)}
                                   disabled={loadingSamplesId === it.id}
-                                  className="text-[10px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                                 >
                                   {loadingSamplesId === it.id ? (
                                     <RefreshCw className="h-2.5 w-2.5 animate-spin" />
@@ -2141,11 +2104,11 @@ export function DaxManagementPage() {
                         </td>
                         <td className="py-2 px-3 whitespace-nowrap">
                           {it.isHidden ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                               <EyeOff className="h-3 w-3" /> Hidden
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600">
                               <Eye className="h-3 w-3" /> Visible
                             </span>
                           )}
@@ -2215,12 +2178,12 @@ export function DaxManagementPage() {
                         <div className="min-w-0 flex-1 space-y-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {it.isCustom ? (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 border border-purple-200">
                                 <User className="h-2 w-2" />
                                 <span>Custom</span>
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800 border border-sky-200">
                                 <Database className="h-2 w-2" />
                                 <span>Semantic</span>
                               </span>
@@ -2228,7 +2191,7 @@ export function DaxManagementPage() {
 
                             <span
                               className={clsx(
-                                "px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase",
+                                "px-1.5 py-0.2 rounded-full text-[11px] font-semibold",
                                 it.type === "Measure"
                                   ? "bg-blue-50 text-blue-700"
                                   : "bg-emerald-50 text-emerald-700"
@@ -2237,7 +2200,7 @@ export function DaxManagementPage() {
                               {it.type}
                             </span>
 
-                            <h4 className="font-mono text-xs font-bold text-slate-900 break-words leading-tight">
+                            <h4 className="font-mono text-xs font-semibold text-slate-900 break-words leading-tight">
                               <HighlightText
                                 text={it.name}
                                 match={searchQuery}
@@ -2293,17 +2256,17 @@ export function DaxManagementPage() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                             {selectedItem.isCustom ? (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 border border-purple-200">
                                 <User className="h-2 w-2" />
                                 <span>Custom</span>
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800 border border-sky-200">
                                 <Database className="h-2 w-2" />
                                 <span>Semantic</span>
                               </span>
                             )}
-                            <span className="text-[9px] font-bold text-slate-600 uppercase bg-slate-200/70 px-1.5 py-0.2 rounded-full">
+                            <span className="text-[11px] font-semibold text-slate-600 bg-slate-200/70 px-1.5 py-0.2 rounded-full">
                               {selectedItem.type}
                             </span>
                           </div>
@@ -2312,7 +2275,7 @@ export function DaxManagementPage() {
                             <div className="flex items-center justify-between">
                               <label
                                 className={clsx(
-                                  "text-[10px] font-extrabold uppercase tracking-wider block",
+                                  "text-[11px] font-semibold block",
                                   selectedItem.isCustom ? "text-purple-800" : "text-slate-700"
                                 )}
                               >
@@ -2320,7 +2283,7 @@ export function DaxManagementPage() {
                               </label>
                               <span
                                 className={clsx(
-                                  "text-[9px] font-bold px-1.5 py-0.2 rounded-md border",
+                                  "text-[11px] font-semibold px-1.5 py-0.2 rounded-md border",
                                   selectedItem.isCustom
                                     ? "text-purple-600 bg-purple-50 border-purple-200"
                                     : "text-blue-600 bg-blue-50 border-blue-200"
@@ -2335,7 +2298,7 @@ export function DaxManagementPage() {
                               onChange={(e) => setSideboxForm({ ...sideboxForm, name: e.target.value })}
                               placeholder="Name..."
                               className={clsx(
-                                "w-full px-2.5 py-1 text-xs font-mono font-bold rounded-xl border focus:outline-none focus:ring-2 shadow-inner",
+                                "w-full px-2.5 py-1 text-xs font-mono font-semibold rounded-xl border focus:outline-none focus:ring-2 shadow-inner",
                                 selectedItem.isCustom
                                   ? "bg-purple-50/40 border-purple-300 text-purple-950 focus:ring-purple-400"
                                   : "bg-slate-50 border-slate-300 text-slate-900 focus:ring-blue-400"
@@ -2351,7 +2314,7 @@ export function DaxManagementPage() {
                               type="button"
                               onClick={() => handleOpenDiagram(selectedItem)}
                               title="View Flow Diagram"
-                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
                             >
                               <Workflow className="h-3 w-3" />
                               <span>Diagram</span>
@@ -2364,7 +2327,7 @@ export function DaxManagementPage() {
                             onClick={handleSaveSidebox}
                             disabled={isSavingSidebox || !isSideboxDirty}
                             className={clsx(
-                              "flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition shadow-xs cursor-pointer",
+                              "flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold transition shadow-xs cursor-pointer",
                               isSideboxDirty
                                 ? "bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-400/40"
                                 : "bg-slate-200 text-slate-400 cursor-not-allowed"
@@ -2390,9 +2353,9 @@ export function DaxManagementPage() {
 
                       {/* Unsaved indicator badge */}
                       {isSideboxDirty && (
-                        <div className="p-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold flex items-center justify-between">
+                        <div className="p-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-semibold flex items-center justify-between">
                           <span>Unsaved edits</span>
-                          <span className="text-amber-600 underline cursor-pointer font-bold" onClick={handleSaveSidebox}>
+                          <span className="text-amber-600 underline cursor-pointer font-semibold" onClick={handleSaveSidebox}>
                             Save
                           </span>
                         </div>
@@ -2402,10 +2365,10 @@ export function DaxManagementPage() {
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
-                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                            <label className="text-[11px] font-semibold text-slate-500 block">
                               Table Name
                             </label>
-                            <span className="text-[8px] font-bold text-blue-600 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                            <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
                               Editable
                             </span>
                           </div>
@@ -2420,17 +2383,17 @@ export function DaxManagementPage() {
 
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
-                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                            <label className="text-[11px] font-semibold text-slate-500 block">
                               Data Type
                             </label>
-                            <span className="text-[8px] font-bold text-blue-600 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                            <span className="text-[11px] font-semibold text-blue-600 bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
                               Editable
                             </span>
                           </div>
                           <select
                             value={sideboxForm.dataType}
                             onChange={(e) => setSideboxForm({ ...sideboxForm, dataType: e.target.value })}
-                            className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-white border border-slate-200 text-slate-800 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                            className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-white border border-slate-200 text-slate-800 font-mono font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
                           >
                             <option value="Decimal">Decimal</option>
                             <option value="Integer">Integer</option>
@@ -2450,7 +2413,7 @@ export function DaxManagementPage() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1">
                               <Zap className="h-3 w-3 text-blue-600" />
-                              <span className="text-[10px] font-bold text-slate-800 uppercase tracking-wide">
+                              <span className="text-[11px] font-semibold text-slate-800">
                                 Samples (5-10)
                               </span>
                             </div>
@@ -2458,7 +2421,7 @@ export function DaxManagementPage() {
                               type="button"
                               onClick={() => handleFetchColumnSamples(selectedItem)}
                               disabled={loadingSamplesId === selectedItem.id}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition disabled:opacity-50 cursor-pointer"
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition disabled:opacity-50 cursor-pointer"
                             >
                               {loadingSamplesId === selectedItem.id ? (
                                 <RefreshCw className="h-2 w-2 animate-spin" />
@@ -2475,22 +2438,22 @@ export function DaxManagementPage() {
                                 {sampleValuesMap[selectedItem.id].slice(0, 10).map((val, idx) => (
                                   <span
                                     key={idx}
-                                    className="px-1.5 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-800 text-[10px] font-mono"
+                                    className="px-1.5 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-mono"
                                   >
                                     {String(val)}
                                   </span>
                                 ))}
                               </div>
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded-full border border-emerald-200">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded-full border border-emerald-200">
                                 <Check className="h-2 w-2" /> In Supabase
                               </span>
                             </div>
                           ) : sampleErrorMap[selectedItem.id] ? (
-                            <p className="text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded-xl border border-amber-200 leading-tight">
+                            <p className="text-[11px] text-amber-700 bg-amber-50 p-1.5 rounded-xl border border-amber-200 leading-tight">
                               {sampleErrorMap[selectedItem.id]}
                             </p>
                           ) : (
-                            <p className="text-[10px] text-slate-400 leading-tight">
+                            <p className="text-[11px] text-slate-400 leading-tight">
                               Click "Fetch" to query distinct samples from Power BI and persist to Supabase.
                             </p>
                           )}
@@ -2499,7 +2462,7 @@ export function DaxManagementPage() {
 
                       {/* Business Definition (Compact Textarea) */}
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">
+                        <label className="text-[11px] font-semibold text-slate-700 block">
                           Business Definition / Meaning
                         </label>
                         <textarea
@@ -2515,7 +2478,7 @@ export function DaxManagementPage() {
 
                       {/* Mathematical Formulation (Compact Textarea) */}
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">
+                        <label className="text-[11px] font-semibold text-slate-700 block">
                           Mathematical Formulation
                         </label>
                         <textarea
@@ -2531,7 +2494,7 @@ export function DaxManagementPage() {
 
                       {/* Technical Notes (Compact Textarea) */}
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">
+                        <label className="text-[11px] font-semibold text-slate-700 block">
                           Technical Notes
                         </label>
                         <textarea
@@ -2549,7 +2512,7 @@ export function DaxManagementPage() {
                       {selectedItem.type === "Measure" || selectedItem.expression ? (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
+                            <label className="text-[11px] font-semibold text-purple-800 block">
                               {selectedItem.isCustom ? "Custom DAX Expression" : "DAX Expression"}
                             </label>
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -2559,7 +2522,7 @@ export function DaxManagementPage() {
                                   type="button"
                                   onClick={() => setSideboxDaxTab("edit")}
                                   className={clsx(
-                                    "px-2 py-0.5 rounded-md text-[9px] font-bold transition flex items-center gap-1 cursor-pointer",
+                                    "px-2 py-0.5 rounded-md text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer",
                                     sideboxDaxTab === "edit"
                                       ? "bg-white text-purple-900 shadow-xs"
                                       : "text-purple-600 hover:text-purple-900"
@@ -2572,7 +2535,7 @@ export function DaxManagementPage() {
                                   type="button"
                                   onClick={() => setSideboxDaxTab("preview")}
                                   className={clsx(
-                                    "px-2 py-0.5 rounded-md text-[9px] font-bold transition flex items-center gap-1 cursor-pointer",
+                                    "px-2 py-0.5 rounded-md text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer",
                                     sideboxDaxTab === "preview"
                                       ? "bg-white text-purple-900 shadow-xs"
                                       : "text-purple-600 hover:text-purple-900"
@@ -2593,7 +2556,7 @@ export function DaxManagementPage() {
                                     });
                                   }
                                 }}
-                                className="text-[9px] font-bold text-purple-700 hover:text-purple-800 bg-purple-100 hover:bg-purple-200 border border-purple-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
+                                className="text-[11px] font-semibold text-purple-700 hover:text-purple-800 bg-purple-100 hover:bg-purple-200 border border-purple-300 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer"
                                 title="Auto-indent & format DAX syntax"
                               >
                                 <Sparkles className="h-2.5 w-2.5 text-purple-600" />
@@ -2602,7 +2565,7 @@ export function DaxManagementPage() {
                               <button
                                 type="button"
                                 onClick={() => copyText(selectedItem.id, sideboxForm.expression || selectedItem.expression || "")}
-                                className="text-[9px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
+                                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
                               >
                                 {copiedId === selectedItem.id ? (
                                   <Check className="h-2.5 w-2.5 text-emerald-600" />
@@ -2614,7 +2577,7 @@ export function DaxManagementPage() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenDiagram(selectedItem)}
-                                className="text-[9px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
+                                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
                               >
                                 <Workflow className="h-2.5 w-2.5" />
                                 <span>Diagram</span>
@@ -2649,7 +2612,7 @@ export function DaxManagementPage() {
                         <button
                           type="button"
                           onClick={() => handleDeleteCustomDax(selectedItem.id)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
                         >
                           <Trash2 className="h-3 w-3" />
                           <span>Delete Custom DAX</span>
@@ -2674,12 +2637,12 @@ export function DaxManagementPage() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         {it.isCustom ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 border border-purple-200">
                             <User className="h-2 w-2" />
                             <span>Custom</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[9px] font-extrabold uppercase bg-sky-100 text-sky-800 border border-sky-200">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800 border border-sky-200">
                             <Database className="h-2 w-2" />
                             <span>Semantic</span>
                           </span>
@@ -2687,7 +2650,7 @@ export function DaxManagementPage() {
 
                         <span
                           className={clsx(
-                            "px-2 py-0.2 rounded-full text-[9px] font-bold uppercase",
+                            "px-2 py-0.2 rounded-full text-[11px] font-semibold",
                             it.type === "Measure"
                               ? "bg-blue-50 text-blue-700"
                               : "bg-emerald-50 text-emerald-700"
@@ -2696,7 +2659,7 @@ export function DaxManagementPage() {
                           {it.type}
                         </span>
 
-                        <span className="font-mono text-xs font-bold text-slate-900">
+                        <span className="font-mono text-xs font-semibold text-slate-900">
                           <HighlightText
                             text={it.name}
                             match={searchQuery}
@@ -2715,7 +2678,7 @@ export function DaxManagementPage() {
                           <button
                             type="button"
                             onClick={() => copyText(it.id, it.expression!)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-white text-blue-700 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-white text-blue-700 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
                           >
                             {copiedId === it.id ? (
                               <Check className="h-3 w-3 text-emerald-600" />
@@ -2729,7 +2692,7 @@ export function DaxManagementPage() {
                           <button
                             type="button"
                             onClick={() => handleOpenDiagram(it)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer"
                           >
                             <Workflow className="h-3 w-3" />
                             <span>Diagram</span>
@@ -2741,7 +2704,7 @@ export function DaxManagementPage() {
                             handleSelectItem(it);
                             setViewMode("split");
                           }}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
                         >
                           <Pencil className="h-3 w-3" />
                           <span>Edit</span>
@@ -2751,7 +2714,7 @@ export function DaxManagementPage() {
 
                     {it.businessDefinition && (
                       <div className="p-2 rounded-xl bg-white border border-slate-200/80 text-xs text-slate-700">
-                        <span className="font-bold text-slate-400 text-[9px] uppercase block mb-0.5">
+                        <span className="font-semibold text-slate-400 text-[11px] block mb-0.5">
                           Business Meaning
                         </span>
                         {it.businessDefinition}
@@ -2782,16 +2745,16 @@ export function DaxManagementPage() {
       {/* ================= UNSAVED CHANGES MODAL ================= */}
       {showUnsavedModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95">
+          <div className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-2xl bg-amber-100 text-amber-700 grid place-items-center shrink-0">
                 <HelpCircle className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Unsaved Changes</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Unsaved Changes</h3>
                 <p className="text-xs text-slate-500">
                   You have unsaved edits on{" "}
-                  <span className="font-mono font-bold text-slate-800">
+                  <span className="font-mono font-semibold text-slate-800">
                     {selectedItem?.name}
                   </span>
                 </p>
@@ -2806,14 +2769,14 @@ export function DaxManagementPage() {
               <button
                 type="button"
                 onClick={() => setShowUnsavedModal(false)}
-                className="px-4 py-2 rounded-full text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                className="px-4 py-2 rounded-full text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
               >
                 Keep Editing
               </button>
               <button
                 type="button"
                 onClick={handleDiscardAndProceed}
-                className="px-4 py-2 rounded-full text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer"
+                className="px-4 py-2 rounded-full text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition cursor-pointer"
               >
                 Discard & Switch
               </button>
@@ -2825,7 +2788,7 @@ export function DaxManagementPage() {
       {/* ================= PROGRAMMING-GRADE FORMULA DIAGRAM MODAL WITH TOOLBOX & WIRING ================= */}
       {diagramModalOpen && diagramTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 lg:p-6">
-          <div className="w-full max-w-7xl h-[92vh] bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+          <div className="w-full max-w-7xl h-[92vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
             {/* Modal Header */}
             <div className="shrink-0 p-3.5 px-5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/70">
               <div className="flex items-center gap-3">
@@ -2834,11 +2797,11 @@ export function DaxManagementPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold text-slate-900">
+                    <h2 className="text-sm font-semibold text-slate-900">
                       Formula Logic AST:{" "}
                       <span className="font-mono text-indigo-700">[{diagramTarget.name}]</span>
                     </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-extrabold uppercase">
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-semibold">
                       DAX Execution Pipeline
                     </span>
                   </div>
@@ -2852,14 +2815,14 @@ export function DaxManagementPage() {
               <div className="flex items-center gap-2">
                 {/* Save Diagram Success Toast */}
                 {diagramSaveSuccess && (
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
                     <Check className="h-3 w-3" /> Saved!
                   </span>
                 )}
 
                 {/* Connecting Mode Banner */}
                 {connectingSource && (
-                  <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 animate-pulse">
+                  <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 animate-pulse">
                     Connecting from {connectingSource.fromSide} port (drag to any port)...
                   </span>
                 )}
@@ -2874,7 +2837,7 @@ export function DaxManagementPage() {
                   >
                     <ZoomOut className="h-3.5 w-3.5" />
                   </button>
-                  <span className="text-[10px] font-mono font-bold w-9 text-center">
+                  <span className="text-[11px] font-mono font-semibold w-9 text-center">
                     {Math.round(diagramZoom * 100)}%
                   </span>
                   <button
@@ -2891,7 +2854,7 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={() => copyText("diagram_expr_header", diagramTarget.expression || "")}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:text-blue-600 shadow-xs transition cursor-pointer"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:text-blue-600 shadow-xs transition cursor-pointer"
                   title="Copy DAX Expression"
                 >
                   {copiedId === "diagram_expr_header" ? (
@@ -2906,7 +2869,7 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={() => handleExportToWhiteboard(diagramTarget, diagramNodes)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 shadow-xs transition cursor-pointer"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 shadow-xs transition cursor-pointer"
                   title="Open this AST diagram in Whiteboard with infinite canvas and rich editing tools"
                 >
                   <ExternalLink className="h-3.5 w-3.5 text-indigo-600" />
@@ -2917,7 +2880,7 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={handleSaveDiagram}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
                 >
                   <Save className="h-3.5 w-3.5" />
                   <span>Save Diagram</span>
@@ -2927,7 +2890,7 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={handleResetDiagramLayout}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition cursor-pointer"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition cursor-pointer"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   <span>Reset</span>
@@ -2946,13 +2909,13 @@ export function DaxManagementPage() {
             {/* Formula Expression Code Ribbon */}
             <div className="shrink-0 px-5 py-2 bg-slate-900 text-emerald-400 font-mono text-[11px] overflow-x-auto border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2 truncate">
-                <span className="text-slate-400 font-bold shrink-0">DAX:</span>
+                <span className="text-slate-400 font-semibold shrink-0">DAX:</span>
                 <span className="truncate">{diagramTarget.expression || "No DAX expression"}</span>
               </div>
               <button
                 type="button"
                 onClick={() => copyText("diagram_expr", diagramTarget.expression || "")}
-                className="text-slate-400 hover:text-white flex items-center gap-1 text-[10px] shrink-0 ml-4 cursor-pointer"
+                className="text-slate-400 hover:text-white flex items-center gap-1 text-[11px] shrink-0 ml-4 cursor-pointer"
               >
                 <Copy className="h-3 w-3" /> Copy
               </button>
@@ -2962,11 +2925,11 @@ export function DaxManagementPage() {
             <div className="flex-1 flex overflow-hidden">
               {/* TOOLBOX (Allows adding AST nodes) */}
               <div className="w-56 shrink-0 bg-slate-50 border-r border-slate-200 p-3 flex flex-col gap-2.5 overflow-y-auto">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
                   <Boxes className="h-4 w-4 text-indigo-600" />
                   <span>Node Toolbox</span>
                 </div>
-                <p className="text-[10px] text-slate-500 leading-tight">
+                <p className="text-[11px] text-slate-500 leading-tight">
                   Click to add programming elements to the canvas:
                 </p>
 
@@ -2978,8 +2941,8 @@ export function DaxManagementPage() {
                   >
                     <FunctionSquare className="h-3.5 w-3.5 text-purple-600 shrink-0" />
                     <div>
-                      <span className="font-bold block text-[11px]">+ Measure Dependency</span>
-                      <span className="text-[9px] text-slate-400">e.g. [_hn_count]</span>
+                      <span className="font-semibold block text-[11px]">+ Measure Dependency</span>
+                      <span className="text-[11px] text-slate-400">e.g. [_hn_count]</span>
                     </div>
                   </button>
 
@@ -2990,8 +2953,8 @@ export function DaxManagementPage() {
                   >
                     <Filter className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                     <div>
-                      <span className="font-bold block text-[11px]">+ Exclude / Filter</span>
-                      <span className="text-[9px] text-slate-400">NOT IN, ISBLANK</span>
+                      <span className="font-semibold block text-[11px]">+ Exclude / Filter</span>
+                      <span className="text-[11px] text-slate-400">NOT IN, ISBLANK</span>
                     </div>
                   </button>
 
@@ -3002,8 +2965,8 @@ export function DaxManagementPage() {
                   >
                     <GitBranch className="h-3.5 w-3.5 text-teal-600 shrink-0" />
                     <div>
-                      <span className="font-bold block text-[11px]">+ Switch Branch</span>
-                      <span className="text-[9px] text-slate-400">Condition &rarr; Case</span>
+                      <span className="font-semibold block text-[11px]">+ Switch Branch</span>
+                      <span className="text-[11px] text-slate-400">Condition &rarr; Case</span>
                     </div>
                   </button>
 
@@ -3014,8 +2977,8 @@ export function DaxManagementPage() {
                   >
                     <Database className="h-3.5 w-3.5 text-sky-600 shrink-0" />
                     <div>
-                      <span className="font-bold block text-[11px]">+ Table / Column</span>
-                      <span className="text-[9px] text-slate-400">Data source</span>
+                      <span className="font-semibold block text-[11px]">+ Table / Column</span>
+                      <span className="text-[11px] text-slate-400">Data source</span>
                     </div>
                   </button>
 
@@ -3026,8 +2989,8 @@ export function DaxManagementPage() {
                   >
                     <Calculator className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
                     <div>
-                      <span className="font-bold block text-[11px]">+ Calculation Engine</span>
-                      <span className="text-[9px] text-slate-400">CALCULATE, SUM</span>
+                      <span className="font-semibold block text-[11px]">+ Calculation Engine</span>
+                      <span className="text-[11px] text-slate-400">CALCULATE, SUM</span>
                     </div>
                   </button>
 
@@ -3038,14 +3001,14 @@ export function DaxManagementPage() {
                   >
                     <Zap className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                     <div>
-                      <span className="font-bold block text-[11px]">+ Output Metric</span>
-                      <span className="text-[9px] text-slate-400">Final evaluated result</span>
+                      <span className="font-semibold block text-[11px]">+ Output Metric</span>
+                      <span className="text-[11px] text-slate-400">Final evaluated result</span>
                     </div>
                   </button>
                 </div>
 
-                <div className="pt-2 border-t border-slate-200 mt-auto text-[10px] text-slate-400 space-y-1">
-                  <span className="font-bold block text-slate-600">Wiring Tips:</span>
+                <div className="pt-2 border-t border-slate-200 mt-auto text-[11px] text-slate-400 space-y-1">
+                  <span className="font-semibold block text-slate-600">Wiring Tips:</span>
                   <p>&bull; Click <Link className="h-2.5 w-2.5 inline" /> on a node, then click target node to create a line.</p>
                   <p>&bull; Drag nodes across canvas.</p>
                 </div>
@@ -3291,7 +3254,7 @@ export function DaxManagementPage() {
                               }}
                               title="Top Port (Connect)"
                               className={clsx(
-                                "absolute -top-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                "absolute -top-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
                                 isSourceNode && connectingSource?.fromSide === "top"
                                   ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
                                   : isConnecting && !isSourceNode
@@ -3314,7 +3277,7 @@ export function DaxManagementPage() {
                               }}
                               title="Right Port (Connect)"
                               className={clsx(
-                                "absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                "absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
                                 isSourceNode && connectingSource?.fromSide === "right"
                                   ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
                                   : isConnecting && !isSourceNode
@@ -3337,7 +3300,7 @@ export function DaxManagementPage() {
                               }}
                               title="Bottom Port (Connect)"
                               className={clsx(
-                                "absolute -bottom-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                "absolute -bottom-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
                                 isSourceNode && connectingSource?.fromSide === "bottom"
                                   ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
                                   : isConnecting && !isSourceNode
@@ -3360,7 +3323,7 @@ export function DaxManagementPage() {
                               }}
                               title="Left Port (Connect)"
                               className={clsx(
-                                "absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[8px] font-bold",
+                                "absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
                                 isSourceNode && connectingSource?.fromSide === "left"
                                   ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
                                   : isConnecting && !isSourceNode
@@ -3376,24 +3339,24 @@ export function DaxManagementPage() {
                         {/* Node Header */}
                         <div>
                           <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded-full bg-white/80 border border-slate-200">
+                            <span className="text-[11px] font-semibold px-1.5 py-0.2 rounded-full bg-white/80 border border-slate-200">
                               {node.category}
                             </span>
                             <Move className="h-3 w-3 opacity-40 shrink-0" />
                           </div>
 
                           {/* Node Title */}
-                          <h4 className="font-mono text-xs font-bold truncate">
+                          <h4 className="font-mono text-xs font-semibold truncate">
                             {node.title}
                           </h4>
 
                           {/* Role & Details */}
-                          <p className="text-[10px] font-semibold opacity-85 truncate">
+                          <p className="text-[11px] font-semibold opacity-85 truncate">
                             {node.role}
                           </p>
                         </div>
 
-                        <p className="text-[10px] opacity-75 line-clamp-2 leading-tight mt-1">
+                        <p className="text-[11px] opacity-75 line-clamp-2 leading-tight mt-1">
                           {node.detail}
                         </p>
                       </div>
@@ -3404,13 +3367,13 @@ export function DaxManagementPage() {
                 {/* Wire Edit / Disconnect Popup */}
                 {editingConnection && (
                   <div className="absolute top-4 right-4 z-40 bg-white rounded-2xl border border-slate-200 shadow-xl p-3 flex items-center gap-3 animate-in fade-in zoom-in-95">
-                    <span className="text-xs font-bold text-slate-700">Selected Connection Wire</span>
+                    <span className="text-xs font-semibold text-slate-700">Selected Connection Wire</span>
                     <button
                       type="button"
                       onClick={() =>
                         handleRemoveDiagramConnection(editingConnection.sourceId, editingConnection.targetId)
                       }
-                      className="px-2.5 py-1 rounded-xl text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
+                      className="px-2.5 py-1 rounded-xl text-xs font-semibold bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
                     >
                       Delete Wire
                     </button>
@@ -3435,7 +3398,7 @@ export function DaxManagementPage() {
                   return (
                     <>
                       <div className="flex items-center gap-2 flex-1 w-full flex-wrap">
-                        <span className="text-xs font-bold text-slate-700 shrink-0">
+                        <span className="text-xs font-semibold text-slate-700 shrink-0">
                           Edit Node:
                         </span>
                         <input
@@ -3448,7 +3411,7 @@ export function DaxManagementPage() {
                             );
                           }}
                           placeholder="Node Title / Identifier"
-                          className="px-2.5 py-1 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-800 w-44"
+                          className="px-2.5 py-1 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono font-semibold text-slate-800 w-44"
                         />
                         <input
                           type="text"
@@ -3472,7 +3435,7 @@ export function DaxManagementPage() {
                                 prev.map((n) => (n.id === node.id ? { ...n, connections: [] } : n))
                               );
                             }}
-                            className="px-2.5 py-1 rounded-full text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
+                            className="px-2.5 py-1 rounded-full text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
                           >
                             Disconnect All
                           </button>
@@ -3490,7 +3453,7 @@ export function DaxManagementPage() {
                             );
                             setSelectedNodeId(null);
                           }}
-                          className="px-2.5 py-1 rounded-full text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
+                          className="px-2.5 py-1 rounded-full text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
                         >
                           Remove Node
                         </button>
@@ -3507,15 +3470,15 @@ export function DaxManagementPage() {
       {/* ================= CUSTOM DAX MODAL (SPLIT-STYLED WITH FULL DAX AUTO-SPLIT) ================= */}
       {customDaxModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="w-full max-w-5xl bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95 my-auto max-h-[92vh] overflow-y-auto">
+          <div className="w-full max-w-5xl bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-in fade-in zoom-in-95 my-auto max-h-[92vh] overflow-y-auto">
             {/* Header matching Split style */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 border border-purple-200">
                   <User className="h-3 w-3" />
                   <span>CUSTOM</span>
                 </span>
-                <span className="text-[10px] font-extrabold uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200">
+                <span className="text-[11px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-200">
                   CUSTOM DAX AUTHORING
                 </span>
               </div>
@@ -3537,12 +3500,12 @@ export function DaxManagementPage() {
             {/* FULL DAX AUTO-SPLIT PASTE CARD */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50/50 to-blue-50 border border-purple-200/80 space-y-1.5 shadow-2xs">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-black text-purple-900 flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-purple-900 flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 text-purple-600" />
                   <span>Paste Entire DAX Definition (Auto-Splits Name &amp; Expression)</span>
                 </label>
                 {autoSplitDetected && (
-                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
                     <Check className="h-3 w-3" /> Auto-split applied!
                   </span>
                 )}
@@ -3554,7 +3517,7 @@ export function DaxManagementPage() {
                 placeholder="Paste whole DAX here, e.g. day_remaining = VAR _year = MAX('dim_date'[Year]) ... RETURN ..."
                 className="w-full p-2.5 text-xs rounded-xl bg-white border border-purple-200 text-slate-800 font-mono placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-inner resize-none"
               />
-              <span className="text-[10px] text-purple-700/80 block">
+              <span className="text-[11px] text-purple-700/80 block">
                 Everything before the first "=" becomes the <b>Measure Name</b>, and everything after becomes the <b>Expression</b>.
               </span>
             </div>
@@ -3566,7 +3529,7 @@ export function DaxManagementPage() {
                 <div className="space-y-2.5">
                   {/* Measure Name */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                    <label className="text-[11px] font-semibold text-slate-700 block">
                       Measure Name *
                     </label>
                     <input
@@ -3575,14 +3538,14 @@ export function DaxManagementPage() {
                       value={customName}
                       onChange={(e) => setCustomName(e.target.value)}
                       placeholder="e.g. day_remaining"
-                      className="w-full px-3 py-1.5 text-xs font-mono font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+                      className="w-full px-3 py-1.5 text-xs font-mono font-semibold rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
                     />
                   </div>
 
                   {/* Table & Type */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                      <label className="text-[11px] font-semibold text-slate-700 block">
                         Table Name *
                       </label>
                       <TableSearchDropdown
@@ -3594,13 +3557,13 @@ export function DaxManagementPage() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                      <label className="text-[11px] font-semibold text-slate-700 block">
                         Data Type
                       </label>
                       <select
                         value={customDataType}
                         onChange={(e) => setCustomDataType(e.target.value)}
-                        className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-mono font-bold"
+                        className="w-full px-2.5 py-1.5 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-mono font-semibold"
                       >
                         <option value="Decimal">Decimal</option>
                         <option value="Integer">Integer</option>
@@ -3613,7 +3576,7 @@ export function DaxManagementPage() {
 
                   {/* Business Definition */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                    <label className="text-[11px] font-semibold text-slate-700 block">
                       Business Definition / Meaning
                     </label>
                     <textarea
@@ -3627,7 +3590,7 @@ export function DaxManagementPage() {
 
                   {/* Mathematical Formulation */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                    <label className="text-[11px] font-semibold text-slate-700 block">
                       Mathematical Formulation
                     </label>
                     <textarea
@@ -3641,7 +3604,7 @@ export function DaxManagementPage() {
 
                   {/* Technical Notes */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wider block">
+                    <label className="text-[11px] font-semibold text-slate-700 block">
                       Technical Notes
                     </label>
                     <textarea
@@ -3658,7 +3621,7 @@ export function DaxManagementPage() {
                 <div className="space-y-2 flex flex-col justify-between">
                   <div className="space-y-1 flex-1 flex flex-col">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-extrabold text-purple-800 uppercase tracking-wider block">
+                      <label className="text-[11px] font-semibold text-purple-800 block">
                         Custom DAX Expression *
                       </label>
                       <div className="flex items-center gap-2">
@@ -3668,7 +3631,7 @@ export function DaxManagementPage() {
                             type="button"
                             onClick={() => setCustomDaxTab("edit")}
                             className={clsx(
-                              "px-2.5 py-0.5 rounded-md text-[10px] font-bold transition flex items-center gap-1 cursor-pointer",
+                              "px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer",
                               customDaxTab === "edit"
                                 ? "bg-white text-purple-900 shadow-xs"
                                 : "text-purple-600 hover:text-purple-900"
@@ -3681,7 +3644,7 @@ export function DaxManagementPage() {
                             type="button"
                             onClick={() => setCustomDaxTab("preview")}
                             className={clsx(
-                              "px-2.5 py-0.5 rounded-md text-[10px] font-bold transition flex items-center gap-1 cursor-pointer",
+                              "px-2.5 py-0.5 rounded-md text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer",
                               customDaxTab === "preview"
                                 ? "bg-white text-purple-900 shadow-xs"
                                 : "text-purple-600 hover:text-purple-900"
@@ -3699,7 +3662,7 @@ export function DaxManagementPage() {
                               setCustomExpression(formatDax(customExpression));
                             }
                           }}
-                          className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 text-[10px] font-bold border border-purple-300 transition cursor-pointer"
+                          className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 text-[11px] font-semibold border border-purple-300 transition cursor-pointer"
                           title="Auto-indent & format DAX syntax"
                         >
                           <Sparkles className="h-2.5 w-2.5 text-purple-600" />
@@ -3753,14 +3716,14 @@ export function DaxManagementPage() {
                 <button
                   type="button"
                   onClick={() => setCustomDaxModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSavingCustom || !customName.trim() || !customExpression.trim()}
-                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm disabled:opacity-50 cursor-pointer"
                 >
                   {isSavingCustom ? (
                     <RefreshCw className="h-3.5 w-3.5 animate-spin" />

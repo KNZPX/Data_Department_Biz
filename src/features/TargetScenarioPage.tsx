@@ -400,10 +400,10 @@ export function TargetScenarioPage() {
   }, [tree]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-y-auto select-none">
+    <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-y-auto">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-5 right-5 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-xl border border-slate-700 animate-in fade-in slide-in-from-top-2 flex items-center gap-2">
+        <div className="fixed top-5 right-5 z-50 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl border border-slate-700 animate-in fade-in slide-in-from-top-2 flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           <span>{toastMessage}</span>
         </div>
@@ -416,20 +416,20 @@ export function TargetScenarioPage() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                 TARGET DELEGATION SYSTEM
               </span>
-              <span className="text-xs text-slate-400 font-bold">•</span>
+              <span className="text-xs text-slate-400 font-semibold">•</span>
               <span className="text-xs font-semibold text-slate-500">
                 Cascading Breakdown: PKT ➔ Site ➔ CoE/SBU ➔ OPD/IPD ➔ Market Segment
               </span>
-              <span className="text-xs text-slate-400 font-bold">•</span>
-              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+              <span className="text-xs text-slate-400 font-semibold">•</span>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
                 <Check className="h-3 w-3" />
                 <span>Supabase Cloud Synced</span>
               </div>
             </div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight flex items-center gap-2.5">
               <TrendingUp className="h-7 w-7 text-blue-600" />
               <span>Target Scenario Calculator 2027</span>
             </h1>
@@ -448,7 +448,7 @@ export function TargetScenarioPage() {
                   if (sel) handleLoadScenario(sel);
                   else if (e.target.value === "base_case") handleResetBaseCase();
                 }}
-                className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer max-w-[180px] truncate"
+                className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer max-w-[180px] truncate"
               >
                 <option value="base_case">Revise 2027 (V2) - 7,550 MB</option>
                 {scenarios.map((sc) => (
@@ -463,7 +463,7 @@ export function TargetScenarioPage() {
             <button
               type="button"
               onClick={handleResetBaseCase}
-              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
+              className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
               title="Reset all inputs back to 2027 Base Case"
             >
               <RotateCcw className="h-3.5 w-3.5 text-slate-500" />
@@ -477,7 +477,7 @@ export function TargetScenarioPage() {
                 setNewScenarioName(`Scenario ${new Date().toLocaleDateString("en-GB")}`);
                 setShowSaveModal(true);
               }}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer shadow-xs inline-flex items-center gap-1.5"
             >
               <Save className="h-4 w-4" />
               <span>Save Scenario</span>
@@ -488,14 +488,14 @@ export function TargetScenarioPage() {
         {/* Hospital Scope Selector Pills */}
         <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            <span className="text-xs font-bold text-slate-400 mr-2 flex items-center gap-1">
+            <span className="text-xs font-semibold text-slate-400 mr-2 flex items-center gap-1">
               <Building2 className="h-3.5 w-3.5" /> Scope:
             </span>
             <button
               type="button"
               onClick={() => setSiteFilter("ALL")}
               className={clsx(
-                "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer",
+                "px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer",
                 siteFilter === "ALL"
                   ? "bg-slate-900 text-white shadow-xs"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -512,9 +512,9 @@ export function TargetScenarioPage() {
                   type="button"
                   onClick={() => setSiteFilter(site)}
                   className={clsx(
-                    "px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer inline-flex items-center gap-1.5 border",
+                    "px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer inline-flex items-center gap-1.5 border",
                     isSel
-                      ? `${prof.badgeBg} ${prof.textColor} ${prof.badgeBorder} shadow-2xs font-black`
+                      ? `${prof.badgeBg} ${prof.textColor} ${prof.badgeBorder} shadow-2xs font-semibold`
                       : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                   )}
                 >
@@ -526,8 +526,8 @@ export function TargetScenarioPage() {
           </div>
 
           {/* Depth Expander Pills */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-            <span className="text-[10px] text-slate-400 uppercase px-1.5">Depth:</span>
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+            <span className="text-[11px] text-slate-400 px-1.5">Depth:</span>
             {[
               { depth: 1, label: "Sites" },
               { depth: 2, label: "CoE/SBU" },
@@ -561,21 +561,21 @@ export function TargetScenarioPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Central PKT Target */}
           <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col justify-between hover:shadow-md transition">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-1">
               <span className="flex items-center gap-1.5">
                 <Target className="h-4 w-4 text-blue-600" />
                 <span>PKT Central Target 2027</span>
               </span>
-              <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-black uppercase">
+              <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px] font-semibold">
                 {pktNode?.method === "growth_pct" ? `${pktNode.inputVal}% YoY` : `${pktNode.inputVal} MB`}
               </span>
             </div>
-            <div className="text-2xl font-black text-slate-900 tracking-tight my-1">
+            <div className="text-2xl font-semibold text-slate-900 tracking-tight my-1">
               ฿{formatMB(pktNode?.targetRev27 || 0)} <span className="text-xs font-semibold text-slate-500">MB</span>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
               <span className="text-slate-400">Base: ฿{formatMB(pktNode?.baseRev26 || 0)} MB</span>
-              <span className="font-black text-emerald-600 inline-flex items-center gap-0.5">
+              <span className="font-semibold text-emerald-600 inline-flex items-center gap-0.5">
                 <ArrowUpRight className="h-3 w-3" />
                 {formatPct(pktNode?.growthRevPct || 0)}
               </span>
@@ -584,14 +584,14 @@ export function TargetScenarioPage() {
 
           {/* Card 2: Delegated to 3 Sites */}
           <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col justify-between hover:shadow-md transition">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-1">
               <span className="flex items-center gap-1.5">
                 <Building2 className="h-4 w-4 text-cyan-600" />
                 <span>Delegated (3 Sites Sum)</span>
               </span>
-              <span className="text-[10px] text-slate-400 font-bold">BPK + BSI + DBK</span>
+              <span className="text-[11px] text-slate-400 font-semibold">BPK + BSI + DBK</span>
             </div>
-            <div className="text-2xl font-black text-slate-900 tracking-tight my-1">
+            <div className="text-2xl font-semibold text-slate-900 tracking-tight my-1">
               ฿{formatMB(pktNode?.delegatedChildrenRev || 0)} <span className="text-xs font-semibold text-slate-500">MB</span>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
@@ -603,7 +603,7 @@ export function TargetScenarioPage() {
 
           {/* Card 3: Allocation Balance Gap */}
           <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col justify-between hover:shadow-md transition">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-1">
               <span className="flex items-center gap-1.5">
                 <GitBranch className="h-4 w-4 text-purple-600" />
                 <span>Delegation Balance Gap</span>
@@ -611,19 +611,19 @@ export function TargetScenarioPage() {
               <button
                 type="button"
                 onClick={() => handleOpenDelegateModal("PKT")}
-                className="text-[10px] text-blue-600 hover:underline font-bold"
+                className="text-[11px] text-blue-600 hover:underline font-semibold"
               >
                 Auto-Balance
               </button>
             </div>
             <div className="flex items-baseline gap-2 my-1">
               {Math.abs(pktNode?.allocationGap || 0) < 1000 ? (
-                <div className="text-xl font-black text-emerald-600 flex items-center gap-1.5">
+                <div className="text-xl font-semibold text-emerald-600 flex items-center gap-1.5">
                   <CheckCircle2 className="h-5 w-5" />
                   <span>100% Balanced</span>
                 </div>
               ) : (
-                <div className="text-xl font-black text-amber-600 flex items-center gap-1.5">
+                <div className="text-xl font-semibold text-amber-600 flex items-center gap-1.5">
                   <AlertTriangle className="h-5 w-5" />
                   <span>Gap: ฿{formatMB(pktNode?.allocationGap || 0)} MB</span>
                 </div>
@@ -636,19 +636,19 @@ export function TargetScenarioPage() {
 
           {/* Card 4: Total Projected Visits */}
           <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex flex-col justify-between hover:shadow-md transition">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-1">
               <span className="flex items-center gap-1.5">
                 <Users className="h-4 w-4 text-indigo-600" />
                 <span>Projected Total Visits</span>
               </span>
-              <span className="text-[10px] text-slate-400 font-bold">2027 E</span>
+              <span className="text-[11px] text-slate-400 font-semibold">2027 E</span>
             </div>
-            <div className="text-2xl font-black text-slate-900 tracking-tight my-1">
+            <div className="text-2xl font-semibold text-slate-900 tracking-tight my-1">
               {formatInt(pktNode?.targetVisits27 || 0)} <span className="text-xs font-semibold text-slate-500">Visits</span>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
               <span className="text-slate-400">Base: {formatInt(pktNode?.baseVisits26 || 0)}</span>
-              <span className="font-black text-indigo-600 inline-flex items-center gap-0.5">
+              <span className="font-semibold text-indigo-600 inline-flex items-center gap-0.5">
                 <ArrowUpRight className="h-3 w-3" />
                 +{formatInt((pktNode?.targetVisits27 || 0) - (pktNode?.baseVisits26 || 0))}
               </span>
@@ -677,9 +677,9 @@ export function TargetScenarioPage() {
                   type="button"
                   onClick={() => setActiveTab(t.id as any)}
                   className={clsx(
-                    "flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition cursor-pointer whitespace-nowrap",
+                    "flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition cursor-pointer whitespace-nowrap",
                     active
-                      ? "border-blue-600 text-blue-600 bg-white rounded-t-xl shadow-2xs font-black"
+                      ? "border-blue-600 text-blue-600 bg-white rounded-t-xl shadow-2xs font-semibold"
                       : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
                   )}
                 >
@@ -696,14 +696,14 @@ export function TargetScenarioPage() {
               <button
                 type="button"
                 onClick={handleExpandAll}
-                className="px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
+                className="px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
               >
                 Expand All
               </button>
               <button
                 type="button"
                 onClick={handleCollapseAll}
-                className="px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
+                className="px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
               >
                 Collapse All
               </button>
@@ -743,7 +743,7 @@ export function TargetScenarioPage() {
             <div className="rounded-2xl bg-white border border-slate-200/90 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
                     <tr>
                       <th className="py-3 px-4 min-w-[260px]">Hierarchy Node &amp; Level</th>
                       <th className="py-3 px-3 text-right">2026 Base Rev</th>
@@ -786,8 +786,8 @@ export function TargetScenarioPage() {
                           key={node.id}
                           className={clsx(
                             "hover:bg-slate-50/80 transition",
-                            node.level === "pkt" && "bg-slate-50/60 font-black",
-                            node.level === "site" && "bg-blue-50/20 font-bold"
+                            node.level === "pkt" && "bg-slate-50/60 font-semibold",
+                            node.level === "site" && "bg-blue-50/20 font-semibold"
                           )}
                         >
                           {/* Node Name with Indentation & Collapse Caret */}
@@ -811,7 +811,7 @@ export function TargetScenarioPage() {
 
                               <span
                                 className={clsx(
-                                  "px-1.5 py-0.5 rounded text-[9px] font-black uppercase",
+                                  "px-1.5 py-0.5 rounded text-[11px] font-semibold",
                                   levelBadge.bg,
                                   levelBadge.text
                                 )}
@@ -839,7 +839,7 @@ export function TargetScenarioPage() {
                                   method: e.target.value as TargetMethod,
                                 })
                               }
-                              className="px-2 py-1 text-[11px] font-bold rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none"
+                              className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none"
                             >
                               <option value="growth_pct">Growth % YoY</option>
                               <option value="fixed_amount">Fixed Amount (MB)</option>
@@ -860,16 +860,16 @@ export function TargetScenarioPage() {
                                     inputVal: parseFloat(e.target.value) || 0,
                                   })
                                 }
-                                className="w-20 px-2 py-0.5 text-center text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg focus:outline-none"
+                                className="w-20 px-2 py-0.5 text-center text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg focus:outline-none"
                               />
-                              <span className="text-[10px] text-slate-400 font-bold">
+                              <span className="text-[11px] text-slate-400 font-semibold">
                                 {node.method === "growth_pct" || node.method === "portion_share" ? "%" : "MB"}
                               </span>
                             </div>
                           </td>
 
                           {/* 2027 Calculated Target */}
-                          <td className="py-2.5 px-3 text-right font-black text-slate-900">
+                          <td className="py-2.5 px-3 text-right font-semibold text-slate-900">
                             ฿{formatMB(node.targetRev27)} MB
                           </td>
 
@@ -877,7 +877,7 @@ export function TargetScenarioPage() {
                           <td className="py-2.5 px-3 text-right">
                             <span
                               className={clsx(
-                                "font-bold text-xs inline-flex items-center gap-0.5",
+                                "font-semibold text-xs inline-flex items-center gap-0.5",
                                 node.growthRevPct >= 0 ? "text-emerald-600" : "text-rose-600"
                               )}
                             >
@@ -889,16 +889,16 @@ export function TargetScenarioPage() {
                           <td className="py-2.5 px-3 text-center">
                             {hasChildren ? (
                               node.allocationStatus === "balanced" ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
                                   <Check className="h-3 w-3" /> Balanced
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
                                   <AlertTriangle className="h-3 w-3" /> Δ ฿{formatMB(node.allocationGap)} MB
                                 </span>
                               )
                             ) : (
-                              <span className="text-slate-300 text-[10px]">—</span>
+                              <span className="text-slate-300 text-[11px]">—</span>
                             )}
                           </td>
 
@@ -908,7 +908,7 @@ export function TargetScenarioPage() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenDelegateModal(node.id)}
-                                className="px-2 py-1 rounded-md text-[10px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
+                                className="px-2 py-1 rounded-md text-[11px] font-semibold text-blue-600 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
                                 title="Distribute target down to child nodes based on 2026 proportions"
                               >
                                 Delegate ↓
@@ -928,9 +928,9 @@ export function TargetScenarioPage() {
         {/* ================= TAB 2: VISUAL WATERFALL DELEGATION ================= */}
         {activeTab === "flow" && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-sm space-y-6">
+            <div className="p-6 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-6">
               <div>
-                <h3 className="text-base font-black text-slate-900 tracking-tight">Cascading Target Flow Diagram</h3>
+                <h3 className="text-base font-semibold text-slate-900 tracking-tight">Cascading Target Flow Diagram</h3>
                 <p className="text-xs text-slate-500">Visual cascading pipeline from Central HQ Target down to Clinical CoEs, Settings, and Market Segments</p>
               </div>
 
@@ -939,19 +939,19 @@ export function TargetScenarioPage() {
                 {/* Column 1: Central PKT */}
                 <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3 flex flex-col justify-between">
                   <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block">Level 0: Network HQ</span>
-                    <h4 className="text-lg font-black text-white mt-1">PKT Consolidated</h4>
-                    <div className="text-2xl font-black text-emerald-400 mt-2">
+                    <span className="text-[11px] font-semibold text-slate-400 block">Level 0: Network HQ</span>
+                    <h4 className="text-lg font-semibold text-white mt-1">PKT Consolidated</h4>
+                    <div className="text-2xl font-semibold text-emerald-400 mt-2">
                       ฿{formatMB(pktNode?.targetRev27 || 0)} MB
                     </div>
                     <div className="text-xs text-slate-400 mt-1">
-                      YoY Growth: <span className="text-emerald-400 font-bold">{formatPct(pktNode?.growthRevPct || 0)}</span>
+                      YoY Growth: <span className="text-emerald-400 font-semibold">{formatPct(pktNode?.growthRevPct || 0)}</span>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleOpenDelegateModal("PKT")}
-                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <span>Delegate to 3 Sites</span>
                     <ArrowRight className="h-3.5 w-3.5" />
@@ -960,23 +960,23 @@ export function TargetScenarioPage() {
 
                 {/* Column 2: 3 Sites */}
                 <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 space-y-3">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-700 block">Level 1: Hospital Sites</span>
+                  <span className="text-[11px] font-semibold text-blue-700 block">Level 1: Hospital Sites</span>
                   <div className="space-y-2">
                     {TARGET_SITES.map((site) => {
                       const sNode = tree[site];
                       const prof = HOSPITAL_PROFILES[site] || HOSPITAL_PROFILES["BPK"];
                       return (
                         <div key={site} className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold">
+                          <div className="flex items-center justify-between text-xs font-semibold">
                             <span style={{ color: prof.color }}>{site}</span>
-                            <span className="text-slate-900 font-black">฿{formatMB(sNode?.targetRev27 || 0)} MB</span>
+                            <span className="text-slate-900 font-semibold">฿{formatMB(sNode?.targetRev27 || 0)} MB</span>
                           </div>
                           <div className="flex items-center justify-between text-[11px] text-slate-400">
                             <span>{formatPct(sNode?.growthRevPct || 0)} YoY</span>
                             <button
                               type="button"
                               onClick={() => handleOpenDelegateModal(site)}
-                              className="text-blue-600 hover:underline font-bold text-[10px]"
+                              className="text-blue-600 hover:underline font-semibold text-[11px]"
                             >
                               Delegate to CoE ↓
                             </button>
@@ -989,7 +989,7 @@ export function TargetScenarioPage() {
 
                 {/* Column 3: Care Setting (OPD vs IPD) */}
                 <div className="p-4 rounded-2xl bg-cyan-50/60 border border-cyan-100 space-y-3">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-cyan-800 block">Level 3: Care Setting</span>
+                  <span className="text-[11px] font-semibold text-cyan-800 block">Level 3: Care Setting</span>
                   {(() => {
                     let opdTotal = 0;
                     let ipdTotal = 0;
@@ -1003,9 +1003,9 @@ export function TargetScenarioPage() {
                     return (
                       <div className="space-y-3">
                         <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
                             <span>OPD (Outpatient)</span>
-                            <span className="font-black text-cyan-700">฿{formatMB(opdTotal)} MB</span>
+                            <span className="font-semibold text-cyan-700">฿{formatMB(opdTotal)} MB</span>
                           </div>
                           <div className="text-[11px] text-slate-400">
                             Share: {((opdTotal / (opdTotal + ipdTotal)) * 100).toFixed(1)}% of Revenue
@@ -1013,9 +1013,9 @@ export function TargetScenarioPage() {
                         </div>
 
                         <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
                             <span>IPD (Inpatient)</span>
-                            <span className="font-black text-cyan-700">฿{formatMB(ipdTotal)} MB</span>
+                            <span className="font-semibold text-cyan-700">฿{formatMB(ipdTotal)} MB</span>
                           </div>
                           <div className="text-[11px] text-slate-400">
                             Share: {((ipdTotal / (opdTotal + ipdTotal)) * 100).toFixed(1)}% of Revenue
@@ -1028,7 +1028,7 @@ export function TargetScenarioPage() {
 
                 {/* Column 4: Market Segments */}
                 <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-100 space-y-3">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-purple-800 block">Level 4: Market Segments</span>
+                  <span className="text-[11px] font-semibold text-purple-800 block">Level 4: Market Segments</span>
                   {(() => {
                     let thaiTotal = 0;
                     let expatTotal = 0;
@@ -1047,25 +1047,25 @@ export function TargetScenarioPage() {
                     return (
                       <div className="space-y-2">
                         <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
                             <span>Thai Patients</span>
-                            <span className="font-black text-slate-900">฿{formatMB(thaiTotal)} MB</span>
+                            <span className="font-semibold text-slate-900">฿{formatMB(thaiTotal)} MB</span>
                           </div>
                           <div className="text-[11px] text-slate-400">{((thaiTotal / grandMkt) * 100).toFixed(1)}% share</div>
                         </div>
 
                         <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
                             <span>Expat Residents</span>
-                            <span className="font-black text-slate-900">฿{formatMB(expatTotal)} MB</span>
+                            <span className="font-semibold text-slate-900">฿{formatMB(expatTotal)} MB</span>
                           </div>
                           <div className="text-[11px] text-slate-400">{((expatTotal / grandMkt) * 100).toFixed(1)}% share</div>
                         </div>
 
                         <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                          <div className="flex items-center justify-between text-xs font-bold text-purple-700">
+                          <div className="flex items-center justify-between text-xs font-semibold text-purple-700">
                             <span>Fly-in (International)</span>
-                            <span className="font-black text-purple-700">฿{formatMB(flyInTotal)} MB</span>
+                            <span className="font-semibold text-purple-700">฿{formatMB(flyInTotal)} MB</span>
                           </div>
                           <div className="text-[11px] text-purple-400">{((flyInTotal / grandMkt) * 100).toFixed(1)}% share</div>
                         </div>
@@ -1081,15 +1081,15 @@ export function TargetScenarioPage() {
         {/* ================= TAB 3: MARKET SEGMENT CROSS-TAB MATRIX ================= */}
         {activeTab === "matrix" && (
           <div className="space-y-4 animate-in fade-in duration-200">
-            <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-sm space-y-4">
+            <div className="p-6 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-4">
               <div>
-                <h3 className="text-base font-black text-slate-900 tracking-tight">Market Segment &amp; Setting Matrix (2027 Projections)</h3>
+                <h3 className="text-base font-semibold text-slate-900 tracking-tight">Market Segment &amp; Setting Matrix (2027 Projections)</h3>
                 <p className="text-xs text-slate-500">Cross-tabulation breakdown of clinical specialties across Thai, Expat, and International Fly-in patients</p>
               </div>
 
               <div className="overflow-x-auto rounded-2xl border border-slate-200">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
                     <tr>
                       <th className="py-3 px-4 min-w-[200px]">Hospital &amp; Specialty</th>
                       <th className="py-3 px-3 text-right">Base 2026</th>
@@ -1099,8 +1099,8 @@ export function TargetScenarioPage() {
                       <th className="py-3 px-3 text-right text-cyan-700 bg-cyan-50/50">Expat IPD</th>
                       <th className="py-3 px-3 text-right text-purple-700 bg-purple-50/50">Fly-in OPD</th>
                       <th className="py-3 px-3 text-right text-purple-700 bg-purple-50/50">Fly-in IPD</th>
-                      <th className="py-3 px-4 text-right font-black text-slate-900">Total 2027</th>
-                      <th className="py-3 px-3 text-right font-black text-emerald-600">YoY %</th>
+                      <th className="py-3 px-4 text-right font-semibold text-slate-900">Total 2027</th>
+                      <th className="py-3 px-3 text-right font-semibold text-emerald-600">YoY %</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1108,10 +1108,10 @@ export function TargetScenarioPage() {
                       <tr key={row.id} className="hover:bg-slate-50/80 transition">
                         <td className="py-2.5 px-4">
                           <div className="flex items-center gap-2">
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700">
+                            <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700">
                               {row.site}
                             </span>
-                            <span className="font-bold text-slate-900">{row.name}</span>
+                            <span className="font-semibold text-slate-900">{row.name}</span>
                           </div>
                         </td>
                         <td className="py-2.5 px-3 text-right text-slate-500">฿{formatMB(row.baseRev)}</td>
@@ -1119,10 +1119,10 @@ export function TargetScenarioPage() {
                         <td className="py-2.5 px-3 text-right text-slate-700 font-mono">฿{formatMB(row.ipd.thai)}</td>
                         <td className="py-2.5 px-3 text-right text-slate-700 font-mono">฿{formatMB(row.opd.expat)}</td>
                         <td className="py-2.5 px-3 text-right text-slate-700 font-mono">฿{formatMB(row.ipd.expat)}</td>
-                        <td className="py-2.5 px-3 text-right text-purple-700 font-mono font-bold">฿{formatMB(row.opd.flyIn)}</td>
-                        <td className="py-2.5 px-3 text-right text-purple-700 font-mono font-bold">฿{formatMB(row.ipd.flyIn)}</td>
-                        <td className="py-2.5 px-4 text-right font-black text-slate-900">฿{formatMB(row.targetRev)}</td>
-                        <td className="py-2.5 px-3 text-right font-black text-emerald-600">{formatPct(row.growthPct)}</td>
+                        <td className="py-2.5 px-3 text-right text-purple-700 font-mono font-semibold">฿{formatMB(row.opd.flyIn)}</td>
+                        <td className="py-2.5 px-3 text-right text-purple-700 font-mono font-semibold">฿{formatMB(row.ipd.flyIn)}</td>
+                        <td className="py-2.5 px-4 text-right font-semibold text-slate-900">฿{formatMB(row.targetRev)}</td>
+                        <td className="py-2.5 px-3 text-right font-semibold text-emerald-600">{formatPct(row.growthPct)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1135,16 +1135,16 @@ export function TargetScenarioPage() {
         {/* ================= TAB 4: SAVED SCENARIOS & SUPABASE ================= */}
         {activeTab === "scenarios" && (
           <div className="space-y-4 animate-in fade-in duration-200">
-            <div className="p-6 rounded-3xl bg-white border border-slate-200/90 shadow-sm space-y-4">
+            <div className="p-6 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <h3 className="text-base font-black text-slate-900 tracking-tight">Supabase Scenario Vault</h3>
+                  <h3 className="text-base font-semibold text-slate-900 tracking-tight">Supabase Scenario Vault</h3>
                   <p className="text-xs text-slate-500">Persisted target scenarios with full cascading parameters stored in Supabase</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowSaveModal(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer shadow-xs inline-flex items-center gap-1.5"
                 >
                   <Plus className="h-4 w-4" />
                   <span>Save New Scenario</span>
@@ -1154,7 +1154,7 @@ export function TargetScenarioPage() {
               {/* Scenarios Table */}
               <div className="rounded-2xl border border-slate-200 overflow-hidden">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-[11px]">
                     <tr>
                       <th className="py-3 px-4">Scenario Name</th>
                       <th className="py-3 px-4">Domain / Category</th>
@@ -1173,10 +1173,10 @@ export function TargetScenarioPage() {
                       return (
                         <tr key={sc.id} className={clsx("hover:bg-slate-50/80 transition", isActive && "bg-blue-50/40")}>
                           <td className="py-3 px-4">
-                            <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <div className="font-semibold text-slate-900 flex items-center gap-2">
                               <span>{sc.name}</span>
                               {isActive && (
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-blue-600 text-white">
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-600 text-white">
                                   ACTIVE
                                 </span>
                               )}
@@ -1184,18 +1184,18 @@ export function TargetScenarioPage() {
                             {sc.description && <div className="text-[11px] text-slate-400 mt-0.5">{sc.description}</div>}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[10px]">
+                            <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]">
                               {sc.store_label || sc.store_key}
                             </span>
                           </td>
                           <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
                             {sc.saved_at_label || new Date(sc.created_at).toLocaleDateString()}
                           </td>
-                          <td className="py-3 px-4 text-right font-black text-slate-900">
+                          <td className="py-3 px-4 text-right font-semibold text-slate-900">
                             {rev > 0 ? `฿${formatMB(rev)} MB` : "—"}
                           </td>
                           <td className="py-3 px-4 text-center">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
                               <CheckCircle2 className="h-3 w-3" /> Supabase
                             </span>
                           </td>
@@ -1204,7 +1204,7 @@ export function TargetScenarioPage() {
                               <button
                                 type="button"
                                 onClick={() => handleLoadScenario(sc)}
-                                className="px-2.5 py-1 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
+                                className="px-2.5 py-1 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
                               >
                                 Load
                               </button>
@@ -1234,14 +1234,14 @@ export function TargetScenarioPage() {
       {/* ========================================================================= */}
       {showSaveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
                   <Save className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Save Scenario to Supabase</h3>
+                  <h3 className="text-base font-semibold text-slate-900">Save Scenario to Supabase</h3>
                   <p className="text-xs text-slate-500">Persist full 5-tier cascading parameters to cloud</p>
                 </div>
               </div>
@@ -1256,7 +1256,7 @@ export function TargetScenarioPage() {
 
             <form onSubmit={handleSaveScenarioSubmit} className="space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Scenario Name *</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Scenario Name *</label>
                 <input
                   type="text"
                   required
@@ -1268,7 +1268,7 @@ export function TargetScenarioPage() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Description (Optional)</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Description (Optional)</label>
                 <textarea
                   rows={2}
                   value={newScenarioDesc}
@@ -1281,11 +1281,11 @@ export function TargetScenarioPage() {
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-1">
                 <div className="flex justify-between text-slate-600">
                   <span>PKT Central Target:</span>
-                  <span className="font-black text-slate-900">฿{formatMB(pktNode?.targetRev27 || 0)} MB</span>
+                  <span className="font-semibold text-slate-900">฿{formatMB(pktNode?.targetRev27 || 0)} MB</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
                   <span>YoY Growth:</span>
-                  <span className="font-bold text-emerald-600">{formatPct(pktNode?.growthRevPct || 0)}</span>
+                  <span className="font-semibold text-emerald-600">{formatPct(pktNode?.growthRevPct || 0)}</span>
                 </div>
               </div>
 
@@ -1293,14 +1293,14 @@ export function TargetScenarioPage() {
                 <button
                   type="button"
                   onClick={() => setShowSaveModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border transition cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 border transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={syncStatus === "saving"}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer shadow-xs inline-flex items-center gap-1.5"
                 >
                   <Save className="h-4 w-4" />
                   <span>{syncStatus === "saving" ? "Saving..." : "Save to Cloud"}</span>
@@ -1317,12 +1317,12 @@ export function TargetScenarioPage() {
           <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <div>
-                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
                   <GitBranch className="h-5 w-5 text-blue-600" />
                   <span>กระจายเป้าหมาย (Target Delegation)</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  โหนด: <span className="font-bold text-slate-800">{tree[delegateModalNodeId]?.name}</span> • เป้าหมาย: <span className="font-black text-blue-700">฿{formatMB(tree[delegateModalNodeId]?.targetRev27 || 0)} MB</span>
+                  โหนด: <span className="font-semibold text-slate-800">{tree[delegateModalNodeId]?.name}</span> • เป้าหมาย: <span className="font-semibold text-blue-700">฿{formatMB(tree[delegateModalNodeId]?.targetRev27 || 0)} MB</span>
                 </p>
               </div>
               <button
@@ -1334,7 +1334,7 @@ export function TargetScenarioPage() {
               </button>
             </div>
 
-            <p className="text-xs text-slate-700 font-bold mb-3">
+            <p className="text-xs text-slate-700 font-semibold mb-3">
               เลือกวิธีกระจายเป้าหมายสู่หน่วยงานย่อย ({tree[delegateModalNodeId]?.childrenKeys.length || 0} หน่วย):
             </p>
 
@@ -1358,10 +1358,10 @@ export function TargetScenarioPage() {
                 />
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-slate-900">
+                    <span className="text-xs font-semibold text-slate-900">
                       1. Preserved Strategic Profile (สัดส่วนกลยุทธ์เดิม)
                     </span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
                       แนะนำมาตรฐาน
                     </span>
                   </div>
@@ -1389,7 +1389,7 @@ export function TargetScenarioPage() {
                   className="mt-0.5 text-blue-600 cursor-pointer"
                 />
                 <div>
-                  <span className="text-xs font-black text-slate-900">
+                  <span className="text-xs font-semibold text-slate-900">
                     2. Strategic Tiered Weighted (แบ่งน้ำหนักตามระดับกลยุทธ์)
                   </span>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
@@ -1416,7 +1416,7 @@ export function TargetScenarioPage() {
                   className="mt-0.5 text-blue-600 cursor-pointer"
                 />
                 <div>
-                  <span className="text-xs font-black text-slate-900">
+                  <span className="text-xs font-semibold text-slate-900">
                     3. Core Lock + Plug to Usual (ล็อคเป้า CoE แล้วให้ Usual รับส่วนต่าง)
                   </span>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
@@ -1443,7 +1443,7 @@ export function TargetScenarioPage() {
                   className="mt-0.5 text-blue-600 cursor-pointer"
                 />
                 <div>
-                  <span className="text-xs font-black text-slate-900">
+                  <span className="text-xs font-semibold text-slate-900">
                     4. Historical Base Proportional (ตามสัดส่วนฐานจริงเดิมปี 2026)
                   </span>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
@@ -1457,14 +1457,14 @@ export function TargetScenarioPage() {
               <button
                 type="button"
                 onClick={() => setDelegateModalNodeId(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
               >
                 ยกเลิก (Cancel)
               </button>
               <button
                 type="button"
                 onClick={() => handleExecuteDelegation(delegateModalNodeId, selectedDelegationMode)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition cursor-pointer inline-flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition cursor-pointer inline-flex items-center gap-1.5"
               >
                 <Check className="h-4 w-4" />
                 <span>ยืนยันการกระจายเป้า (Apply)</span>

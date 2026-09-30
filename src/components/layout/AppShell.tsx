@@ -319,7 +319,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-paper text-slate-800 flex font-sans select-none">
+    <div className="h-screen w-screen overflow-hidden bg-paper text-slate-800 flex font-sans">
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-ink/50 backdrop-blur-[2px] md:hidden" onClick={() => setMobileOpen(false)} />
       )}

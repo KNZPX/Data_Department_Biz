@@ -148,19 +148,19 @@ export function UserManagementPage() {
   ).length;
 
   return (
-    <div className="h-full overflow-y-auto pr-1 space-y-4 pb-12 font-sans select-none">
+    <div className="h-full overflow-y-auto pr-1 space-y-4 pb-12 font-sans">
       {/* 1. TOP HEADER & COMPACT KPI STRIP */}
-      <div className="bg-white rounded-3xl p-5 shadow-xs border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-2xl bg-blue-50 text-blue-600 shadow-xs">
             <ShieldCheck className="h-5 w-5 stroke-[2.2]" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-900 tracking-tight">
+              <h1 className="text-base font-semibold text-slate-900 tracking-tight">
                 User Management & Security Audit
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-200">
                 Live Supabase DB
               </span>
             </div>
@@ -175,24 +175,24 @@ export function UserManagementPage() {
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-1.5 rounded-2xl">
             <Users className="h-4 w-4 text-blue-600" />
             <div className="text-left">
-              <span className="text-[10px] font-bold text-slate-400 uppercase block leading-none">Users</span>
-              <span className="text-xs font-bold text-slate-800 font-mono">{users.length}</span>
+              <span className="text-[11px] font-semibold text-slate-400 block leading-none">Users</span>
+              <span className="text-xs font-semibold text-slate-800 font-mono">{users.length}</span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-1.5 rounded-2xl">
             <UserCheck className="h-4 w-4 text-emerald-600" />
             <div className="text-left">
-              <span className="text-[10px] font-bold text-slate-400 uppercase block leading-none">Sessions</span>
-              <span className="text-xs font-bold text-slate-800 font-mono">{totalSessions}</span>
+              <span className="text-[11px] font-semibold text-slate-400 block leading-none">Sessions</span>
+              <span className="text-xs font-semibold text-slate-800 font-mono">{totalSessions}</span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-1.5 rounded-2xl">
             <History className="h-4 w-4 text-purple-600" />
             <div className="text-left">
-              <span className="text-[10px] font-bold text-slate-400 uppercase block leading-none">Audit Logs</span>
-              <span className="text-xs font-bold text-slate-800 font-mono">{logs.length}</span>
+              <span className="text-[11px] font-semibold text-slate-400 block leading-none">Audit Logs</span>
+              <span className="text-xs font-semibold text-slate-800 font-mono">{logs.length}</span>
             </div>
           </div>
 
@@ -242,7 +242,7 @@ export function UserManagementPage() {
             type="button"
             onClick={() => setActiveTab("users")}
             className={clsx(
-              "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition",
+              "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition",
               activeTab === "users"
                 ? "bg-blue-600 text-white shadow-xs"
                 : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80"
@@ -256,7 +256,7 @@ export function UserManagementPage() {
             type="button"
             onClick={() => setActiveTab("audit")}
             className={clsx(
-              "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition",
+              "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition",
               activeTab === "audit"
                 ? "bg-blue-600 text-white shadow-xs"
                 : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80"
@@ -268,7 +268,7 @@ export function UserManagementPage() {
         </div>
 
         {activeTab === "audit" && restorableCount > 0 && (
-          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full font-bold">
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full font-semibold">
             <RotateCcw className="h-3 w-3" />
             <span>{restorableCount} changes restorable</span>
           </span>
@@ -302,13 +302,13 @@ export function UserManagementPage() {
           ) : filteredUsers.length === 0 ? (
             <EmptyState>
               <Users className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-bold text-slate-700">No users found</p>
+              <p className="text-sm font-semibold text-slate-700">No users found</p>
               <p className="text-xs text-slate-400">Users who sign into the portal will automatically appear here</p>
             </EmptyState>
           ) : (
-            <div className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-2xs">
+            <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-2xs">
               <table className="table w-full text-left text-xs">
-                <thead className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                <thead className="bg-slate-50/80 text-[11px] font-semibold text-slate-500 border-b border-slate-100">
                   <tr>
                     <th className="py-3 px-4">User</th>
                     <th className="py-3 px-4">Corporate Email</th>
@@ -335,12 +335,12 @@ export function UserManagementPage() {
                       <tr key={u.email} className="hover:bg-slate-50/60 transition">
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-600 text-white font-bold grid place-items-center text-xs shadow-xs">
+                            <div className="h-8 w-8 rounded-full bg-blue-600 text-white font-semibold grid place-items-center text-xs shadow-xs">
                               {initials}
                             </div>
                             <div>
-                              <p className="font-bold text-slate-900">{u.name}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">Azure Entra SSO</p>
+                              <p className="font-semibold text-slate-900">{u.name}</p>
+                              <p className="text-[11px] text-slate-400 font-mono">Azure Entra SSO</p>
                             </div>
                           </div>
                         </td>
@@ -348,7 +348,7 @@ export function UserManagementPage() {
                           {u.email}
                         </td>
                         <td className="py-3 px-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                             {u.loginCount} {u.loginCount === 1 ? "session" : "sessions"}
                           </span>
                         </td>
@@ -359,7 +359,7 @@ export function UserManagementPage() {
                           </div>
                         </td>
                         <td className="py-3 px-4">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                             Active
                           </span>
@@ -393,7 +393,7 @@ export function UserManagementPage() {
                   type="button"
                   onClick={() => setActionFilter(btn.id)}
                   className={clsx(
-                    "px-3 py-1 rounded-full text-xs font-bold transition",
+                    "px-3 py-1 rounded-full text-xs font-semibold transition",
                     actionFilter === btn.id
                       ? "bg-blue-600 text-white shadow-xs"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -424,13 +424,13 @@ export function UserManagementPage() {
           ) : filteredLogs.length === 0 ? (
             <EmptyState>
               <History className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-bold text-slate-700">No activity logs found</p>
+              <p className="text-sm font-semibold text-slate-700">No activity logs found</p>
               <p className="text-xs text-slate-400">All system events, user logins, and updates will be logged here</p>
             </EmptyState>
           ) : (
-            <div className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-2xs">
+            <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-2xs">
               <table className="table w-full text-left text-xs">
-                <thead className="bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                <thead className="bg-slate-50/80 text-[11px] font-semibold text-slate-500 border-b border-slate-100">
                   <tr>
                     <th className="py-3 px-4">Action</th>
                     <th className="py-3 px-4">Event Description</th>
@@ -473,7 +473,7 @@ export function UserManagementPage() {
                         <td className="py-3 px-4 whitespace-nowrap">
                           <span
                             className={clsx(
-                              "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border",
+                              "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border",
                               isLogin && "bg-blue-50 text-blue-700 border-blue-200",
                               isCreate && "bg-emerald-50 text-emerald-700 border-emerald-200",
                               isUpdate && "bg-amber-50 text-amber-700 border-amber-200",
@@ -493,10 +493,10 @@ export function UserManagementPage() {
                         {/* Summary Description & Entity */}
                         <td className="py-3 px-4 min-w-[280px]">
                           <div>
-                            <p className="font-bold text-slate-900 leading-snug">
+                            <p className="font-semibold text-slate-900 leading-snug">
                               {log.summary}
                             </p>
-                            <div className="flex items-center gap-2 mt-0.5 text-[10px] font-mono text-slate-400">
+                            <div className="flex items-center gap-2 mt-0.5 text-[11px] font-mono text-slate-400">
                               <span className="font-semibold text-slate-600">
                                 {log.entity_table}
                               </span>
@@ -508,7 +508,7 @@ export function UserManagementPage() {
                                   onClick={() =>
                                     setExpandedPayloadId(isPayloadExpanded ? null : log.id)
                                   }
-                                  className="text-blue-600 hover:underline font-bold ml-1"
+                                  className="text-blue-600 hover:underline font-semibold ml-1"
                                 >
                                   {isPayloadExpanded ? "Hide Details" : "View Payload"}
                                 </button>
@@ -517,10 +517,10 @@ export function UserManagementPage() {
 
                             {/* Collapsible JSON payload */}
                             {isPayloadExpanded && (
-                              <div className="mt-2 p-2.5 rounded-xl bg-slate-900 text-emerald-400 font-mono text-[10px] max-h-48 overflow-y-auto">
+                              <div className="mt-2 p-2.5 rounded-xl bg-slate-900 text-emerald-400 font-mono text-[11px] max-h-48 overflow-y-auto">
                                 {log.before && (
                                   <div className="mb-2">
-                                    <span className="text-rose-400 font-bold block">BEFORE:</span>
+                                    <span className="text-rose-400 font-semibold block">BEFORE:</span>
                                     <pre className="whitespace-pre-wrap">
                                       {JSON.stringify(log.before, null, 2)}
                                     </pre>
@@ -528,7 +528,7 @@ export function UserManagementPage() {
                                 )}
                                 {log.after && (
                                   <div>
-                                    <span className="text-emerald-400 font-bold block">AFTER:</span>
+                                    <span className="text-emerald-400 font-semibold block">AFTER:</span>
                                     <pre className="whitespace-pre-wrap">
                                       {JSON.stringify(log.after, null, 2)}
                                     </pre>
@@ -552,7 +552,7 @@ export function UserManagementPage() {
                         {/* Restore Button */}
                         <td className="py-3 px-4 text-right whitespace-nowrap">
                           {log.is_restored ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-500">
                               <CheckCircle2 className="h-3 w-3 text-emerald-600" />
                               Restored
                             </span>
@@ -562,7 +562,7 @@ export function UserManagementPage() {
                               onClick={() => handleRestore(log.id)}
                               disabled={restoringId === log.id}
                               title="Restore previous state / undo this action"
-                              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition shadow-2xs disabled:opacity-50"
+                              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition shadow-2xs disabled:opacity-50"
                             >
                               <RotateCcw
                                 className={clsx(

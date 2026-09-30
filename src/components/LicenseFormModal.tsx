@@ -96,7 +96,7 @@ export function LicenseFormModal({
 
   return (
     <Modal className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-900/50 p-3 backdrop-blur-xs sm:p-6 animate-in fade-in duration-150">
-      <Panel className="my-auto w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl border border-slate-200/90 sm:p-6">
+      <Panel className="my-auto w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl border border-slate-200/90 sm:p-6">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
           <div className="flex items-center gap-3">
@@ -104,7 +104,7 @@ export function LicenseFormModal({
               <Key className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900 sm:text-lg">
+              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
                 {isNew ? "Add Power BI License Record" : "Edit Power BI License Record"}
               </h2>
               <p className="text-xs text-slate-500">
@@ -153,7 +153,7 @@ export function LicenseFormModal({
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {error ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-700 flex items-center gap-2">
-              <span className="font-bold">Error:</span> {error}
+              <span className="font-semibold">Error:</span> {error}
             </div>
           ) : null}
 
@@ -409,7 +409,7 @@ export function LicenseFormModal({
 
               {/* Creator Metadata */}
               <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-blue-900">
+                <div className="flex items-center gap-2 text-xs font-semibold text-blue-900">
                   <Info className="h-4 w-4 text-blue-600" />
                   <span>Requester & Creator Record Information</span>
                 </div>
@@ -469,7 +469,7 @@ export function LicenseFormModal({
             <div className="space-y-4">
               {/* Phuket Groups */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="text-xs font-bold uppercase tracking-wider text-purple-700 mb-2 flex items-center gap-1.5">
+                <div className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5 text-purple-600" />
                   <span>Phuket Security Groups (5)</span>
                 </div>
@@ -507,7 +507,7 @@ export function LicenseFormModal({
 
               {/* Site Groups */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
-                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2 flex items-center gap-1.5">
+                <div className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5 text-indigo-600" />
                   <span>Site Security Groups (5)</span>
                 </div>

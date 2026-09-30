@@ -86,7 +86,7 @@ export function ChangeLogPage() {
               type="button"
               onClick={() => setActionFilter("all")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-bold transition",
+                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
                 actionFilter === "all" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
               )}
             >
@@ -96,7 +96,7 @@ export function ChangeLogPage() {
               type="button"
               onClick={() => setActionFilter("publish")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-bold transition",
+                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
                 actionFilter === "publish" ? "bg-blue-500 text-white shadow-xs" : "text-slate-600 hover:text-blue-500"
               )}
             >
@@ -106,7 +106,7 @@ export function ChangeLogPage() {
               type="button"
               onClick={() => setActionFilter("update")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-bold transition",
+                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
                 actionFilter === "update" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
               )}
             >
@@ -166,7 +166,7 @@ export function ChangeLogPage() {
                   <div className="flex items-start gap-3 min-w-0">
                     <span
                       className={clsx(
-                        "rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase border shrink-0",
+                        "rounded-full px-2.5 py-0.5 text-[11px] font-semibold border shrink-0",
                         isPublish
                           ? "bg-blue-500/15 text-blue-600 border-blue-500/25"
                           : "bg-blue-600/10 text-blue-600 border-blue-600/20"
@@ -175,7 +175,7 @@ export function ChangeLogPage() {
                       {isPublish ? "PUBLISH" : "UPDATE"}
                     </span>
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900 leading-snug">{log.summary}</h4>
+                      <h4 className="text-sm font-semibold text-slate-900 leading-snug">{log.summary}</h4>
                       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                         {log.changed_by ? (
                           <span className="flex items-center gap-1 font-medium text-slate-700">

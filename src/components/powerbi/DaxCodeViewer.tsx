@@ -62,13 +62,13 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
     switch (token.type) {
       case "function":
         return (
-          <span key={index} className="text-sky-400 font-bold" title="DAX Function">
+          <span key={index} className="text-sky-400 font-semibold" title="DAX Function">
             {token.value}
           </span>
         );
       case "keyword":
         return (
-          <span key={index} className="text-indigo-400 font-extrabold uppercase tracking-wide" title="DAX Keyword">
+          <span key={index} className="text-indigo-400 font-semibold" title="DAX Keyword">
             {token.value}
           </span>
         );
@@ -96,7 +96,7 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
         );
       case "operator":
         return (
-          <span key={index} className="text-rose-400 font-bold px-0.5" title="Operator">
+          <span key={index} className="text-rose-400 font-semibold px-0.5" title="Operator">
             {token.value}
           </span>
         );
@@ -149,17 +149,17 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
       )}
     >
       {/* Top Ribbon / Toolbox Bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#0e1626] border-b border-slate-800/80 text-[11px] select-none">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#0e1626] border-b border-slate-800/80 text-[11px]">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 text-slate-400">
             <FileCode className="h-3.5 w-3.5 text-blue-400" />
-            <span className="font-bold text-slate-300 uppercase tracking-wider text-[10px]">
+            <span className="font-semibold text-slate-300 text-[11px]">
               {title}
             </span>
           </div>
 
           {/* Syntax Legend Pill Indicators */}
-          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-800 text-[9px] text-slate-400">
+          <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-800 text-[11px] text-slate-400">
             <span className="flex items-center gap-1">
               <span className="h-2 w-2 rounded-full bg-sky-400" />
               <span>Function</span>
@@ -186,7 +186,7 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
               type="button"
               onClick={() => setIsFormatted((prev) => !prev)}
               className={clsx(
-                "flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer",
+                "flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition cursor-pointer",
                 isFormatted
                   ? "bg-blue-600/30 text-blue-300 border border-blue-500/40 hover:bg-blue-600/40"
                   : "bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700"
@@ -202,7 +202,7 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
           <button
             type="button"
             onClick={() => setViewMode((prev) => (prev === "highlighted" ? "raw" : "highlighted"))}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 text-[10px] font-medium transition cursor-pointer"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 text-[11px] font-medium transition cursor-pointer"
             title="Toggle between highlighted code and plain raw text"
           >
             {viewMode === "highlighted" ? (
@@ -232,7 +232,7 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px] shadow-xs transition cursor-pointer active:scale-95"
+            className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] shadow-xs transition cursor-pointer active:scale-95"
           >
             {copied ? (
               <>
@@ -258,7 +258,7 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
       >
         {/* Line Numbers Gutter */}
         {showLineNumbers && (
-          <div className="select-none text-slate-600 text-right pr-3 mr-3 border-r border-slate-800/80 font-mono text-[11px] leading-relaxed shrink-0">
+          <div className=" text-slate-600 text-right pr-3 mr-3 border-r border-slate-800/80 font-mono text-[11px] leading-relaxed shrink-0">
             {lines.map((_, i) => (
               <div key={i}>{i + 1}</div>
             ))}

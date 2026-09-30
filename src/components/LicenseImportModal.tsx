@@ -66,10 +66,10 @@ export function LicenseImportModal({
 
   return (
     <Modal className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-900/50 p-3 backdrop-blur-xs sm:p-6">
-      <Panel className="my-auto w-full max-w-2xl rounded-3xl bg-white p-5 shadow-2xl border border-slate-200/90 sm:p-6">
+      <Panel className="my-auto w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl border border-slate-200/90 sm:p-6">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
-            <h2 className="text-base font-bold text-slate-900 sm:text-lg">
+            <h2 className="text-base font-semibold text-slate-900 sm:text-lg">
               Import 2026 Power BI Licenses
             </h2>
             <p className="text-xs text-slate-500">
@@ -94,7 +94,7 @@ export function LicenseImportModal({
         {successCount !== null ? (
           <div className="my-8 flex flex-col items-center justify-center text-center space-y-2">
             <CheckCircle2 className="h-10 w-10 text-emerald-600 animate-bounce" />
-            <h3 className="text-base font-bold text-slate-900">Import Completed Successfully!</h3>
+            <h3 className="text-base font-semibold text-slate-900">Import Completed Successfully!</h3>
             <p className="text-xs text-slate-500">
               Successfully saved and synchronized {successCount} license records into the system.
             </p>
@@ -132,7 +132,7 @@ export function LicenseImportModal({
                     <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
                     <span>Sheet: {sheetName}</span>
                   </div>
-                  <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-bold border border-emerald-200/60">
+                  <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-semibold border border-emerald-200/60">
                     Detected {previewRows.length} rows
                   </span>
                 </div>
@@ -160,7 +160,7 @@ export function LicenseImportModal({
                   </table>
                 </div>
                 {previewRows.length > 10 ? (
-                  <div className="text-center text-[10px] text-slate-400">
+                  <div className="text-center text-[11px] text-slate-400">
                     ...and {previewRows.length - 10} more rows ready to import
                   </div>
                 ) : null}

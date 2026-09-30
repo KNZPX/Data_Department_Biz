@@ -27,7 +27,7 @@ export function Button({
         variant === "primary" && "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-xs",
         variant === "secondary" && "btn-outline border-slate-200 bg-white text-slate-800 hover:bg-blue-600/10 hover:border-blue-600/30 hover:text-blue-600",
         variant === "danger" && "bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-xs",
-        variant === "gold" && "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 font-bold shadow-xs",
+        variant === "gold" && "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 font-semibold shadow-xs",
         variant === "ghost" && "btn-ghost text-slate-600 hover:bg-blue-600/10 hover:text-blue-600",
         className,
       )}
@@ -94,7 +94,7 @@ export function ViewToggle<T extends string>({
             {option.count !== undefined ? (
               <span
                 className={clsx(
-                  "badge badge-xs ml-1 font-mono font-bold",
+                  "badge badge-xs ml-1 font-mono font-semibold",
                   active ? "bg-blue-500 text-white border-blue-500" : "badge-ghost text-slate-600",
                 )}
               >
@@ -129,7 +129,7 @@ export function Field({
     <div className={clsx("form-control w-full min-w-0 font-medium text-slate-800", dense ? "gap-1 text-xs" : "gap-1.5 text-sm", className)}>
       <label className="label py-0 justify-start gap-1 font-semibold text-slate-800">
         <span className="label-text font-semibold text-slate-800">{label}</span>
-        {required ? <span className="text-rose-500 font-bold">*</span> : null}
+        {required ? <span className="text-rose-500 font-semibold">*</span> : null}
       </label>
       {children}
       {hint && !error ? (
@@ -267,7 +267,7 @@ export function Textarea({ dense = false, ...props }: TextareaHTMLAttributes<HTM
 
 export function Panel({ children, className, dense = false }: { children: ReactNode; className?: string; dense?: boolean }) {
   return (
-    <div className={clsx("card bg-white border border-slate-200/80 shadow-xs rounded-3xl", dense ? "p-4 sm:p-5" : "p-5 sm:p-6", className)}>
+    <div className={clsx("card bg-white border border-slate-200/80 shadow-xs rounded-2xl", dense ? "p-4 sm:p-5" : "p-5 sm:p-6", className)}>
       {children}
     </div>
   );
@@ -309,7 +309,7 @@ export function StatCard({
   return (
     <div
       className={clsx(
-        "card bg-white border border-slate-200/80 p-4 sm:p-5 shadow-2xs rounded-3xl transition duration-200 hover:border-slate-300 hover:shadow-xs",
+        "card bg-white border border-slate-200/80 p-4 sm:p-5 shadow-2xs rounded-2xl transition duration-200 hover:border-slate-300 hover:shadow-xs",
         className,
       )}
     >
@@ -321,14 +321,14 @@ export function StatCard({
           </div>
         ) : null}
       </div>
-      <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 mt-1">{value}</div>
+      <div className="text-xl sm:text-2xl font-semibold font-mono text-slate-900 mt-1">{value}</div>
     </div>
   );
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="card border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center text-sm text-slate-500 rounded-3xl">
+    <div className="card border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center text-sm text-slate-500 rounded-2xl">
       {children}
     </div>
   );

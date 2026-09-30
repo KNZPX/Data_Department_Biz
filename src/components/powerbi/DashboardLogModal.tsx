@@ -199,7 +199,7 @@ export function DashboardLogModal({
 
   return (
     <Modal className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-900/50 p-3 backdrop-blur-xs sm:p-6 animate-in fade-in duration-150">
-      <Panel className="my-auto w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl border border-slate-200/90 sm:p-6">
+      <Panel className="my-auto w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl border border-slate-200/90 sm:p-6">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="flex items-start gap-3 min-w-0">
@@ -209,18 +209,18 @@ export function DashboardLogModal({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
                 {item.reportCode ? (
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 font-mono text-xs font-bold text-blue-700 border border-blue-200/80">
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 font-mono text-xs font-semibold text-blue-700 border border-blue-200/80">
                     {item.reportCode}
                   </span>
                 ) : null}
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                   {item.workspaceName}
                 </span>
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 uppercase">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                   {item.kind}
                 </span>
               </div>
-              <h2 className="mt-1 text-base font-bold text-slate-900 break-words sm:text-lg">
+              <h2 className="mt-1 text-base font-semibold text-slate-900 break-words sm:text-lg">
                 {item.reportTitle}
               </h2>
               {item.description ? (
@@ -282,27 +282,27 @@ export function DashboardLogModal({
         {/* Quick KPI Stats Summary */}
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
           <div className="rounded-2xl border border-[#002D72]/20 bg-[#002D72]/5 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-[#002D72] uppercase">Total Publishes</div>
-            <div className="mt-0.5 text-base font-black text-[#002D72]">{totalPublishes} times</div>
+            <div className="text-[11px] font-semibold text-[#002D72]">Total Publishes</div>
+            <div className="mt-0.5 text-base font-semibold text-[#002D72]">{totalPublishes} times</div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-slate-500 uppercase">First Published</div>
-            <div className="mt-0.5 text-[11px] font-bold text-slate-800 truncate">{firstPublishDateStr}</div>
+            <div className="text-[11px] font-semibold text-slate-500">First Published</div>
+            <div className="mt-0.5 text-[11px] font-semibold text-slate-800 truncate">{firstPublishDateStr}</div>
           </div>
           <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/40 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-emerald-600 uppercase">Latest Version</div>
-            <div className="mt-0.5 text-[11px] font-bold text-emerald-900 truncate">{latestPublishDateStr}</div>
+            <div className="text-[11px] font-semibold text-emerald-600">Latest Version</div>
+            <div className="mt-0.5 text-[11px] font-semibold text-emerald-900 truncate">{latestPublishDateStr}</div>
           </div>
           <div className="rounded-2xl border border-blue-600/20 bg-blue-600/5 p-2.5 text-center">
-            <div className="text-[10px] font-bold text-blue-600 uppercase">Audit Database</div>
-            <div className="mt-0.5 text-[11px] font-bold text-blue-600">Biz-Analytic Cloud</div>
+            <div className="text-[11px] font-semibold text-blue-600">Audit Database</div>
+            <div className="mt-0.5 text-[11px] font-semibold text-blue-600">Biz-Analytic Cloud</div>
           </div>
         </div>
 
         {/* Change Log History Timeline & Table */}
         <div className="mt-4">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5 text-slate-500" />
               <span>Publish Version History</span>
             </h3>
@@ -312,7 +312,7 @@ export function DashboardLogModal({
                 type="button"
                 onClick={() => setViewMode("table")}
                 className={clsx(
-                  "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold transition",
+                  "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition",
                   viewMode === "table"
                     ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-500 hover:text-slate-900"
@@ -325,7 +325,7 @@ export function DashboardLogModal({
                 type="button"
                 onClick={() => setViewMode("timeline")}
                 className={clsx(
-                  "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold transition",
+                  "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition",
                   viewMode === "timeline"
                     ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-500 hover:text-slate-900"
@@ -344,8 +344,8 @@ export function DashboardLogModal({
             </div>
           ) : logs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-amber-200 bg-amber-50/40 p-5 text-xs text-slate-600 space-y-2">
-              <div className="flex items-center gap-2 font-bold text-slate-800">
-                <span className="inline-flex items-center justify-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200">
+              <div className="flex items-center gap-2 font-semibold text-slate-800">
+                <span className="inline-flex items-center justify-center rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-semibold text-purple-700 border border-purple-200">
                   CURRENT VERSION
                 </span>
                 <span>Active Production Version</span>
@@ -367,7 +367,7 @@ export function DashboardLogModal({
           ) : viewMode === "table" ? (
             <div className="mt-2 overflow-x-auto rounded-2xl border border-slate-200/90 shadow-2xs">
               <table className="table table-zebra table-sm w-full text-left text-xs">
-                <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                <thead className="bg-slate-100/80 text-slate-700 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3 whitespace-nowrap">Version</th>
                     <th className="py-2.5 px-3 whitespace-nowrap">Publish Timestamp</th>
@@ -385,7 +385,7 @@ export function DashboardLogModal({
                         <td className="py-2.5 px-3 whitespace-nowrap font-mono">
                           <span
                             className={clsx(
-                              "rounded-full px-2 py-0.5 text-[10px] font-bold border",
+                              "rounded-full px-2 py-0.5 text-[11px] font-semibold border",
                               isLatest
                                 ? "bg-purple-50 text-purple-700 border-purple-200"
                                 : "bg-blue-50 text-blue-700 border-blue-200"
@@ -406,7 +406,7 @@ export function DashboardLogModal({
                         <td className="py-2.5 px-3 whitespace-nowrap">
                           <span
                             className={clsx(
-                              "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
                               v.isInitial
                                 ? "bg-emerald-100 text-emerald-800"
                                 : "bg-purple-100/70 text-purple-800"
@@ -436,7 +436,7 @@ export function DashboardLogModal({
                   >
                     <div
                       className={clsx(
-                        "grid h-7 w-auto min-w-[50px] px-1.5 shrink-0 place-items-center rounded-full text-[10px] font-bold uppercase border font-mono",
+                        "grid h-7 w-auto min-w-[50px] px-1.5 shrink-0 place-items-center rounded-full text-[11px] font-semibold border font-mono",
                         isLatest
                           ? "bg-purple-50 text-purple-700 border-purple-200"
                           : "bg-blue-50 text-blue-700 border-blue-200"
@@ -452,12 +452,12 @@ export function DashboardLogModal({
                             {v.summary}
                           </span>
                           {isLatest ? (
-                            <span className="rounded-full bg-purple-50 px-1.5 py-0.2 text-[9px] font-bold text-purple-700 border border-purple-200">
+                            <span className="rounded-full bg-purple-50 px-1.5 py-0.2 text-[11px] font-semibold text-purple-700 border border-purple-200">
                               CURRENT
                             </span>
                           ) : null}
                         </div>
-                        <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                        <span className="text-[11px] text-slate-400 font-mono shrink-0">
                           {v.dateStr}
                         </span>
                       </div>
@@ -488,7 +488,7 @@ export function DashboardLogModal({
               href={item.webUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-blue-600 text-white px-4 py-2 text-xs font-bold hover:bg-blue-700 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-blue-600 text-white px-4 py-2 text-xs font-semibold hover:bg-blue-700 transition shadow-xs"
             >
               <Ticket className="h-4 w-4 text-[#FEF3C7]" />
               <span>Open on Power BI Service</span>
