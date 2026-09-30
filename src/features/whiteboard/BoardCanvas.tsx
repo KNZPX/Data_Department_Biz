@@ -263,25 +263,34 @@ export function BoardCanvas({
   const scheduleSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaveState("saving");
-    saveTimer.current = setTimeout(() => void save(elRef.current), 900);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      void save(elRef.current);
+    }, 900);
   }, [save]);
 
+  const metaRef = useRef(meta);
+  const nameRef = useRef(name);
+  metaRef.current = meta;
+  nameRef.current = name;
   useEffect(() => {
+    // Send a pending save before the page closes or the board unmounts.
     const flush = () => {
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-        const body = JSON.stringify({
-          board: { id: meta.id, name, folder_id: meta.folder_id, folder_name: meta.folder_name, description: meta.description, nodes: elRef.current },
-        });
-        navigator.sendBeacon?.("/api/whiteboard", new Blob([body], { type: "application/json" }));
-      }
+      if (!saveTimer.current) return;
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      const m = metaRef.current;
+      const body = JSON.stringify({
+        board: { id: m.id, name: nameRef.current, folder_id: m.folder_id, folder_name: m.folder_name, description: m.description, nodes: elRef.current },
+      });
+      navigator.sendBeacon?.("/api/whiteboard", new Blob([body], { type: "application/json" }));
     };
     window.addEventListener("beforeunload", flush);
     return () => {
       window.removeEventListener("beforeunload", flush);
       flush();
     };
-  }, [meta, name]);
+  }, []);
 
   // ------------------------------------------------------------------- commit
   /** Apply a new element list: history, broadcast diff, autosave. */
@@ -1731,9 +1740,11 @@ function ContextBar({
   const sep = <span className="mx-1 h-5 w-px bg-slate-200" />;
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
+  const sig = selected.map((e) => e.id + e.kind).join("|");
   useLayoutEffect(() => {
-    if (ref.current) setW(ref.current.offsetWidth);
-  });
+    const nw = ref.current?.offsetWidth || 0;
+    setW((old) => (Math.abs(old - nw) > 1 ? nw : old));
+  }, [sig, containerW]);
   // Keep the bar fully on screen; flip below the selection if there's no room above.
   const left = clamp(x - w / 2, 64, Math.max(64, containerW - w - 12));
   const top = y < 64 ? below : y;
