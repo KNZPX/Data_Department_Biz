@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlignCenterHorizontal,
   AlignEndVertical,
@@ -18,6 +18,7 @@ import {
   Hand,
   Hexagon,
   Link2,
+  Map as MapIcon,
   Lock,
   Maximize,
   Minus,
@@ -186,6 +187,7 @@ export function BoardCanvas({
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [name, setName] = useState(meta.name);
   const [toast, setToast] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const elRef = useRef(elements);
@@ -1355,8 +1357,10 @@ export function BoardCanvas({
       {/* Contextual toolbar */}
       {selBounds && !interaction && !editingId && (
         <ContextBar
-          x={clamp(toScreen(selBounds.x + selBounds.w / 2, 0).x, 180, (rootRef.current?.clientWidth || 800) - 180)}
-          y={Math.max(64, toScreen(0, selBounds.y).y - 56)}
+          x={toScreen(selBounds.x + selBounds.w / 2, 0).x}
+          y={toScreen(0, selBounds.y).y - 56}
+          below={toScreen(0, selBounds.y + selBounds.h).y + 12}
+          containerW={rootRef.current?.clientWidth || 800}
           selected={selected}
           onUpdate={(fn) => update(selection, fn)}
           onFront={() => {
@@ -1374,10 +1378,10 @@ export function BoardCanvas({
       )}
 
       {/* Bottom-right: minimap + zoom */}
-      <Minimap elements={elements} camera={camera} rootRef={rootRef} onJump={(x, y) => {
+      {showMap && <Minimap elements={elements} camera={camera} rootRef={rootRef} onJump={(x, y) => {
         const r = rootRef.current!.getBoundingClientRect();
         setCamera((c) => ({ ...c, x: r.width / 2 - x * c.zoom, y: r.height / 2 - y * c.zoom }));
-      }} />
+      }} />}
       <div data-ui className="absolute bottom-3 right-3 z-20 flex items-center gap-0.5 rounded-xl bg-white p-1 shadow-md ring-1 ring-slate-200/80">
         <button type="button" onClick={() => zoomAt(1 / 1.2)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Zoom out">
           <Minus className="h-4 w-4" />
@@ -1387,6 +1391,16 @@ export function BoardCanvas({
         </button>
         <button type="button" onClick={() => zoomAt(1.2)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Zoom in">
           <Plus className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowMap((v) => !v)}
+          aria-pressed={showMap}
+          className={clsx("grid h-8 w-8 place-items-center rounded-lg hover:bg-slate-100", showMap ? "text-blue-700 bg-blue-50" : "text-slate-600")}
+          title="Minimap"
+          aria-label="Toggle minimap"
+        >
+          <MapIcon className="h-4 w-4" />
         </button>
         <button type="button" onClick={() => fitTo(elements)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" title="Fit everything (Shift+1)" aria-label="Fit to content">
           <Maximize className="h-4 w-4" />
@@ -1445,6 +1459,8 @@ function Btn({ onClick, title, active, children }: { onClick: () => void; title:
 function ContextBar({
   x,
   y,
+  below,
+  containerW,
   selected,
   onUpdate,
   onFront,
@@ -1455,6 +1471,8 @@ function ContextBar({
 }: {
   x: number;
   y: number;
+  below: number;
+  containerW: number;
   selected: El[];
   onUpdate: (fn: (el: El) => El) => void;
   onFront: () => void;
@@ -1467,12 +1485,21 @@ function ContextBar({
   const only = kinds.size === 1 ? selected[0] : null;
   const locked = selected.every((s) => s.locked);
   const sep = <span className="mx-1 h-5 w-px bg-slate-200" />;
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    if (ref.current) setW(ref.current.offsetWidth);
+  });
+  // Keep the bar fully on screen; flip below the selection if there's no room above.
+  const left = clamp(x - w / 2, 64, Math.max(64, containerW - w - 12));
+  const top = y < 64 ? below : y;
 
   return (
     <div
+      ref={ref}
       data-ui
-      className="absolute z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl bg-white p-1 shadow-lg ring-1 ring-slate-200"
-      style={{ left: x, top: y }}
+      className="absolute z-30 flex max-w-[calc(100%-80px)] flex-wrap items-center gap-0.5 rounded-xl bg-white p-1 shadow-lg ring-1 ring-slate-200"
+      style={{ left, top, visibility: w ? "visible" : "hidden" }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {only?.kind === "sticky" && <Swatches colors={STICKY_COLORS} value={only.color} onPick={(c) => onUpdate((el) => (el.kind === "sticky" ? { ...el, color: c } : el))} />}
