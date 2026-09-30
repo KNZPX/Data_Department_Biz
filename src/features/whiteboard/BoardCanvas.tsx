@@ -18,6 +18,9 @@ import {
   Hand,
   Hexagon,
   Link2,
+  LayoutGrid,
+  Pencil,
+  ClipboardPaste,
   Map as MapIcon,
   Lock,
   Maximize,
@@ -40,6 +43,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import {
+  BLOCKS,
   FILL_COLORS,
   INK_COLORS,
   STICKY_COLORS,
@@ -166,11 +170,19 @@ export function BoardCanvas({
   initial,
   onBack,
   onMetaChange,
+  extraActions,
+  onChange,
+  backLabel = "All boards",
 }: {
   meta: BoardMeta;
   initial: El[];
   onBack: () => void;
   onMetaChange: (m: BoardMeta) => void;
+  /** Extra buttons shown in the top-right bar (used by the DAX diagram view). */
+  extraActions?: React.ReactNode;
+  /** Called after every local change with the full element list. */
+  onChange?: (els: El[]) => void;
+  backLabel?: string;
 }) {
   const [elements, setElements] = useState<El[]>(initial);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
@@ -188,6 +200,10 @@ export function BoardCanvas({
   const [name, setName] = useState(meta.name);
   const [toast, setToast] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number; world: { x: number; y: number }; onElement: boolean } | null>(null);
+  const [connectHover, setConnectHover] = useState<string | null>(null);
+  const [editSeed, setEditSeed] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const elRef = useRef(elements);
@@ -285,8 +301,9 @@ export function BoardCanvas({
       setElements(next);
       rt.sendOps({ upsert, remove });
       scheduleSave();
+      onChange?.(next);
     },
-    [rt, scheduleSave]
+    [rt, scheduleSave, onChange]
   );
 
   const update = useCallback(
@@ -462,6 +479,8 @@ export function BoardCanvas({
         setSelection([]);
         setTool("select");
         setShapeMenu(false);
+        setMenu(null);
+        setLibraryOpen(false);
       } else if (e.shiftKey && (k === "1" || k === "!")) {
         fitTo(elRef.current);
       } else if (mod && (k === "=" || k === "+")) {
@@ -476,6 +495,15 @@ export function BoardCanvas({
         const dx = k === "arrowleft" ? -d : k === "arrowright" ? d : 0;
         const dy = k === "arrowup" ? -d : k === "arrowdown" ? d : 0;
         update(selRef.current, (el) => (isBox(el) && !el.locked ? { ...el, x: el.x + dx, y: el.y + dy } : el));
+      } else if (!mod && e.key.length === 1 && e.key !== " " && selRef.current.length === 1 && (() => {
+        const el = elRef.current.find((x) => x.id === selRef.current[0]);
+        return Boolean(el && (el.kind === "sticky" || el.kind === "shape" || el.kind === "text") && !el.locked);
+      })()) {
+        // Miro-style: start typing on a selected sticky/shape to edit it.
+        e.preventDefault();
+        const el = elRef.current.find((x) => x.id === selRef.current[0])!;
+        setEditSeed(textOf(el) + e.key);
+        setEditingId(el.id);
       } else if (k === "enter" && selRef.current.length === 1) {
         const el = elRef.current.find((x) => x.id === selRef.current[0]);
         if (el && isBox(el) && el.kind !== "draw" && !el.locked) {
@@ -483,6 +511,7 @@ export function BoardCanvas({
           setEditingId(el.id);
         }
       } else if (!mod) {
+        if (k === "b") setLibraryOpen((v) => !v);
         const map: Record<string, Tool> = { v: "select", h: "hand", n: "sticky", s: "shape", r: "shape", t: "text", f: "frame", l: "connector", p: "pen" };
         if (map[k]) {
           setTool(map[k]);
@@ -529,6 +558,8 @@ export function BoardCanvas({
     const target = e.target as HTMLElement;
     if (target.closest("[data-ui]")) return;
     setShapeMenu(false);
+    setMenu(null);
+    if (e.button === 2) return;
     rootRef.current?.setPointerCapture(e.pointerId);
     const p = toWorld(e.clientX, e.clientY);
 
@@ -682,9 +713,12 @@ export function BoardCanvas({
         setElements(next);
         break;
       }
-      case "connect":
+      case "connect": {
         setInteraction({ ...it, cur: p });
+        const hit = hitBoxAt(e.clientX, e.clientY, it.from.id ? new Set([it.from.id]) : undefined);
+        setConnectHover(hit ? hit.id : null);
         break;
+      }
       case "marquee":
         setInteraction({ ...it, cur: p });
         break;
@@ -701,6 +735,7 @@ export function BoardCanvas({
     const it = interRef.current;
     setInteraction(null);
     setGuides({ v: [], h: [] });
+    setConnectHover(null);
     if (!it) return;
     const p = toWorld(e.clientX, e.clientY);
 
@@ -809,6 +844,51 @@ export function BoardCanvas({
       };
       commit([...elRef.current, el]);
     }
+  }
+
+  function viewCenter() {
+    const r = rootRef.current!.getBoundingClientRect();
+    return toWorld(r.left + r.width / 2, r.top + r.height / 2);
+  }
+
+  function addBlock(blockId: string, at?: { x: number; y: number }) {
+    const def = BLOCKS.find((b) => b.id === blockId);
+    if (!def) return;
+    const p = at || viewCenter();
+    const el = def.make(p.x, p.y, maxZ() + 1);
+    commit([...elRef.current, el]);
+    setSelection([el.id]);
+    setTool("select");
+  }
+
+  function onContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-ui]")) return;
+    const host = (target.closest("[data-box]") || target.closest("[data-line]")) as HTMLElement | null;
+    const id = host?.dataset.box || host?.dataset.line;
+    if (id && !selRef.current.includes(id)) setSelection([id]);
+    const r = rootRef.current!.getBoundingClientRect();
+    setMenu({ x: e.clientX - r.left, y: e.clientY - r.top, world: toWorld(e.clientX, e.clientY), onElement: Boolean(id) });
+  }
+
+  function pasteAt(world: { x: number; y: number }) {
+    const src = clipboard.current;
+    if (!src.length) return;
+    const b = boundsOf(src, new Map(src.map((x) => [x.id, x])));
+    if (!b) return;
+    const map = new Map<string, string>();
+    for (const e2 of src) map.set(e2.id, uid(e2.kind === "connector" ? "cx" : "el"));
+    const dx = world.x - b.x;
+    const dy = world.y - b.y;
+    let z = maxZ();
+    const clones: El[] = src.map((e2) =>
+      e2.kind === "connector"
+        ? { ...e2, id: map.get(e2.id)!, z: ++z, from: { ...e2.from, id: e2.from.id && map.get(e2.from.id), x: e2.from.x + dx, y: e2.from.y + dy }, to: { ...e2.to, id: e2.to.id && map.get(e2.to.id), x: e2.to.x + dx, y: e2.to.y + dy } }
+        : { ...e2, id: map.get(e2.id)!, x: e2.x + dx, y: e2.y + dy, z: ++z }
+    );
+    commit([...elRef.current, ...clones]);
+    setSelection(clones.map((c) => c.id));
   }
 
   function onDoubleClick(e: React.MouseEvent) {
@@ -938,11 +1018,16 @@ export function BoardCanvas({
         {editing && (
           <textarea
             autoFocus
-            defaultValue={textOf(el)}
+            defaultValue={editSeed ?? textOf(el)}
+            onFocus={(e) => {
+              const t = e.target;
+              t.setSelectionRange(t.value.length, t.value.length);
+            }}
             onPointerDown={(e) => e.stopPropagation()}
             onBlur={(e) => {
               const v = e.target.value;
               setEditingId(null);
+              setEditSeed(null);
               if (v !== textOf(el)) {
                 const next = withText(el, v) as BoxEl;
                 if (next.kind === "text") {
@@ -998,6 +1083,16 @@ export function BoardCanvas({
         onPointerUp={onPointerUp}
         onPointerLeave={() => rt.sendCursor(null)}
         onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("application/x-wb-block")) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          const id = e.dataTransfer.getData("application/x-wb-block");
+          if (!id) return;
+          e.preventDefault();
+          addBlock(id, toWorld(e.clientX, e.clientY));
+        }}
       >
         {/* World */}
         <div
@@ -1137,6 +1232,14 @@ export function BoardCanvas({
             <div key={`h${gy}`} className="absolute left-0 right-0 h-px bg-coral" style={{ top: toScreen(0, gy).y }} />
           ))}
 
+          {/* connection target */}
+          {connectHover && (() => {
+            const el = byId.get(connectHover);
+            if (!el || !isBox(el)) return null;
+            const a = toScreen(el.x, el.y);
+            return <div className="absolute rounded-md ring-4 ring-blue-400/70" style={{ left: a.x - 4, top: a.y - 4, width: el.w * camera.zoom + 8, height: el.h * camera.zoom + 8 }} />;
+          })()}
+
           {/* marquee / create preview */}
           {(interaction?.type === "marquee" || (interaction?.type === "create" && (interaction.tool === "shape" || interaction.tool === "frame"))) &&
             (() => {
@@ -1194,7 +1297,7 @@ export function BoardCanvas({
             (["top", "right", "bottom", "left"] as Side[]).map((side) => {
               const a = anchor(el, side);
               const s = toScreen(a.x, a.y);
-              const off = 14;
+              const off = 28;
               const d = { top: [0, -off], right: [off, 0], bottom: [0, off], left: [-off, 0] }[side];
               return (
                 <div
@@ -1202,11 +1305,11 @@ export function BoardCanvas({
                   data-port={side}
                   data-owner={el.id}
                   onPointerEnter={() => setHoverId(el.id)}
-                  title="Drag to connect"
-                  className="pointer-events-auto absolute grid h-5 w-5 cursor-crosshair place-items-center rounded-full bg-white shadow ring-1 ring-blue-300 hover:scale-125 transition-transform"
-                  style={{ left: s.x + d[0] - 10, top: s.y + d[1] - 10 }}
+                  title="Drag onto another item to connect, or into empty space to add a connected copy"
+                  className="pointer-events-auto absolute grid h-6 w-6 cursor-crosshair place-items-center rounded-full bg-blue-600 text-white shadow-md ring-2 ring-white hover:scale-125 transition-transform"
+                  style={{ left: s.x + d[0] - 12, top: s.y + d[1] - 12 }}
                 >
-                  <span className="h-2 w-2 rounded-full bg-blue-500" />
+                  <Plus className="h-3.5 w-3.5" strokeWidth={3} />
                 </div>
               );
             })
@@ -1234,7 +1337,7 @@ export function BoardCanvas({
       {/* ---------------- Floating UI ---------------- */}
       {/* Top-left: board identity */}
       <div data-ui className="absolute left-3 top-3 z-20 flex items-center gap-1 rounded-xl bg-white p-1 shadow-md ring-1 ring-slate-200/80">
-        <button type="button" onClick={onBack} className="grid h-9 w-9 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" title="All boards" aria-label="All boards">
+        <button type="button" onClick={onBack} className="grid h-9 w-9 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" title={backLabel} aria-label={backLabel}>
           <ArrowLeft className="h-4 w-4" />
         </button>
         <input
@@ -1257,6 +1360,7 @@ export function BoardCanvas({
 
       {/* Top-right: people + share */}
       <div data-ui className="absolute right-3 top-3 z-20 flex items-center gap-2 rounded-xl bg-white p-1 pl-3 shadow-md ring-1 ring-slate-200/80">
+        {extraActions}
         <div className="flex -space-x-2">
           {rt.me && (
             <span title={`${rt.me.name} (you)`} className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-semibold text-white ring-2 ring-white" style={{ background: rt.me.color }}>
@@ -1318,14 +1422,14 @@ export function BoardCanvas({
               <Icon className="h-[18px] w-[18px]" />
             </button>
             {t === "sticky" && tool === "sticky" && (
-              <div className="absolute left-12 top-0 flex gap-1 rounded-xl bg-white p-1.5 shadow-md ring-1 ring-slate-200">
+              <div className="absolute left-12 top-0 flex w-max gap-1 rounded-xl bg-white p-1.5 shadow-md ring-1 ring-slate-200">
                 {STICKY_COLORS.map((c) => (
                   <button key={c} type="button" onClick={() => setStickyColor(c)} className={clsx("h-6 w-6 rounded ring-1 ring-black/10", stickyColor === c && "ring-2 ring-blue-500")} style={{ background: c }} aria-label="Sticky colour" />
                 ))}
               </div>
             )}
             {t === "shape" && shapeMenu && (
-              <div className="absolute left-12 top-0 grid grid-cols-4 gap-1 rounded-xl bg-white p-1.5 shadow-md ring-1 ring-slate-200">
+              <div className="absolute left-12 top-0 grid w-max grid-cols-4 gap-1 rounded-xl bg-white p-1.5 shadow-md ring-1 ring-slate-200">
                 {SHAPES.map((s) => (
                   <button
                     key={s.kind}
@@ -1345,6 +1449,16 @@ export function BoardCanvas({
             )}
           </div>
         ))}
+        <button
+          type="button"
+          title="More blocks (B)"
+          aria-label="More blocks"
+          aria-pressed={libraryOpen}
+          onClick={() => setLibraryOpen((v) => !v)}
+          className={clsx("grid h-10 w-10 place-items-center rounded-lg transition", libraryOpen ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-100")}
+        >
+          <LayoutGrid className="h-[18px] w-[18px]" />
+        </button>
         <div className="my-1 h-px bg-slate-100" />
         <button type="button" title="Undo (Ctrl+Z)" aria-label="Undo" onClick={undo} className="grid h-10 w-10 place-items-center rounded-lg text-slate-600 hover:bg-slate-100">
           <Undo2 className="h-[18px] w-[18px]" />
@@ -1353,6 +1467,131 @@ export function BoardCanvas({
           <Redo2 className="h-[18px] w-[18px]" />
         </button>
       </div>
+
+      {/* Block library */}
+      {libraryOpen && (
+        <div
+          data-ui
+          data-scrollable
+          className="absolute left-16 top-1/2 z-20 max-h-[80%] w-72 -translate-y-1/2 overflow-y-auto rounded-xl bg-white p-3 shadow-lg ring-1 ring-slate-200"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-900">Add to board</p>
+            <button type="button" onClick={() => setLibraryOpen(false)} className="text-xs text-slate-400 hover:text-slate-700">
+              Close
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-slate-500">Click to drop in the middle of the view, or drag onto the canvas.</p>
+          {(["Data flow", "Shapes", "Notes"] as const).map((group) => (
+            <div key={group} className="mb-3">
+              <p className="mb-1.5 text-xs text-slate-400">{group}</p>
+              <div className={clsx("grid gap-1.5", group === "Data flow" ? "grid-cols-1" : "grid-cols-2")}>
+                {BLOCKS.filter((b) => b.group === group).map((b) => {
+                  const sample = b.make(0, 0, 0);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/x-wb-block", b.id);
+                        e.dataTransfer.effectAllowed = "copy";
+                      }}
+                      onClick={() => addBlock(b.id)}
+                      className="flex items-center gap-2.5 rounded-lg p-2 text-left text-sm text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 hover:ring-blue-300 cursor-grab active:cursor-grabbing"
+                    >
+                      {sample.kind === "card" ? (
+                        <span className="h-6 w-8 shrink-0 overflow-hidden rounded bg-white ring-1 ring-slate-200">
+                          <span className="block h-1" style={{ background: sample.accent }} />
+                        </span>
+                      ) : sample.kind === "shape" ? (
+                        <svg width="30" height="22" viewBox={`0 0 ${sample.w} ${sample.h}`} className="shrink-0">
+                          <path d={shapePath(sample.shape, sample.w, sample.h)} fill="#fff" stroke={sample.stroke} strokeWidth={10} />
+                        </svg>
+                      ) : sample.kind === "sticky" ? (
+                        <span className="h-6 w-6 shrink-0 rounded-sm" style={{ background: sample.color }} />
+                      ) : (
+                        <Type className="h-5 w-5 shrink-0 text-slate-500" />
+                      )}
+                      <span className="truncate">{b.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Right-click menu */}
+      {menu && (
+        <div
+          data-ui
+          role="menu"
+          className="absolute z-40 w-56 rounded-xl bg-white p-1 text-sm shadow-xl ring-1 ring-slate-200"
+          style={{ left: Math.min(menu.x, (rootRef.current?.clientWidth || 800) - 232), top: Math.min(menu.y, (rootRef.current?.clientHeight || 600) - 320) }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {(menu.onElement
+            ? [
+                ...(single && isBox(single) && single.kind !== "draw" && !single.locked ? [["Edit text", "Enter", () => setEditingId(single.id)]] : []),
+                ["Duplicate", "Ctrl+D", () => duplicate(selected)],
+                ["Copy", "Ctrl+C", () => {
+                  clipboard.current = selected;
+                  flash(`Copied ${selected.length}`);
+                }],
+                ["Connect from here", "L", () => setTool("connector")],
+                ["Bring to front", "", () => {
+                  let z = maxZ();
+                  update(selection, (el) => (el.kind === "frame" ? el : { ...el, z: ++z }));
+                }],
+                ["Send to back", "", () => update(selection, (el) => (el.kind === "frame" ? el : { ...el, z: Math.max(1, minZ() + 1) }))],
+                [selected.every((x) => x.locked) ? "Unlock" : "Lock", "", () => {
+                  const lock = !selected.every((x) => x.locked);
+                  update(selection, (el) => ({ ...el, locked: lock }));
+                }],
+                ["Delete", "Del", deleteSelection],
+              ]
+            : [
+                ["Paste here", "Ctrl+V", () => pasteAt(menu.world)],
+                ["Add sticky note", "N", () => addBlock("n-sticky", menu.world)],
+                ["Add process card", "", () => addBlock("process", menu.world)],
+                ["Add rounded shape", "", () => addBlock("s-round", menu.world)],
+                ["Add decision", "", () => addBlock("s-diamond", menu.world)],
+                ["Add text", "T", () => addBlock("n-text", menu.world)],
+                ["More blocks…", "B", () => setLibraryOpen(true)],
+                ["Select all", "Ctrl+A", () => setSelection(elRef.current.map((x) => x.id))],
+                ["Zoom to fit", "Shift+1", () => fitTo(elRef.current)],
+              ]
+          ).map(([label, hint, fn]) => {
+            const l = label as string;
+            const disabled = l === "Paste here" && clipboard.current.length === 0;
+            return (
+              <button
+                key={l}
+                type="button"
+                role="menuitem"
+                disabled={disabled}
+                onClick={() => {
+                  setMenu(null);
+                  (fn as () => void)();
+                }}
+                className={clsx(
+                  "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left disabled:opacity-40",
+                  l === "Delete" ? "text-coral hover:bg-coral/10" : "text-slate-700 hover:bg-slate-50"
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  {l === "Paste here" && <ClipboardPaste className="h-3.5 w-3.5 text-slate-400" />}
+                  {l}
+                </span>
+                <span className="text-xs text-slate-400">{hint as string}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Contextual toolbar */}
       {selBounds && !interaction && !editingId && (
@@ -1372,6 +1611,9 @@ export function BoardCanvas({
             update(selection, (el) => (el.kind === "frame" ? { ...el, z: --z } : { ...el, z: Math.max(1, minZ() + 1) }));
           }}
           onDuplicate={() => duplicate(selected)}
+          onEdit={
+            single && isBox(single) && single.kind !== "draw" && !single.locked ? () => setEditingId(single.id) : undefined
+          }
           onDelete={deleteSelection}
           onAlign={align}
         />
@@ -1468,6 +1710,7 @@ function ContextBar({
   onDuplicate,
   onDelete,
   onAlign,
+  onEdit,
 }: {
   x: number;
   y: number;
@@ -1480,6 +1723,7 @@ function ContextBar({
   onDuplicate: () => void;
   onDelete: () => void;
   onAlign: (m: "left" | "hcenter" | "top" | "right") => void;
+  onEdit?: () => void;
 }) {
   const kinds = new Set(selected.map((s) => s.kind));
   const only = kinds.size === 1 ? selected[0] : null;
@@ -1502,6 +1746,16 @@ function ContextBar({
       style={{ left, top, visibility: w ? "visible" : "hidden" }}
       onPointerDown={(e) => e.stopPropagation()}
     >
+      {onEdit && (
+        <>
+          <Btn title="Edit text (Enter or double-click)" onClick={onEdit}>
+            <span className="flex items-center gap-1 px-1 text-xs">
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </span>
+          </Btn>
+          <span className="mx-1 h-5 w-px bg-slate-200" />
+        </>
+      )}
       {only?.kind === "sticky" && <Swatches colors={STICKY_COLORS} value={only.color} onPick={(c) => onUpdate((el) => (el.kind === "sticky" ? { ...el, color: c } : el))} />}
       {only?.kind === "shape" && (
         <>

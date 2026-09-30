@@ -390,3 +390,123 @@ export const TEMPLATES: Template[] = [
     },
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Block library (the node types of the old whiteboard, plus shapes)
+// ---------------------------------------------------------------------------
+export type BlockDef = {
+  id: string;
+  label: string;
+  group: "Data flow" | "Shapes" | "Notes";
+  make: (x: number, y: number, z: number) => BoxEl;
+};
+
+function cardBlock(id: string, label: string, accent: string, title: string, body: string): BlockDef {
+  return {
+    id,
+    label,
+    group: "Data flow",
+    make: (x, y, z) => ({ id: uid(), kind: "card", x: x - 115, y: y - 50, w: 230, h: 100, z, title, body, accent, tag: label.toLowerCase() }),
+  };
+}
+function shapeBlock(id: string, label: string, shape: ShapeKind, stroke: string, w = 200, h = 100): BlockDef {
+  return {
+    id,
+    label,
+    group: "Shapes",
+    make: (x, y, z) => ({ id: uid(), kind: "shape", shape, x: x - w / 2, y: y - h / 2, w, h, z, text: "", fill: "#FFFFFF", stroke, textColor: "#0E1B2E", fontSize: 16 }),
+  };
+}
+
+export const BLOCKS: BlockDef[] = [
+  cardBlock("process", "Process", "#7C4DDB", "Process step", "What happens here"),
+  cardBlock("decision", "Decision", "#D99A00", "Decision?", "Yes / No branches"),
+  cardBlock("trigger", "Trigger", "#1F5FD6", "Trigger", "What starts the flow"),
+  cardBlock("database", "Table", "#0E9F8E", "fact_table", "Source table or view"),
+  cardBlock("dax", "DAX measure", "#4F46E5", "[measure_name]", "CALCULATE( ... )"),
+  cardBlock("value", "KPI value", "#0E9F8E", "42.5", "Metric and its target"),
+  cardBlock("cloud", "Service", "#2E5B8A", "Power BI service", "Workspace, dataflow or API"),
+  cardBlock("queue", "Queue", "#637083", "Refresh queue", "Scheduled or batch step"),
+  cardBlock("output", "Report", "#E4572E", "Report / dashboard", "Who uses it"),
+  shapeBlock("s-rect", "Rectangle", "rect", "#1F5FD6"),
+  shapeBlock("s-round", "Rounded", "round", "#1F5FD6"),
+  shapeBlock("s-ellipse", "Ellipse", "ellipse", "#0E9F8E"),
+  shapeBlock("s-diamond", "Decision", "diamond", "#D99A00", 180, 120),
+  shapeBlock("s-triangle", "Triangle", "triangle", "#7C4DDB", 160, 130),
+  shapeBlock("s-hex", "Hexagon", "hexagon", "#2E5B8A"),
+  shapeBlock("s-cyl", "Database", "cylinder", "#637083", 180, 120),
+  shapeBlock("s-para", "Input / output", "parallelogram", "#E4572E"),
+  {
+    id: "n-sticky",
+    label: "Sticky note",
+    group: "Notes",
+    make: (x, y, z) => ({ id: uid(), kind: "sticky", x: x - 90, y: y - 90, w: 180, h: 180, z, text: "", color: STICKY_COLORS[0] }),
+  },
+  {
+    id: "n-text",
+    label: "Text",
+    group: "Notes",
+    make: (x, y, z) => ({ id: uid(), kind: "text", x: x - 130, y: y - 20, w: 260, h: 40, z, text: "", color: "#0E1B2E", fontSize: 22 }),
+  },
+  {
+    id: "n-heading",
+    label: "Heading",
+    group: "Notes",
+    make: (x, y, z) => ({ id: uid(), kind: "text", x: x - 200, y: y - 30, w: 400, h: 60, z, text: "", color: "#0E1B2E", fontSize: 40, bold: true }),
+  },
+];
+
+/** DAX formula diagram nodes (from the DAX page parser) → whiteboard elements. */
+export function elementsFromDaxDiagram(
+  nodes: {
+    id: string;
+    title: string;
+    category: string;
+    role: string;
+    detail: string;
+    codeSnippet?: string;
+    color?: string;
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+    connections: { targetId: string; fromSide?: string; toSide?: string; label?: string }[];
+  }[]
+): El[] {
+  const out: El[] = [];
+  let z = 10;
+  for (const n of nodes) {
+    const shape: ShapeKind | null = n.category === "switch" ? "diamond" : n.category === "source" ? "cylinder" : null;
+    const base = { id: n.id, x: n.x, y: n.y, w: n.width || 230, h: n.height || 100, z: z++ };
+    if (shape) {
+      out.push({ ...base, kind: "shape", shape, text: n.title, fill: "#FFFFFF", stroke: n.color || "#637083", textColor: "#0E1B2E", fontSize: 14, h: Math.max(base.h, 110) });
+    } else {
+      out.push({
+        ...base,
+        kind: "card",
+        title: n.title,
+        body: [n.detail, n.codeSnippet].filter(Boolean).join("\n"),
+        accent: n.color || "#1F5FD6",
+        tag: n.role,
+      });
+    }
+  }
+  for (const n of nodes) {
+    for (const c of n.connections) {
+      out.push({
+        id: `cx_${n.id}_${c.targetId}`,
+        kind: "connector",
+        z: 5,
+        from: { id: n.id, side: c.fromSide as Side | undefined, x: 0, y: 0 },
+        to: { id: c.targetId, side: c.toSide as Side | undefined, x: 0, y: 0 },
+        route: "curve",
+        stroke: "#637083",
+        width: 2,
+        arrowEnd: true,
+        arrowStart: false,
+        label: c.label,
+      });
+    }
+  }
+  return out;
+}

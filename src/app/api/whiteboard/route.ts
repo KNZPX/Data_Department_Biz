@@ -6,6 +6,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const boards = await getDbWhiteboardBoards();
+    const id = req.nextUrl.searchParams.get("id");
+    if (id) {
+      const board = boards.find((b) => b.id === id) || null;
+      return NextResponse.json({ success: true, board });
+    }
     return NextResponse.json({
       success: true,
       boards,

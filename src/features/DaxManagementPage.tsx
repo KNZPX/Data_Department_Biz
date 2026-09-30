@@ -64,6 +64,7 @@ import {
   Upload,
 } from "lucide-react";
 import { BimImportModal } from "@/components/powerbi/BimImportModal";
+import { DaxDiagramBoard } from "@/features/whiteboard/DaxDiagramBoard";
 import { clsx } from "clsx";
 import { useTheme } from "@/context/ThemeContext";
 import { DaxCodeViewer } from "@/components/powerbi/DaxCodeViewer";
@@ -692,6 +693,8 @@ export function DaxManagementPage() {
 
   // INTERACTIVE DIAGRAM STATE & TOOLBOX (ALIGNED WITH WHITEBOARD ARCHITECTURE)
   const [diagramModalOpen, setDiagramModalOpen] = useState(false);
+  // Diagrams always open in the Whiteboard module (the old diagram engine stays dormant).
+  const [wbDiagramOpen, setWbDiagramOpen] = useState(false);
   const [diagramTarget, setDiagramTarget] = useState<ItemRecord | null>(null);
   const [diagramNodes, setDiagramNodes] = useState<DiagramNode[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -774,7 +777,12 @@ export function DaxManagementPage() {
   const [fullDaxPasteInput, setFullDaxPasteInput] = useState("");
   const [autoSplitDetected, setAutoSplitDetected] = useState(false);
   const [customDaxTab, setCustomDaxTab] = useState<"edit" | "preview">("edit");
-  const [sideboxDaxTab, setSideboxDaxTab] = useState<"edit" | "preview">("edit");
+  const [sideboxDaxTab, setSideboxDaxTab] = useState<"edit" | "preview">("preview");
+  // Every newly selected item opens with its formula in read-only preview.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSideboxDaxTab("preview");
+  }, [selectedItem?.id]);
 
   // Auto-detect and parse full DAX paste (everything before first '=' is name, after is expression)
   function handleFullDaxPaste(rawText: string) {
@@ -1046,7 +1054,7 @@ export function DaxManagementPage() {
           setConnectingSource(null);
           setLiveWireEnd(null);
           setDiagramSaveSuccess(false);
-          setDiagramModalOpen(true);
+          setWbDiagramOpen(true);
           return;
         }
       } catch (err) {
@@ -1061,7 +1069,7 @@ export function DaxManagementPage() {
     setConnectingSource(null);
     setLiveWireEnd(null);
     setDiagramSaveSuccess(false);
-    setDiagramModalOpen(true);
+    setWbDiagramOpen(true);
   }
 
   // Complete connection between two diagram nodes
@@ -2460,54 +2468,6 @@ export function DaxManagementPage() {
                         </div>
                       )}
 
-                      {/* Business Definition (Compact Textarea) */}
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-semibold text-slate-700 block">
-                          Business Definition / Meaning
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={sideboxForm.businessDefinition}
-                          onChange={(e) =>
-                            setSideboxForm({ ...sideboxForm, businessDefinition: e.target.value })
-                          }
-                          placeholder="Business rationale, definition..."
-                          className="w-full p-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y font-sans leading-tight shadow-2xs"
-                        />
-                      </div>
-
-                      {/* Mathematical Formulation (Compact Textarea) */}
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-semibold text-slate-700 block">
-                          Mathematical Formulation
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={sideboxForm.mathDefinition}
-                          onChange={(e) =>
-                            setSideboxForm({ ...sideboxForm, mathDefinition: e.target.value })
-                          }
-                          placeholder="Formula notation (e.g. SUM(A)/COUNT(B))..."
-                          className="w-full p-2 rounded-xl bg-white border border-slate-200 text-xs font-mono text-purple-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-500 transition resize-y leading-tight shadow-2xs"
-                        />
-                      </div>
-
-                      {/* Technical Notes (Compact Textarea) */}
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-semibold text-slate-700 block">
-                          Technical Notes
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={sideboxForm.notes}
-                          onChange={(e) =>
-                            setSideboxForm({ ...sideboxForm, notes: e.target.value })
-                          }
-                          placeholder="Filter context notes, dependencies..."
-                          className="w-full p-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y leading-tight shadow-2xs"
-                        />
-                      </div>
-
                       {/* DAX Formula with Full Syntax Highlighting & Auto-Indentation (Fully Editable) */}
                       {selectedItem.type === "Measure" || selectedItem.expression ? (
                         <div className="space-y-2">
@@ -2605,6 +2565,55 @@ export function DaxManagementPage() {
                           )}
                         </div>
                       ) : null}
+
+                      {/* Business Definition (Compact Textarea) */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-700 block">
+                          Business Definition / Meaning
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={sideboxForm.businessDefinition}
+                          onChange={(e) =>
+                            setSideboxForm({ ...sideboxForm, businessDefinition: e.target.value })
+                          }
+                          placeholder="Business rationale, definition..."
+                          className="w-full p-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y font-sans leading-tight shadow-2xs"
+                        />
+                      </div>
+
+                      {/* Mathematical Formulation (Compact Textarea) */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-700 block">
+                          Mathematical Formulation
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={sideboxForm.mathDefinition}
+                          onChange={(e) =>
+                            setSideboxForm({ ...sideboxForm, mathDefinition: e.target.value })
+                          }
+                          placeholder="Formula notation (e.g. SUM(A)/COUNT(B))..."
+                          className="w-full p-2 rounded-xl bg-white border border-slate-200 text-xs font-mono text-purple-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-500 transition resize-y leading-tight shadow-2xs"
+                        />
+                      </div>
+
+                      {/* Technical Notes (Compact Textarea) */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-700 block">
+                          Technical Notes
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={sideboxForm.notes}
+                          onChange={(e) =>
+                            setSideboxForm({ ...sideboxForm, notes: e.target.value })
+                          }
+                          placeholder="Filter context notes, dependencies..."
+                          className="w-full p-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 transition resize-y leading-tight shadow-2xs"
+                        />
+                      </div>
+
                     </div>
 
                     {selectedItem.isCustom && (
@@ -2785,686 +2794,14 @@ export function DaxManagementPage() {
         </div>
       )}
 
-      {/* ================= PROGRAMMING-GRADE FORMULA DIAGRAM MODAL WITH TOOLBOX & WIRING ================= */}
-      {diagramModalOpen && diagramTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 lg:p-6">
-          <div className="w-full max-w-7xl h-[92vh] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
-            {/* Modal Header */}
-            <div className="shrink-0 p-3.5 px-5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/70">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-2xl bg-indigo-600 text-white grid place-items-center shadow-xs">
-                  <Workflow className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-semibold text-slate-900">
-                      Formula Logic AST:{" "}
-                      <span className="font-mono text-indigo-700">[{diagramTarget.name}]</span>
-                    </h2>
-                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-semibold">
-                      DAX Execution Pipeline
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Dependencies &bull; Exclude/Filters &bull; Switches &bull; Context Transition &bull; Click "Connect" to wire nodes
-                  </p>
-                </div>
-              </div>
-
-              {/* Toolbar */}
-              <div className="flex items-center gap-2">
-                {/* Save Diagram Success Toast */}
-                {diagramSaveSuccess && (
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
-                    <Check className="h-3 w-3" /> Saved!
-                  </span>
-                )}
-
-                {/* Connecting Mode Banner */}
-                {connectingSource && (
-                  <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 animate-pulse">
-                    Connecting from {connectingSource.fromSide} port (drag to any port)...
-                  </span>
-                )}
-
-                {/* Zoom Controls */}
-                <div className="flex items-center bg-white border border-slate-200 rounded-full px-2 py-0.5 gap-1 text-xs text-slate-600">
-                  <button
-                    type="button"
-                    onClick={() => setDiagramZoom((z) => Math.max(0.5, z - 0.1))}
-                    title="Zoom Out"
-                    className="p-1 hover:text-slate-900 cursor-pointer"
-                  >
-                    <ZoomOut className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="text-[11px] font-mono font-semibold w-9 text-center">
-                    {Math.round(diagramZoom * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setDiagramZoom((z) => Math.min(1.5, z + 0.1))}
-                    title="Zoom In"
-                    className="p-1 hover:text-slate-900 cursor-pointer"
-                  >
-                    <ZoomIn className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-
-                {/* Copy DAX Formula Button */}
-                <button
-                  type="button"
-                  onClick={() => copyText("diagram_expr_header", diagramTarget.expression || "")}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:text-blue-600 shadow-xs transition cursor-pointer"
-                  title="Copy DAX Expression"
-                >
-                  {copiedId === "diagram_expr_header" ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-600" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                  <span>{copiedId === "diagram_expr_header" ? "Copied" : "Copy DAX"}</span>
-                </button>
-
-                {/* Open in Full Whiteboard Button */}
-                <button
-                  type="button"
-                  onClick={() => handleExportToWhiteboard(diagramTarget, diagramNodes)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 shadow-xs transition cursor-pointer"
-                  title="Open this AST diagram in Whiteboard with infinite canvas and rich editing tools"
-                >
-                  <ExternalLink className="h-3.5 w-3.5 text-indigo-600" />
-                  <span>Open in Whiteboard</span>
-                </button>
-
-                {/* Save Diagram Button */}
-                <button
-                  type="button"
-                  onClick={handleSaveDiagram}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  <span>Save Diagram</span>
-                </button>
-
-                {/* Reset Layout */}
-                <button
-                  type="button"
-                  onClick={handleResetDiagramLayout}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 transition cursor-pointer"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Reset</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setDiagramModalOpen(false)}
-                  className="h-8 w-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 grid place-items-center transition cursor-pointer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Formula Expression Code Ribbon */}
-            <div className="shrink-0 px-5 py-2 bg-slate-900 text-emerald-400 font-mono text-[11px] overflow-x-auto border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2 truncate">
-                <span className="text-slate-400 font-semibold shrink-0">DAX:</span>
-                <span className="truncate">{diagramTarget.expression || "No DAX expression"}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => copyText("diagram_expr", diagramTarget.expression || "")}
-                className="text-slate-400 hover:text-white flex items-center gap-1 text-[11px] shrink-0 ml-4 cursor-pointer"
-              >
-                <Copy className="h-3 w-3" /> Copy
-              </button>
-            </div>
-
-            {/* Diagram Body: TOOLBOX on left + CANVAS on right */}
-            <div className="flex-1 flex overflow-hidden">
-              {/* TOOLBOX (Allows adding AST nodes) */}
-              <div className="w-56 shrink-0 bg-slate-50 border-r border-slate-200 p-3 flex flex-col gap-2.5 overflow-y-auto">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                  <Boxes className="h-4 w-4 text-indigo-600" />
-                  <span>Node Toolbox</span>
-                </div>
-                <p className="text-[11px] text-slate-500 leading-tight">
-                  Click to add programming elements to the canvas:
-                </p>
-
-                <div className="space-y-1.5 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => handleAddToolboxNode("measure_call")}
-                    className="w-full flex items-center gap-2 p-2 rounded-xl bg-white border border-purple-200 hover:bg-purple-50 text-left text-xs font-medium text-purple-900 transition cursor-pointer shadow-2xs"
-                  >
-                    <FunctionSquare className="h-3.5 w-3.5 text-purple-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block text-[11px]">+ Measure Dependency</span>
-                      <span className="text-[11px] text-slate-400">e.g. [_hn_count]</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddToolboxNode("filter")}
-                    className="w-full flex items-center gap-2 p-2 rounded-xl bg-white border border-amber-200 hover:bg-amber-50 text-left text-xs font-medium text-amber-900 transition cursor-pointer shadow-2xs"
-                  >
-                    <Filter className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block text-[11px]">+ Exclude / Filter</span>
-                      <span className="text-[11px] text-slate-400">NOT IN, ISBLANK</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddToolboxNode("switch")}
-                    className="w-full flex items-center gap-2 p-2 rounded-xl bg-white border border-teal-200 hover:bg-teal-50 text-left text-xs font-medium text-teal-900 transition cursor-pointer shadow-2xs"
-                  >
-                    <GitBranch className="h-3.5 w-3.5 text-teal-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block text-[11px]">+ Switch Branch</span>
-                      <span className="text-[11px] text-slate-400">Condition &rarr; Case</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddToolboxNode("source")}
-                    className="w-full flex items-center gap-2 p-2 rounded-xl bg-white border border-sky-200 hover:bg-sky-50 text-left text-xs font-medium text-sky-900 transition cursor-pointer shadow-2xs"
-                  >
-                    <Database className="h-3.5 w-3.5 text-sky-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block text-[11px]">+ Table / Column</span>
-                      <span className="text-[11px] text-slate-400">Data source</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddToolboxNode("calculation")}
-                    className="w-full flex items-center gap-2 p-2 rounded-xl bg-white border border-indigo-200 hover:bg-indigo-50 text-left text-xs font-medium text-indigo-900 transition cursor-pointer shadow-2xs"
-                  >
-                    <Calculator className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block text-[11px]">+ Calculation Engine</span>
-                      <span className="text-[11px] text-slate-400">CALCULATE, SUM</span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleAddToolboxNode("output")}
-                    className="w-full flex items-center gap-2 p-2 rounded-xl bg-white border border-emerald-200 hover:bg-emerald-50 text-left text-xs font-medium text-emerald-900 transition cursor-pointer shadow-2xs"
-                  >
-                    <Zap className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                    <div>
-                      <span className="font-semibold block text-[11px]">+ Output Metric</span>
-                      <span className="text-[11px] text-slate-400">Final evaluated result</span>
-                    </div>
-                  </button>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200 mt-auto text-[11px] text-slate-400 space-y-1">
-                  <span className="font-semibold block text-slate-600">Wiring Tips:</span>
-                  <p>&bull; Click <Link className="h-2.5 w-2.5 inline" /> on a node, then click target node to create a line.</p>
-                  <p>&bull; Drag nodes across canvas.</p>
-                </div>
-              </div>
-
-              {/* CANVAS (Draggable 2D Workspace with 4-Port Magnetic Connectors & Pan/Zoom) */}
-              <div
-                ref={canvasRef}
-                onMouseDown={handleDiagramCanvasMouseDown}
-                onMouseMove={handleDiagramCanvasMouseMove}
-                onMouseUp={handleDiagramCanvasMouseUp}
-                className={clsx(
-                  "flex-1 relative overflow-hidden select-none transition-colors",
-                  isDiagramPanning ? "cursor-grabbing" : "cursor-grab"
-                )}
-                style={{
-                  backgroundColor: "#f8fafc",
-                  backgroundImage: "radial-gradient(#cbd5e1 1.5px, transparent 1.5px)",
-                  backgroundSize: `${24 * diagramZoom}px ${24 * diagramZoom}px`,
-                  backgroundPosition: `${diagramPan.x}px ${diagramPan.y}px`,
-                }}
-              >
-                {/* Transformed Workspace Layer */}
-                <div
-                  style={{
-                    transform: `translate(${diagramPan.x}px, ${diagramPan.y}px) scale(${diagramZoom})`,
-                    transformOrigin: "0 0",
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    width: "5000px",
-                    height: "4000px",
-                  }}
-                >
-                  {/* SVG Connecting Lines with Arrowheads */}
-                  <svg
-                    className="absolute inset-0 pointer-events-none w-full h-full"
-                    style={{ overflow: "visible" }}
-                  >
-                    <defs>
-                      <linearGradient id="astLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.85" />
-                        <stop offset="100%" stopColor="#2563eb" stopOpacity="0.85" />
-                      </linearGradient>
-                      <marker
-                        id="astArrow"
-                        viewBox="0 0 10 10"
-                        refX="6"
-                        refY="5"
-                        markerWidth="6"
-                        markerHeight="6"
-                        orient="auto-start-reverse"
-                      >
-                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#2563eb" />
-                      </marker>
-                      <marker
-                        id="astArrowLive"
-                        viewBox="0 0 10 10"
-                        refX="6"
-                        refY="5"
-                        markerWidth="6"
-                        markerHeight="6"
-                        orient="auto-start-reverse"
-                      >
-                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
-                      </marker>
-                    </defs>
-
-                    {/* Render Existing Connection Wires */}
-                    {diagramNodes.map((node) => {
-                      if (!node.connections || node.connections.length === 0) return null;
-
-                      return node.connections.map((conn) => {
-                        const target = diagramNodes.find((t) => t.id === conn.targetId);
-                        if (!target) return null;
-
-                        const srcCoord = getDiagramPortCoordinate(node, conn.fromSide || "right");
-                        const tgtCoord = getDiagramPortCoordinate(target, conn.toSide || "left");
-
-                        const dx = tgtCoord.x - srcCoord.x;
-                        const dy = tgtCoord.y - srcCoord.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        const curveDist = Math.max(40, Math.min(160, dist * 0.4));
-
-                        // Tangent controls based on side
-                        let cp1X = srcCoord.x;
-                        let cp1Y = srcCoord.y;
-                        if (conn.fromSide === "left") cp1X -= curveDist;
-                        else if (conn.fromSide === "top") cp1Y -= curveDist;
-                        else if (conn.fromSide === "bottom") cp1Y += curveDist;
-                        else cp1X += curveDist; // default right
-
-                        let cp2X = tgtCoord.x;
-                        let cp2Y = tgtCoord.y;
-                        if (conn.toSide === "right") cp2X += curveDist;
-                        else if (conn.toSide === "top") cp2Y -= curveDist;
-                        else if (conn.toSide === "bottom") cp2Y += curveDist;
-                        else cp2X -= curveDist; // default left
-
-                        const pathData = `M ${srcCoord.x} ${srcCoord.y} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${tgtCoord.x} ${tgtCoord.y}`;
-                        const midX = (srcCoord.x + tgtCoord.x) / 2;
-                        const midY = (srcCoord.y + tgtCoord.y) / 2;
-
-                        return (
-                          <g key={`${node.id}->${conn.targetId}`}>
-                            {/* Click hit target */}
-                            <path
-                              d={pathData}
-                              fill="none"
-                              stroke="transparent"
-                              strokeWidth="16"
-                              className="pointer-events-auto cursor-pointer"
-                              onClick={() => setEditingConnection({ sourceId: node.id, targetId: conn.targetId })}
-                            />
-                            <path
-                              d={pathData}
-                              fill="none"
-                              stroke="url(#astLineGradient)"
-                              strokeWidth="2.5"
-                              markerEnd="url(#astArrow)"
-                              strokeDasharray="5 3"
-                            />
-                            {conn.label && (
-                              <g
-                                transform={`translate(${midX}, ${midY})`}
-                                className="pointer-events-auto cursor-pointer"
-                                onClick={() => setEditingConnection({ sourceId: node.id, targetId: conn.targetId })}
-                              >
-                                <rect
-                                  x="-28"
-                                  y="-9"
-                                  width="56"
-                                  height="18"
-                                  rx="9"
-                                  fill="#ffffff"
-                                  stroke="#bfdbfe"
-                                  strokeWidth="1.5"
-                                  className="shadow-2xs"
-                                />
-                                <text
-                                  x="0"
-                                  y="3.5"
-                                  textAnchor="middle"
-                                  fill="#1e40af"
-                                  fontSize="9"
-                                  fontFamily="monospace"
-                                  fontWeight="bold"
-                                >
-                                  {conn.label}
-                                </text>
-                              </g>
-                            )}
-                          </g>
-                        );
-                      });
-                    })}
-
-                    {/* Live Dragging Wire Preview */}
-                    {connectingSource && liveWireEnd && (
-                      (() => {
-                        const srcNode = diagramNodes.find((n) => n.id === connectingSource.nodeId);
-                        if (!srcNode) return null;
-                        const srcCoord = getDiagramPortCoordinate(srcNode, connectingSource.fromSide);
-                        return (
-                          <path
-                            d={`M ${srcCoord.x} ${srcCoord.y} Q ${(srcCoord.x + liveWireEnd.x) / 2} ${(srcCoord.y + liveWireEnd.y) / 2 - 30}, ${liveWireEnd.x} ${liveWireEnd.y}`}
-                            fill="none"
-                            stroke="#f59e0b"
-                            strokeWidth="2.5"
-                            strokeDasharray="5 5"
-                            markerEnd="url(#astArrowLive)"
-                            className="pointer-events-none"
-                          />
-                        );
-                      })()
-                    )}
-                  </svg>
-
-                  {/* Render Visual Nodes */}
-                  {diagramNodes.map((node) => {
-                    const isSelected = selectedNodeId === node.id;
-                    const isHovered = hoveredNodeId === node.id;
-                    const isDragging = draggingNodeId === node.id;
-                    const isConnecting = Boolean(connectingSource);
-                    const isSourceNode = connectingSource?.nodeId === node.id;
-
-                    const colorStyles =
-                      node.category === "source"
-                        ? "border-sky-300 bg-sky-50/95 text-sky-900"
-                        : node.category === "measure_call"
-                        ? "border-purple-300 bg-purple-50/95 text-purple-900 ring-1 ring-purple-400/30"
-                        : node.category === "filter"
-                        ? "border-amber-300 bg-amber-50/95 text-amber-900 ring-1 ring-amber-400/30"
-                        : node.category === "switch"
-                        ? "border-teal-300 bg-teal-50/95 text-teal-900"
-                        : node.category === "relationship"
-                        ? "border-pink-300 bg-pink-50/95 text-pink-900"
-                        : node.category === "output"
-                        ? "border-emerald-400 bg-emerald-50/95 text-emerald-900 ring-2 ring-emerald-500/20"
-                        : "border-indigo-300 bg-indigo-50/95 text-indigo-900";
-
-                    return (
-                      <div
-                        key={node.id}
-                        data-diagram-node-id={node.id}
-                        onMouseEnter={() => setHoveredNodeId(node.id)}
-                        onMouseLeave={() => setHoveredNodeId((curr) => (curr === node.id ? null : curr))}
-                        onMouseDown={(e) => handleDiagramNodeMouseDown(e, node)}
-                        onClick={(e) => {
-                          if (connectingSource && connectingSource.nodeId !== node.id) {
-                            e.stopPropagation();
-                            handleConnectToDiagramNode(node.id);
-                          }
-                        }}
-                        style={{
-                          position: "absolute",
-                          left: `${node.x}px`,
-                          top: `${node.y}px`,
-                          width: "230px",
-                          minHeight: "92px",
-                          cursor: isDragging ? "grabbing" : "move",
-                          zIndex: isSelected ? 30 : 20,
-                        }}
-                        className={clsx(
-                          "rounded-2xl border p-2.5 shadow-md backdrop-blur-xs transition-shadow flex flex-col justify-between select-none relative group",
-                          colorStyles,
-                          isSelected && "ring-3 ring-blue-600 shadow-2xl",
-                          isConnecting && connectingSource?.nodeId !== node.id && "hover:ring-2 hover:ring-amber-500"
-                        )}
-                      >
-                        {/* 4 MAGNETIC PORTS (TOP, RIGHT, BOTTOM, LEFT) */}
-                        {(isHovered || isSelected || isConnecting) && (
-                          <>
-                            {/* Top Port */}
-                            <button
-                              type="button"
-                              data-diagram-port-node-id={node.id}
-                              data-diagram-port-side="top"
-                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "top")}
-                              onMouseUp={(e) => {
-                                e.stopPropagation();
-                                handleDiagramPortMouseUp(node.id, "top");
-                              }}
-                              title="Top Port (Connect)"
-                              className={clsx(
-                                "absolute -top-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
-                                isSourceNode && connectingSource?.fromSide === "top"
-                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
-                                  : isConnecting && !isSourceNode
-                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
-                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
-                              )}
-                            >
-                              +
-                            </button>
-
-                            {/* Right Port */}
-                            <button
-                              type="button"
-                              data-diagram-port-node-id={node.id}
-                              data-diagram-port-side="right"
-                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "right")}
-                              onMouseUp={(e) => {
-                                e.stopPropagation();
-                                handleDiagramPortMouseUp(node.id, "right");
-                              }}
-                              title="Right Port (Connect)"
-                              className={clsx(
-                                "absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
-                                isSourceNode && connectingSource?.fromSide === "right"
-                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
-                                  : isConnecting && !isSourceNode
-                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
-                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
-                              )}
-                            >
-                              +
-                            </button>
-
-                            {/* Bottom Port */}
-                            <button
-                              type="button"
-                              data-diagram-port-node-id={node.id}
-                              data-diagram-port-side="bottom"
-                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "bottom")}
-                              onMouseUp={(e) => {
-                                e.stopPropagation();
-                                handleDiagramPortMouseUp(node.id, "bottom");
-                              }}
-                              title="Bottom Port (Connect)"
-                              className={clsx(
-                                "absolute -bottom-2 left-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
-                                isSourceNode && connectingSource?.fromSide === "bottom"
-                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
-                                  : isConnecting && !isSourceNode
-                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
-                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
-                              )}
-                            >
-                              +
-                            </button>
-
-                            {/* Left Port */}
-                            <button
-                              type="button"
-                              data-diagram-port-node-id={node.id}
-                              data-diagram-port-side="left"
-                              onMouseDown={(e) => handleDiagramPortMouseDown(e, node.id, "left")}
-                              onMouseUp={(e) => {
-                                e.stopPropagation();
-                                handleDiagramPortMouseUp(node.id, "left");
-                              }}
-                              title="Left Port (Connect)"
-                              className={clsx(
-                                "absolute -left-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-white shadow-md transition cursor-crosshair z-30 flex items-center justify-center text-white text-[11px] font-semibold",
-                                isSourceNode && connectingSource?.fromSide === "left"
-                                  ? "bg-amber-500 ring-4 ring-amber-300 scale-125"
-                                  : isConnecting && !isSourceNode
-                                  ? "bg-emerald-500 hover:bg-emerald-600 ring-4 ring-emerald-300 animate-pulse scale-120"
-                                  : "bg-blue-600 hover:scale-130 hover:bg-blue-700"
-                              )}
-                            >
-                              +
-                            </button>
-                          </>
-                        )}
-
-                        {/* Node Header */}
-                        <div>
-                          <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[11px] font-semibold px-1.5 py-0.2 rounded-full bg-white/80 border border-slate-200">
-                              {node.category}
-                            </span>
-                            <Move className="h-3 w-3 opacity-40 shrink-0" />
-                          </div>
-
-                          {/* Node Title */}
-                          <h4 className="font-mono text-xs font-semibold truncate">
-                            {node.title}
-                          </h4>
-
-                          {/* Role & Details */}
-                          <p className="text-[11px] font-semibold opacity-85 truncate">
-                            {node.role}
-                          </p>
-                        </div>
-
-                        <p className="text-[11px] opacity-75 line-clamp-2 leading-tight mt-1">
-                          {node.detail}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Wire Edit / Disconnect Popup */}
-                {editingConnection && (
-                  <div className="absolute top-4 right-4 z-40 bg-white rounded-2xl border border-slate-200 shadow-xl p-3 flex items-center gap-3 animate-in fade-in zoom-in-95">
-                    <span className="text-xs font-semibold text-slate-700">Selected Connection Wire</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleRemoveDiagramConnection(editingConnection.sourceId, editingConnection.targetId)
-                      }
-                      className="px-2.5 py-1 rounded-xl text-xs font-semibold bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
-                    >
-                      Delete Wire
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingConnection(null)}
-                      className="p-1 rounded-lg text-slate-400 hover:text-slate-700"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Selected Node Editor Bar at Bottom */}
-            {selectedNodeId && (
-              <div className="shrink-0 p-3 px-5 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3 z-30">
-                {(() => {
-                  const node = diagramNodes.find((n) => n.id === selectedNodeId);
-                  if (!node) return null;
-                  return (
-                    <>
-                      <div className="flex items-center gap-2 flex-1 w-full flex-wrap">
-                        <span className="text-xs font-semibold text-slate-700 shrink-0">
-                          Edit Node:
-                        </span>
-                        <input
-                          type="text"
-                          value={node.title}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setDiagramNodes((prev) =>
-                              prev.map((n) => (n.id === node.id ? { ...n, title: val } : n))
-                            );
-                          }}
-                          placeholder="Node Title / Identifier"
-                          className="px-2.5 py-1 text-xs rounded-xl bg-slate-50 border border-slate-200 font-mono font-semibold text-slate-800 w-44"
-                        />
-                        <input
-                          type="text"
-                          value={node.detail}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setDiagramNodes((prev) =>
-                              prev.map((n) => (n.id === node.id ? { ...n, detail: val } : n))
-                            );
-                          }}
-                          placeholder="Node description / filter logic..."
-                          className="flex-1 min-w-[200px] px-2.5 py-1 text-xs rounded-xl bg-slate-50 border border-slate-200 text-slate-700"
-                        />
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {node.connections && node.connections.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDiagramNodes((prev) =>
-                                prev.map((n) => (n.id === node.id ? { ...n, connections: [] } : n))
-                              );
-                            }}
-                            className="px-2.5 py-1 rounded-full text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
-                          >
-                            Disconnect All
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDiagramNodes((prev) =>
-                              prev
-                                .filter((n) => n.id !== node.id)
-                                .map((n) => ({
-                                  ...n,
-                                  connections: (n.connections || []).filter((c) => c.targetId !== node.id),
-                                }))
-                            );
-                            setSelectedNodeId(null);
-                          }}
-                          className="px-2.5 py-1 rounded-full text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition cursor-pointer"
-                        >
-                          Remove Node
-                        </button>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-        </div>
+      {/* ================= FORMULA DIAGRAM — rendered by the Whiteboard module ================= */}
+      {wbDiagramOpen && diagramTarget && (
+        <DaxDiagramBoard
+          item={{ id: diagramTarget.id, name: diagramTarget.name, tableName: diagramTarget.tableName, modelCode: diagramTarget.modelCode }}
+          seedNodes={diagramNodes}
+          buildNodes={() => parseDaxToProgrammingAst(diagramTarget.name, diagramTarget.expression, diagramTarget.tableName)}
+          onClose={() => setWbDiagramOpen(false)}
+        />
       )}
 
       {/* ================= CUSTOM DAX MODAL (SPLIT-STYLED WITH FULL DAX AUTO-SPLIT) ================= */}
