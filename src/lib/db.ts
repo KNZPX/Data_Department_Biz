@@ -591,32 +591,9 @@ export async function recordUserLogin(user: {
   const now = new Date().toISOString();
   const provider = getDbProvider();
 
-  if (provider === "supabase") {
-    try {
-      const supabase = getSupabaseClient();
-      // 1. Upsert directly into public.app_users
-      const { data: existing } = await supabase
-        .from("app_users")
-        .select("login_count")
-        .eq("email", user.email.toLowerCase())
-        .maybeSingle();
-
-      const newCount = (existing?.login_count || 0) + 1;
-
-      await supabase.from("app_users").upsert({
-        email: user.email.toLowerCase(),
-        name: user.name,
-        last_login_at: now,
-        login_count: newCount,
-        last_ip: user.ip || null,
-        last_user_agent: user.userAgent || null,
-        updated_at: now,
-      });
-    } catch (err) {
-      console.error("Failed to update app_users table in Supabase:", err);
-    }
-  }
-
+  // app_users is written only through the user_record_login database function
+  // (called by the sign-in route); here we just keep the audit trail.
+  void provider;
   // 2. Always record in change_log for full audit stream
   await insertDbChangeLogs([
     {

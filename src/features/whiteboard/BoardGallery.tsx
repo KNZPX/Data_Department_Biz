@@ -67,7 +67,9 @@ export function BoardGallery({
   onRename,
   onMove,
   onDelete,
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   boards: GalleryBoard[];
   loading: boolean;
   onOpen: (id: string) => void;
@@ -111,14 +113,14 @@ export function BoardGallery({
             <h2 className="text-[30px] font-semibold tracking-tight text-slate-900">Boards</h2>
             <p className="mt-1 text-[15px] text-slate-500">Sketch data flows, run retros and plan dashboards together — changes show up live for everyone on the board.</p>
           </div>
-          <button
+          {canEdit && <button
             type="button"
             onClick={() => setPicker(true)}
             className="inline-flex items-center gap-2 self-start rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
           >
             <Plus className="h-4 w-4" />
             New board
-          </button>
+          </button>}
         </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-2">
@@ -167,14 +169,14 @@ export function BoardGallery({
                   </p>
                 </div>
               </button>
-              <button
+              {canEdit && <button
                 type="button"
                 onClick={() => setMenu(menu === b.id ? null : b.id)}
                 className="absolute bottom-4 right-3 grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 aria-label="Board actions"
               >
                 <MoreHorizontal className="h-4 w-4" />
-              </button>
+              </button>}
               {menu === b.id && (
                 <div className="absolute bottom-14 right-3 z-10 w-44 rounded-xl bg-white p-1 text-sm shadow-lg ring-1 ring-slate-200">
                   <button

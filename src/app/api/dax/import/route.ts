@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import {
@@ -32,6 +33,8 @@ export async function GET(request: NextRequest) {
 
 // POST { action: start | structure | items | finalize | fail, ... }
 export async function POST(request: NextRequest) {
+  const g = await requireModule("dax.import");
+  if (g.deny) return g.deny;
   const user = await getCurrentUser();
   if (!user) return bad("Sign in first.", 401);
   const who = user.name;

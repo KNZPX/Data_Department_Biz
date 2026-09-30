@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { getDbWhiteboardBoards, saveDbWhiteboardBoard, deleteDbWhiteboardBoard } from "@/lib/db";
 
@@ -26,6 +27,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const _g = await requireModule("whiteboard.edit");
+  if (_g.deny) return _g.deny;
   try {
     const body = await req.json();
 
@@ -65,6 +68,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const _g = await requireModule("whiteboard.edit");
+  if (_g.deny) return _g.deny;
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

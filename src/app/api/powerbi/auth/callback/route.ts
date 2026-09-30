@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForTokens } from "@/lib/powerbiAuth";
 import { saveOAuthTokens } from "@/lib/powerbiToken";
-import { attachSessionCookie, newSessionSecret } from "@/lib/session";
+import { attachSessionCookie, newSessionSecret, recordSessionLogin } from "@/lib/session";
 import { recordUserLogin } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +48,11 @@ export async function GET(request: NextRequest) {
     sessionSecret = newSessionSecret();
     const saved = await saveOAuthTokens(tokens, sessionSecret, request.headers.get("user-agent"));
     if (saved.user) {
+      await recordSessionLogin(
+        sessionSecret,
+        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+        request.headers.get("user-agent")
+      ).catch(() => {});
       await recordUserLogin({
         email: saved.user.email,
         name: saved.user.name,

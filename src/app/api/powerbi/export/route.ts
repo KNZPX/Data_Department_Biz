@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { NextRequest } from "next/server";
 import ExcelJS from "exceljs";
 import type { PowerBiItem, PowerBiKind } from "@/lib/powerbiTypes";
@@ -11,6 +12,8 @@ function safeFileNamePart(value: string) {
 const HEADER_FONT = { bold: true };
 
 export async function POST(request: NextRequest) {
+  const _g = await requireModule("reports.export");
+  if (_g.deny) return _g.deny;
   try {
     const body = (await request.json()) as { kind?: PowerBiKind; items?: PowerBiItem[] };
     const kind = body.kind === "dashboard" ? "dashboard" : "report";

@@ -61,6 +61,11 @@ export type PowerBiLicense = {
   source: "imported" | "manual";
   created_at?: string;
   updated_at?: string;
+  // Maintained by a database trigger
+  first_name?: string | null;
+  last_name?: string | null;
+  approved_at?: string | null;
+  revoked_at?: string | null;
 };
 
 export type LicenseInput = Partial<PowerBiLicense> & {

@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { TokenModal } from "@/components/TokenModal";
-import { LoginGate, useAuth } from "@/components/auth/LoginGate";
+import { LoginGate, useAccess, useAuth } from "@/components/auth/LoginGate";
+import { pageForPath } from "@/lib/access";
 import { useTheme } from "@/context/ThemeContext";
 import { PresenceStack, usePresence } from "@/components/layout/Presence";
 
@@ -60,7 +61,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "Admin",
     items: [
-      { href: "/users", label: "People", hint: "Who signed in and what changed", icon: ShieldCheck },
+      { href: "/users", label: "People & access", hint: "Accounts, guests and what each person can open", icon: ShieldCheck },
       { href: "/changelog", label: "Activity log", hint: "Audit trail across the portal", icon: History },
       { href: "/settings", label: "Settings", hint: "Appearance and connections", icon: Settings },
     ],
@@ -82,7 +83,17 @@ function initials(name?: string | null) {
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout, refreshAuth } = useAuth();
+  const { user, logout, refreshAuth, isGuest } = useAuth();
+  const { canPage } = useAccess();
+  const visibleGroups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => {
+      const page = pageForPath(i.href);
+      return page ? canPage(page.id) : true;
+    }),
+  })).filter((g) => g.items.length);
+  const currentPage = pageForPath(pathname);
+  const allowedHere = currentPage ? canPage(currentPage.id) : true;
   const { currentTheme } = useTheme();
   const online = usePresence();
 
@@ -236,7 +247,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-5" aria-label="Main">
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.title}>
             {!collapsed ? (
               <p className="px-3 pb-1.5 text-[11px] font-medium text-slate-500">{group.title}</p>
@@ -573,7 +584,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
               <div role="menu" className="absolute right-0 mt-2 w-64 rounded-2xl bg-white p-2 shadow-xl ring-1 ring-slate-200 z-50 text-[13px]">
                 <div className="px-3 py-2.5 border-b border-slate-100 mb-1">
                   <p className="font-semibold text-slate-900 truncate">{user?.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                  <p className="text-xs text-slate-500 truncate">{isGuest ? `Guest account ${user?.email?.replace("guest:", "")}` : user?.email}</p>
                 </div>
                 <button
                   type="button"
@@ -609,7 +620,19 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         </header>
 
         <main key={pathname} className="flex-1 min-h-0 overflow-hidden p-3 md:p-5 page-transition">
-          {children}
+          {allowedHere ? (
+            children
+          ) : (
+            <div className="grid h-full place-items-center">
+              <div className="max-w-sm text-center">
+                <p className="text-lg font-semibold text-slate-900">You don&rsquo;t have access to this page</p>
+                <p className="mt-2 text-sm text-slate-500">Ask an admin to add it under People &amp; access.</p>
+                <Link href="/" className="mt-4 inline-block rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white">
+                  Go to Home
+                </Link>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 

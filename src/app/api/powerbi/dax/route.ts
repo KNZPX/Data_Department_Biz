@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { executeDaxQuery } from "@/lib/powerbi";
 import {
@@ -244,6 +245,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { action } = body;
+    if (action === "save_annotation" || action === "save_custom" || action === "delete_custom") {
+      const g = await requireModule("dax.edit");
+      if (g.deny) return g.deny;
+    }
     // Audit identity always comes from the signed-in session, not the request body.
     const sessionUser = await getCurrentUser();
     const actor = sessionUser?.name || body.user || "Analyst";

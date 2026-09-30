@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { BoardCanvas } from "./whiteboard/BoardCanvas";
 import { BoardGallery, type GalleryBoard } from "./whiteboard/BoardGallery";
 import { normalizeElements, uid, type BoardMeta, type Template } from "./whiteboard/model";
+import { useAccess } from "@/components/auth/LoginGate";
 
 // ---------------------------------------------------------------------------
 // Legacy types, still used by the DAX page's "Open in whiteboard" export.
@@ -75,6 +76,8 @@ async function saveBoard(b: GalleryBoard) {
 }
 
 export function WhiteboardPage() {
+  const { can } = useAccess();
+  const canEdit = can("whiteboard.edit");
   const [boards, setBoards] = useState<GalleryBoard[]>([]);
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -177,6 +180,7 @@ export function WhiteboardPage() {
     return (
       <BoardCanvas
         key={board.id}
+        readOnly={!canEdit}
         meta={meta}
         initial={board.elements}
         onBack={() => open(null)}
@@ -187,6 +191,7 @@ export function WhiteboardPage() {
 
   return (
     <BoardGallery
+      canEdit={canEdit}
       boards={boards}
       loading={loading}
       onOpen={open}

@@ -18,6 +18,7 @@ import {
   Hand,
   Hexagon,
   Link2,
+  Crosshair,
   LayoutGrid,
   Pencil,
   ClipboardPaste,
@@ -174,6 +175,7 @@ export function BoardCanvas({
   onChange,
   backLabel = "All boards",
   onEscapeIdle,
+  readOnly = false,
 }: {
   meta: BoardMeta;
   initial: El[];
@@ -186,6 +188,8 @@ export function BoardCanvas({
   backLabel?: string;
   /** Esc pressed while nothing is selected or open (used to close embedded views). */
   onEscapeIdle?: () => void;
+  /** View-only: no tools, no edits, no saves. */
+  readOnly?: boolean;
 }) {
   const [elements, setElements] = useState<El[]>(initial);
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
@@ -304,6 +308,13 @@ export function BoardCanvas({
   /** Apply a new element list: history, broadcast diff, autosave. */
   const commit = useCallback(
     (next: El[], opts: { from?: El[]; history?: boolean } = {}) => {
+      if (readOnly) {
+        // Revert any local drag preview.
+        const back = opts.from || elRef.current;
+        elRef.current = back;
+        setElements(back);
+        return;
+      }
       const prev = opts.from || elRef.current;
       if (opts.history !== false) {
         past.current.push(prev);
@@ -320,7 +331,7 @@ export function BoardCanvas({
       scheduleSave();
       onChange?.(next);
     },
-    [rt, scheduleSave, onChange]
+    [rt, scheduleSave, onChange, readOnly]
   );
 
   const update = useCallback(
@@ -914,6 +925,7 @@ export function BoardCanvas({
   }
 
   function onDoubleClick(e: React.MouseEvent) {
+    if (readOnly) return;
     const target = e.target as HTMLElement;
     if (target.closest("[data-ui]")) return;
     const host = target.closest("[data-box]") as HTMLElement | null;
@@ -1037,7 +1049,35 @@ export function BoardCanvas({
     return (
       <div key={el.id} {...common} className={clsx("absolute", el.kind === "sticky" && "rounded-[3px]", isSel && "cursor-move")}>
         {inner}
-        {editing && (
+        {editing && el.kind === "card" && (
+          <div
+            className="absolute inset-0 z-10 flex min-h-full flex-col gap-1.5 rounded-xl bg-white p-3 pt-4 shadow-lg ring-2 ring-blue-500"
+            style={{ height: "auto", minHeight: el.h }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+              const f = e.currentTarget;
+              const tag = (f.querySelector("[data-f=tag]") as HTMLInputElement).value;
+              const title = (f.querySelector("[data-f=title]") as HTMLInputElement).value;
+              const body = (f.querySelector("[data-f=body]") as HTMLTextAreaElement).value;
+              setEditingId(null);
+              setEditSeed(null);
+              if (title !== el.title || body !== el.body || tag !== (el.tag || "")) {
+                const need = Math.max(el.h, 56 + Math.ceil(body.length / 34) * 18);
+                update([el.id], (x) => ({ ...(x as typeof el), title, body, tag: tag || undefined, h: need }));
+              }
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) (document.activeElement as HTMLElement)?.blur();
+            }}
+          >
+            <input data-f="tag" defaultValue={el.tag || ""} placeholder="Label (optional)" className="text-[11px] text-slate-500 outline-none placeholder:text-slate-300" />
+            <input data-f="title" autoFocus defaultValue={el.title} placeholder="Header" className="text-[15px] font-semibold text-slate-900 outline-none placeholder:text-slate-300" />
+            <textarea data-f="body" defaultValue={el.body} placeholder="Details" rows={3} className="flex-1 resize-none text-[13px] leading-snug text-slate-600 outline-none placeholder:text-slate-300" />
+          </div>
+        )}
+        {editing && el.kind !== "card" && (
           <textarea
             autoFocus
             defaultValue={editSeed ?? textOf(el)}
@@ -1066,7 +1106,6 @@ export function BoardCanvas({
               "absolute inset-0 resize-none bg-transparent outline-none p-4 leading-snug",
               el.kind === "shape" && "text-center pt-[30%]",
               el.kind === "text" && "p-0 leading-tight",
-              el.kind === "card" && "bg-white rounded-xl p-3 pt-4 text-[14px]"
             )}
             style={{
               fontSize: el.kind === "sticky" ? stickyFont(textOf(el)) : el.kind === "shape" || el.kind === "text" ? el.fontSize : undefined,
@@ -1080,6 +1119,7 @@ export function BoardCanvas({
   }
 
   const showPorts = (id: string) =>
+    !readOnly &&
     (tool === "select" || tool === "connector") &&
     !interaction &&
     !editingId &&
@@ -1254,6 +1294,26 @@ export function BoardCanvas({
             <div key={`h${gy}`} className="absolute left-0 right-0 h-px bg-coral" style={{ top: toScreen(0, gy).y }} />
           ))}
 
+          {/* every node you can connect to, while dragging a connector */}
+          {interaction?.type === "connect" &&
+            elements
+              .filter((e): e is BoxEl => isBox(e) && e.kind !== "draw" && e.kind !== "frame" && e.id !== interaction.from.id)
+              .map((el) => {
+                const a = toScreen(el.x, el.y);
+                const w = el.w * camera.zoom;
+                const h = el.h * camera.zoom;
+                const hot = connectHover === el.id;
+                return (
+                  <div key={`ct-${el.id}`} className="absolute" style={{ left: a.x, top: a.y, width: w, height: h }}>
+                    <div className={clsx("absolute -inset-1.5 rounded-lg border-2 border-dashed", hot ? "border-blue-600 bg-blue-500/5" : "border-blue-300/80")} />
+                    {(["top", "right", "bottom", "left"] as Side[]).map((side) => {
+                      const p = { top: [w / 2, 0], right: [w, h / 2], bottom: [w / 2, h], left: [0, h / 2] }[side];
+                      return <span key={side} className={clsx("absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white", hot ? "bg-blue-600" : "bg-blue-400")} style={{ left: p[0], top: p[1] }} />;
+                    })}
+                  </div>
+                );
+              })}
+
           {/* connection target */}
           {connectHover && (() => {
             const el = byId.get(connectHover);
@@ -1413,7 +1473,10 @@ export function BoardCanvas({
       </div>
 
       {/* Left: tool rail */}
-      <div data-ui className="absolute left-3 top-1/2 z-20 -translate-y-1/2 flex flex-col gap-0.5 rounded-xl bg-white p-1 shadow-md ring-1 ring-slate-200/80">
+      {readOnly && (
+        <div data-ui className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-xs text-white shadow">View only</div>
+      )}
+      <div data-ui style={readOnly ? { display: "none" } : undefined} className="absolute left-3 top-1/2 z-20 -translate-y-1/2 flex flex-col gap-0.5 rounded-xl bg-white p-1 shadow-md ring-1 ring-slate-200/80">
         {(
           [
             ["select", MousePointer2, "Select (V)"],
@@ -1665,6 +1728,20 @@ export function BoardCanvas({
           aria-label="Toggle minimap"
         >
           <MapIcon className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const r = rootRef.current?.getBoundingClientRect();
+            const b = boundsOf(elRef.current, new Map(elRef.current.map((e) => [e.id, e])));
+            if (!r || !b) return;
+            setCamera((c) => ({ ...c, x: r.width / 2 - (b.x + b.w / 2) * c.zoom, y: r.height / 2 - (b.y + b.h / 2) * c.zoom }));
+          }}
+          className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-slate-100"
+          title="Re-center (keep zoom)"
+          aria-label="Re-center"
+        >
+          <Crosshair className="h-4 w-4" />
         </button>
         <button type="button" onClick={() => fitTo(elements)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" title="Fit everything (Shift+1)" aria-label="Fit to content">
           <Maximize className="h-4 w-4" />

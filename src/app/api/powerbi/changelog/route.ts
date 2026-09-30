@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { getPowerBiChangeLogs } from "@/lib/powerbiSync";
 import { restoreChangeLog } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const _g = await requireModule("reports.history");
+  if (_g.deny) return _g.deny;
   try {
     const body = await request.json();
     const { action, id, restoredBy } = body;

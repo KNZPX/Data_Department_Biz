@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 // Every API call must come from a signed-in browser session. Only the sign-in
 // endpoints themselves are public. (Deep validation of the session happens in
 // the route handlers; this is the cheap first gate.)
-const PUBLIC_API = ["/api/powerbi/auth/", "/api/powerbi/token"];
+const PUBLIC_API = ["/api/powerbi/auth/", "/api/powerbi/token", "/api/auth/guest"];
 
 export function proxy(request: NextRequest) {
   const enforce = process.env.NODE_ENV === "production" || process.env.VERCEL;

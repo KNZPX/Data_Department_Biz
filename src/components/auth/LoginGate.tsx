@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertCircle, ChevronDown, FunctionSquare, LayoutGrid, Loader2, Users } from "lucide-react";
 import { Button, Textarea } from "@/components/ui";
+import { canModule, canPage, type Access } from "@/lib/access";
 
 export type AuthUser = {
   name: string;
@@ -14,6 +15,8 @@ export type AuthContextType = {
   authenticated: boolean;
   user: AuthUser | null;
   dbProvider: string;
+  access: Access | null;
+  isGuest: boolean;
   refreshAuth: () => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -22,11 +25,24 @@ const AuthContext = createContext<AuthContextType>({
   authenticated: false,
   user: null,
   dbProvider: "supabase",
+  access: null,
+  isGuest: false,
   refreshAuth: async () => {},
   logout: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
+
+/** can("dax.import") / canPage("licenses") for hiding UI the user isn't allowed to use. */
+export function useAccess() {
+  const { access } = useContext(AuthContext);
+  return {
+    access,
+    can: (moduleId: string) => canModule(access, moduleId),
+    canPage: (pageId: string) => canPage(access, pageId),
+    isAdmin: access?.role === "admin",
+  };
+}
 
 function MicrosoftMark() {
   return (
@@ -51,6 +67,14 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [dbProvider, setDbProvider] = useState<string>("supabase");
+  const [access, setAccess] = useState<Access | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
+  const [disabled, setDisabled] = useState(false);
+  const [guestOpen, setGuestOpen] = useState(false);
+  const [guestUser, setGuestUser] = useState("");
+  const [guestPass, setGuestPass] = useState("");
+  const [guestBusy, setGuestBusy] = useState(false);
+  const [guestError, setGuestError] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualToken, setManualToken] = useState("");
   const [manualSaving, setManualSaving] = useState(false);
@@ -69,6 +93,9 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         setAuthenticated(Boolean(data.hasToken && !data.expired));
         setUser(data.user || null);
+        setAccess(data.access || null);
+        setIsGuest(Boolean(data.isGuest));
+        setDisabled(Boolean(data.disabled));
         if (data.dbProvider) setDbProvider(data.dbProvider);
       } else {
         setAuthenticated(false);
@@ -87,6 +114,27 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     setAuthenticated(false);
     setUser(null);
     window.location.href = "/";
+  }
+
+  async function handleGuestLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setGuestBusy(true);
+    setGuestError(null);
+    try {
+      const res = await fetch("/api/auth/guest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: guestUser.trim(), password: guestPass }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sign-in failed.");
+      setGuestPass("");
+      await checkAuth();
+    } catch (err) {
+      setGuestError(err instanceof Error ? err.message : "Sign-in failed.");
+    } finally {
+      setGuestBusy(false);
+    }
   }
 
   async function handleSaveManualToken() {
@@ -124,7 +172,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
   if (authenticated) {
     return (
-      <AuthContext.Provider value={{ authenticated, user, dbProvider, refreshAuth: checkAuth, logout: handleLogout }}>
+      <AuthContext.Provider value={{ authenticated, user, dbProvider, access, isGuest, refreshAuth: checkAuth, logout: handleLogout }}>
         {children}
       </AuthContext.Provider>
     );
@@ -200,7 +248,57 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             Signing in on this device doesn&rsquo;t sign anyone else in or out.
           </p>
 
-          <div className="mt-10 border-t border-slate-200 pt-5">
+          {disabled && (
+            <p role="alert" className="mt-4 rounded-xl bg-coral/[0.06] p-3 text-sm text-slate-700">
+              This account has been turned off. Ask an admin to turn it back on.
+            </p>
+          )}
+
+          <div className="mt-8 rounded-xl ring-1 ring-slate-200">
+            <button
+              type="button"
+              onClick={() => setGuestOpen(!guestOpen)}
+              aria-expanded={guestOpen}
+              className="flex w-full items-center justify-between px-4 py-3 text-[14px] font-medium text-slate-800"
+            >
+              Sign in with a guest account
+              <ChevronDown className={`h-4 w-4 text-slate-400 transition ${guestOpen ? "rotate-180" : ""}`} />
+            </button>
+            {guestOpen && (
+              <form onSubmit={handleGuestLogin} className="space-y-3 border-t border-slate-100 p-4">
+                <label className="block text-[13px] text-slate-600">
+                  Username
+                  <input
+                    value={guestUser}
+                    onChange={(e) => setGuestUser(e.target.value)}
+                    autoComplete="username"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                </label>
+                <label className="block text-[13px] text-slate-600">
+                  Password
+                  <input
+                    type="password"
+                    value={guestPass}
+                    onChange={(e) => setGuestPass(e.target.value)}
+                    autoComplete="current-password"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  />
+                </label>
+                {guestError && <p className="text-[13px] text-coral">{guestError}</p>}
+                <button
+                  type="submit"
+                  disabled={guestBusy || !guestUser.trim() || !guestPass}
+                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {guestBusy ? "Signing in…" : "Sign in as guest"}
+                </button>
+                <p className="text-xs text-slate-400">Guest accounts are created by an admin and see only the pages they're given.</p>
+              </form>
+            )}
+          </div>
+
+          <div className="mt-8 border-t border-slate-200 pt-5">
             <button
               type="button"
               onClick={() => setManualOpen(!manualOpen)}

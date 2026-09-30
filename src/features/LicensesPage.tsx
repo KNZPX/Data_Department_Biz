@@ -1,511 +1,558 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Building2,
-  Check,
-  Download,
-  Eye,
-  FileSpreadsheet,
-  FolderKanban,
-  Globe,
-  Lock,
-  Pencil,
-  Plus,
-  Search,
-  ShieldCheck,
-  Trash2,
-  Upload,
-  UserCheck,
-  Users,
-  X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Download, FileUp, KeyRound, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { clsx } from "clsx";
-import { Button, EmptyState, Input, Modal, Panel, Select, StatCard } from "@/components/ui";
+import { Modal } from "@/components/ui";
 import { LicenseFormModal } from "@/components/LicenseFormModal";
 import { LicenseImportModal } from "@/components/LicenseImportModal";
-import {
-  COMMON_HOSPITALS,
-  COMMON_LICENSE_TYPES,
-  POWER_BI_32_COLUMNS,
-  SECURITY_GROUPS_LIST,
-  getAccessibleWorkspaces,
-  getGrantedPermissions,
-  type ColumnGroupKey,
-  type LicenseInput,
-  type PowerBiLicense,
-} from "@/lib/licenseTypes";
 import { batchImportLicenses, deleteLicense, getLicenses, saveLicense } from "@/lib/apiLicenses";
+import type { LicenseInput, PowerBiLicense } from "@/lib/licenseTypes";
+import { useAccess } from "@/components/auth/LoginGate";
 
-export function LicensesPage() {
-  const [licenses, setLicenses] = useState<PowerBiLicense[]>([]);
+type Grant = {
+  id: string;
+  email: string;
+  resource_type: "workspace" | "dataset" | "report";
+  resource_id: string;
+  resource_name: string | null;
+  workspace_id: string | null;
+  workspace_name: string | null;
+  permission: string;
+  granted_by: string | null;
+  updated_at: string;
+};
+type Resources = {
+  workspaces: { id: string; name: string; reports: number }[];
+  reports: { id: string; name: string; workspace_id: string; workspace_name: string }[];
+  datasets: { id: string; name: string }[];
+};
+
+const TYPE_LABEL = { workspace: "Workspace", dataset: "Dataset", report: "Report" } as const;
+const LEVEL_TONE: Record<string, string> = {
+  Admin: "bg-ink text-white",
+  Owner: "bg-ink text-white",
+  Member: "bg-blue-100 text-blue-800",
+  Write: "bg-blue-100 text-blue-800",
+  Edit: "bg-blue-100 text-blue-800",
+  Contributor: "bg-teal-live/15 text-teal-800",
+  Build: "bg-teal-live/15 text-teal-800",
+  Reshare: "bg-teal-live/15 text-teal-800",
+  Viewer: "bg-slate-100 text-slate-700",
+  Read: "bg-slate-100 text-slate-700",
+};
+
+function statusOf(l: PowerBiLicense): { label: string; tone: string } {
+  if (l.status === "revoked") return { label: "Revoked", tone: "bg-coral/10 text-coral" };
+  if ((l.license_type || "").toLowerCase().includes("cancel")) return { label: "Cancelled", tone: "bg-slate-100 text-slate-500" };
+  if (l.status === "pending") return { label: "Pending", tone: "bg-amber-100 text-amber-800" };
+  if (l.status === "inactive") return { label: "Inactive", tone: "bg-slate-100 text-slate-500" };
+  return { label: "Active", tone: "bg-teal-live/15 text-teal-800" };
+}
+
+function licenseShort(t: string) {
+  const s = (t || "").toLowerCase();
+  if (s.includes("pro")) return "Pro";
+  if (s.includes("premium")) return "Premium";
+  if (s.includes("cancel")) return "Cancelled";
+  return t || "";
+}
+
+function fmtDate(iso?: string | null) {
+  return iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+}
+
+// ---------------------------------------------------------------------------
+function PermissionDialog({
+  license,
+  resources,
+  canEdit,
+  onClose,
+  onChanged,
+}: {
+  license: PowerBiLicense;
+  resources: Resources | null;
+  canEdit: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [grants, setGrants] = useState<Grant[]>([]);
+  const [levels, setLevels] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [hospitalFilter, setHospitalFilter] = useState("All");
-  const [licenseTypeFilter, setLicenseTypeFilter] = useState("All");
-  const [activeGroup, setActiveGroup] = useState<ColumnGroupKey>("overview");
-  const [pageViewMode, setPageViewMode] = useState<"table" | "permissions">("table");
-  const [permGroupBy, setPermGroupBy] = useState<"department" | "site" | "workspace">("department");
+  const [type, setType] = useState<Grant["resource_type"]>("workspace");
+  const [ws, setWs] = useState("");
+  const [res, setRes] = useState("");
+  const [level, setLevel] = useState("Viewer");
+  const [error, setError] = useState<string | null>(null);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [editingLicense, setEditingLicense] = useState<PowerBiLicense | null>(null);
-  const [detailLicense, setDetailLicense] = useState<PowerBiLicense | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  async function load() {
+    const r = await fetch(`/api/licenses/permissions?email=${encodeURIComponent(license.email)}`, { cache: "no-store" });
+    const j = await r.json();
+    setGrants(j.permissions || []);
+    setLevels(j.levels || {});
+    setLoading(false);
+  }
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [license.email]);
 
   useEffect(() => {
-    void loadData();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLevel((levels[type] || ["Viewer"])[0]);
+    setRes("");
+  }, [type, levels]);
+
+  const reportsInWs = resources?.reports.filter((r) => !ws || r.workspace_id === ws) || [];
+
+  async function add() {
+    setError(null);
+    let payload: Partial<Grant> & { permission: string };
+    if (type === "workspace") {
+      const w = resources?.workspaces.find((x) => x.id === ws);
+      if (!w) return setError("Choose a workspace.");
+      payload = { resource_type: "workspace", resource_id: w.id, resource_name: w.name, workspace_id: w.id, workspace_name: w.name, permission: level };
+    } else if (type === "report") {
+      const r = resources?.reports.find((x) => x.id === res);
+      if (!r) return setError("Choose a report.");
+      payload = { resource_type: "report", resource_id: r.id, resource_name: r.name, workspace_id: r.workspace_id, workspace_name: r.workspace_name, permission: level };
+    } else {
+      const d = resources?.datasets.find((x) => x.id === res);
+      if (!d) return setError("Choose a dataset.");
+      const w = resources?.workspaces.find((x) => x.id === ws);
+      payload = { resource_type: "dataset", resource_id: d.id, resource_name: d.name, workspace_id: w?.id || null, workspace_name: w?.name || null, permission: level };
+    }
+    const r = await fetch("/api/licenses/permissions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "upsert", email: license.email, ...payload }),
+    });
+    const j = await r.json();
+    if (!r.ok) return setError(j.error || "Couldn't save.");
+    await load();
+    onChanged();
+  }
+
+  async function remove(id: string) {
+    await fetch("/api/licenses/permissions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", id }) });
+    await load();
+    onChanged();
+  }
+
+  const grouped = (["workspace", "dataset", "report"] as const).map((t) => ({ t, list: grants.filter((g) => g.resource_type === t) }));
+
+  return (
+    <Modal className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4 backdrop-blur-[2px]">
+      <div role="dialog" aria-modal="true" className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
+          <div>
+            <p className="text-lg font-semibold text-slate-900">Permissions for {license.first_name || license.name}</p>
+            <p className="text-sm text-slate-500">
+              {license.email}, {licenseShort(license.license_type)} license
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {canEdit && (
+          <div className="border-b border-slate-100 bg-slate-50/70 px-6 py-4">
+            <p className="mb-2 text-sm font-medium text-slate-800">Give access</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={type} onChange={(e) => setType(e.target.value as Grant["resource_type"])} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm">
+                <option value="workspace">Workspace</option>
+                <option value="dataset">Dataset</option>
+                <option value="report">Report</option>
+              </select>
+              <select value={ws} onChange={(e) => { setWs(e.target.value); setRes(""); }} className="w-56 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm">
+                <option value="">{type === "workspace" ? "Choose workspace" : "Any workspace"}</option>
+                {resources?.workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+              {type !== "workspace" && (
+                <select value={res} onChange={(e) => setRes(e.target.value)} className="w-64 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm">
+                  <option value="">{type === "report" ? `Choose report (${reportsInWs.length})` : "Choose dataset"}</option>
+                  {(type === "report" ? reportsInWs : resources?.datasets || []).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <select value={level} onChange={(e) => setLevel(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm">
+                {(levels[type] || []).map((l) => (
+                  <option key={l}>{l}</option>
+                ))}
+              </select>
+              <button type="button" onClick={() => void add()} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                <Plus className="h-4 w-4" /> Add
+              </button>
+            </div>
+            {error && <p className="mt-2 text-sm text-coral">{error}</p>}
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          {loading && <Loader2 className="mx-auto my-8 h-5 w-5 animate-spin text-slate-400" />}
+          {!loading && grants.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No workspace, dataset or report access recorded yet.</p>}
+          {grouped.map(
+            ({ t, list }) =>
+              list.length > 0 && (
+                <div key={t} className="mb-5">
+                  <p className="mb-2 text-sm font-medium text-slate-900">
+                    {TYPE_LABEL[t]}s <span className="text-slate-400">{list.length}</span>
+                  </p>
+                  <ul className="divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">
+                    {list.map((g) => (
+                      <li key={g.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-slate-900">{g.resource_name || g.resource_id}</p>
+                          {t !== "workspace" && g.workspace_name && <p className="truncate text-xs text-slate-500">{g.workspace_name}</p>}
+                        </div>
+                        <span className={clsx("rounded-md px-2 py-0.5 text-xs", LEVEL_TONE[g.permission] || "bg-slate-100")}>{g.permission}</span>
+                        {canEdit && (
+                          <button type="button" onClick={() => void remove(g.id)} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-coral/10 hover:text-coral" aria-label="Remove access">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+export function LicensesPage() {
+  const { can } = useAccess();
+  const canEdit = can("licenses.edit");
+  const [view, setView] = useState<"list" | "permissions">("list");
+  const [licenses, setLicenses] = useState<PowerBiLicense[]>([]);
+  const [grants, setGrants] = useState<Grant[]>([]);
+  const [resources, setResources] = useState<Resources | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [site, setSite] = useState("All");
+  const [type, setType] = useState("All");
+  const [status, setStatus] = useState("All");
+  const [permFor, setPermFor] = useState<PowerBiLicense | null>(null);
+  const [editing, setEditing] = useState<PowerBiLicense | null | "new">(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [permQ, setPermQ] = useState("");
+
+  async function loadAll() {
+    const [ls, pr, rs] = await Promise.all([
+      getLicenses(),
+      fetch("/api/licenses/permissions", { cache: "no-store" }).then((r) => r.json()).catch(() => ({})),
+      fetch("/api/licenses/resources", { cache: "no-store" }).then((r) => r.json()).catch(() => null),
+    ]);
+    setLicenses(ls);
+    setGrants(pr.permissions || []);
+    setResources(rs);
+    setLoading(false);
+  }
+  useEffect(() => {
+    void loadAll();
   }, []);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const data = await getLicenses();
-      setLicenses(data);
-    } catch (err) {
-      console.error("Failed to load licenses:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const grantCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const g of grants) m.set(g.email.toLowerCase(), (m.get(g.email.toLowerCase()) || 0) + 1);
+    return m;
+  }, [grants]);
 
-  async function handleSave(input: LicenseInput) {
-    const saved = await saveLicense(input);
-    setLicenses((prev) => {
-      const idx = prev.findIndex((l) => l.id === saved.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = saved;
-        return next;
-      }
-      return [saved, ...prev];
-    });
-  }
+  const sites = useMemo(() => Array.from(new Set(licenses.map((l) => l.site || l.hospital).filter(Boolean))).sort(), [licenses]);
 
-  async function handleDelete(id: string) {
-    await deleteLicense(id);
-    setLicenses((prev) => prev.filter((l) => l.id !== id));
-  }
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return licenses
+      .filter((l) => site === "All" || (l.site || l.hospital) === site)
+      .filter((l) => type === "All" || licenseShort(l.license_type) === type)
+      .filter((l) => status === "All" || statusOf(l).label === status)
+      .filter((l) => !needle || `${l.email} ${l.name} ${l.display_name} ${l.name_th} ${l.position_en} ${l.position}`.toLowerCase().includes(needle))
+      .sort((a, b) => (a.email || "").localeCompare(b.email || ""));
+  }, [licenses, q, site, type, status]);
 
-  async function handleBatchImport(rows: LicenseInput[]) {
-    await batchImportLicenses(rows);
-    await loadData();
-  }
-
-  async function handleExport() {
+  async function exportExcel() {
     setExporting(true);
     try {
-      const res = await fetch("/api/licenses/export", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ licenses: filteredLicenses }),
-      });
-      if (!res.ok) throw new Error("Failed to export Excel file");
+      const res = await fetch("/api/licenses/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ licenses: rows }) });
+      if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = `2026_List_Power_BI_License_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
+      a.href = URL.createObjectURL(blob);
+      a.download = `Power_BI_Licenses_${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
-      a.remove();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to export");
     } finally {
       setExporting(false);
     }
   }
 
-  const filteredLicenses = useMemo(() => {
-    return licenses.filter((item) => {
-      if (hospitalFilter !== "All" && item.hospital !== hospitalFilter && item.site !== hospitalFilter) {
-        return false;
-      }
-      if (licenseTypeFilter !== "All" && item.license_type !== licenseTypeFilter) {
-        return false;
-      }
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        return (
-          item.name.toLowerCase().includes(q) ||
-          item.name_th.toLowerCase().includes(q) ||
-          item.display_name.toLowerCase().includes(q) ||
-          item.email.toLowerCase().includes(q) ||
-          item.ad_account.toLowerCase().includes(q) ||
-          item.department_name.toLowerCase().includes(q) ||
-          item.department_en.toLowerCase().includes(q) ||
-          item.person_id.toLowerCase().includes(q) ||
-          item.user_id.toLowerCase().includes(q) ||
-          item.position_en.toLowerCase().includes(q)
-        );
-      }
-      return true;
-    });
-  }, [licenses, hospitalFilter, licenseTypeFilter, search]);
+  // Permission view: workspace → its grants (workspace-level, datasets, reports)
+  const tree = useMemo(() => {
+    const needle = permQ.trim().toLowerCase();
+    const filtered = grants.filter((g) => !needle || `${g.email} ${g.resource_name} ${g.workspace_name}`.toLowerCase().includes(needle));
+    const byWs = new Map<string, { name: string; grants: Grant[] }>();
+    for (const g of filtered) {
+      const key = g.workspace_id || `__none_${g.resource_type}`;
+      const name = g.workspace_name || (g.resource_type === "dataset" ? "Datasets (no workspace)" : "Other");
+      const e = byWs.get(key) || { name, grants: [] };
+      e.grants.push(g);
+      byWs.set(key, e);
+    }
+    return Array.from(byWs.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  }, [grants, permQ]);
 
-  const stats = useMemo(() => {
-    const total = licenses.length;
-    const active = licenses.filter((l) => l.status === "active").length;
-    const capacityUsers = licenses.filter(
-      (l) => l.pbi_premium_capacity && !l.pbi_premium_capacity.toLowerCase().includes("no")
-    ).length;
-    const proUsers = licenses.filter(
-      (l) => l.pbi_pro_license && !l.pbi_pro_license.toLowerCase().includes("no")
-    ).length;
-    const phuketSecGroupUsers = licenses.filter(
-      (l) => l.bpk_phuket_executive || l.bpk_phuket_marketing || l.bpk_phuket_hod || l.bpk_phuket_stg || l.bpk_phuket_admin
-    ).length;
-
-    return { total, active, capacityUsers, proUsers, phuketSecGroupUsers };
-  }, [licenses]);
-
-  const activeColumns = useMemo(() => {
-    if (activeGroup === "all") return POWER_BI_32_COLUMNS;
-    if (activeGroup === "org") return POWER_BI_32_COLUMNS.filter((c) => c.category === "General");
-    if (activeGroup === "creator") return POWER_BI_32_COLUMNS.filter((c) => c.category === "Creator");
-    if (activeGroup === "license") return POWER_BI_32_COLUMNS.filter((c) => c.category === "Capacity");
-    if (activeGroup === "security") return POWER_BI_32_COLUMNS.filter((c) => c.category === "Phuket" || c.category === "Site");
-    return [
-      { key: "site", header: "Site" },
-      { key: "display_name", header: "Display Name" },
-      { key: "name_th", header: "Name (TH)" },
-      { key: "ad_account", header: "AD Account" },
-      { key: "department_name", header: "Department" },
-      { key: "position_en", header: "Position" },
-      { key: "license_type", header: "License Type" },
-      { key: "status", header: "Status" },
-    ];
-  }, [activeGroup]);
+  const nameOf = (email: string) => {
+    const l = licenses.find((x) => x.email?.toLowerCase() === email.toLowerCase());
+    return l ? `${l.first_name || ""} ${l.last_name || ""}`.trim() || l.name : "";
+  };
 
   return (
-    <div className="h-full overflow-y-auto pr-1 space-y-6 pb-12">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Total License Holders" value={stats.total} icon={Users} tone="gold" />
-        <StatCard label="Active Licenses" value={stats.active} icon={UserCheck} tone="emerald" />
-        <StatCard label="Premium Capacity Users" value={stats.capacityUsers} icon={ShieldCheck} tone="gold" />
-        <StatCard label="With Security Groups" value={stats.phuketSecGroupUsers} icon={Lock} tone="default" />
+    <div className="flex h-full flex-col gap-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200/80">
+        <div role="tablist" className="flex rounded-xl bg-slate-100 p-1">
+          {(
+            [
+              ["list", "License list", licenses.length],
+              ["permissions", "Permission view", grants.length],
+            ] as const
+          ).map(([id, label, n]) =>
+            id === "permissions" && !can("licenses.permissions") ? null : (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={view === id}
+                type="button"
+                onClick={() => setView(id)}
+                className={clsx("rounded-lg px-3.5 py-1.5 text-sm", view === id ? "bg-white font-medium text-slate-900 shadow-sm" : "text-slate-600")}
+              >
+                {label} <span className="text-slate-400">{n}</span>
+              </button>
+            )
+          )}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {can("licenses.export") && (
+            <>
+              <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
+                <Download className="h-4 w-4" /> {exporting ? "Exporting…" : "Export"}
+              </button>
+              {canEdit && (
+                <button type="button" onClick={() => setImportOpen(true)} className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
+                  <FileUp className="h-4 w-4" /> Import
+                </button>
+              )}
+            </>
+          )}
+          {canEdit && (
+            <button type="button" onClick={() => setEditing("new")} className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700">
+              <Plus className="h-4 w-4" /> Add license
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Main Filter & Action Toolbar */}
-      <Panel className="p-4 sm:p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* View Mode Toggle: Table vs Permissions */}
-          <div className="inline-flex rounded-full bg-slate-100 p-1 border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setPageViewMode("table")}
-              className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
-                pageViewMode === "table" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
-              )}
-            >
-              License Table (32 Columns)
-            </button>
-            <button
-              type="button"
-              onClick={() => setPageViewMode("permissions")}
-              className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
-                pageViewMode === "permissions" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
-              )}
-            >
-              Permission Matrix Analysis
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              dense
-              onClick={() => setImportOpen(true)}
-            >
-              <Upload className="h-3.5 w-3.5 text-blue-600" />
-              <span>Import Excel</span>
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              dense
-              onClick={handleExport}
-              disabled={exporting || filteredLicenses.length === 0}
-            >
-              <Download className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Export 32 Columns</span>
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              dense
-              onClick={() => {
-                setEditingLicense(null);
-                setFormOpen(true);
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Add User</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Search & Dropdown Filters */}
-        <div className="grid gap-3 sm:grid-cols-4">
-          <div className="sm:col-span-2">
-            <Input
-              icon={Search}
-              clearable
-              onClear={() => setSearch("")}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, AD account, email, department, person ID..."
-            />
-          </div>
-          <div>
-            <Select value={hospitalFilter} onChange={(e) => setHospitalFilter(e.target.value)}>
-              <option value="All">All Business Sites / Branches</option>
-              {COMMON_HOSPITALS.map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <Select value={licenseTypeFilter} onChange={(e) => setLicenseTypeFilter(e.target.value)}>
-              <option value="All">All License Types</option>
-              {COMMON_LICENSE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-
-        {/* 32-Column Category Selector (Only in table mode) */}
-        {pageViewMode === "table" ? (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3 text-xs">
-            <span className="font-semibold text-slate-500 mr-1">Column Groups:</span>
+      {view === "list" ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email, name, position" className="w-72 rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
+            </div>
             {[
-              { key: "overview", label: "Overview" },
-              { key: "all", label: "All 32 Columns" },
-              { key: "org", label: "1. Profile (General)" },
-              { key: "creator", label: "2. Requestor (Creator)" },
-              { key: "license", label: "3. License & Capacity" },
-              { key: "security", label: "4. Security Groups" },
-            ].map((g) => (
-              <button
-                key={g.key}
-                type="button"
-                onClick={() => setActiveGroup(g.key as ColumnGroupKey)}
-                className={clsx(
-                  "rounded-full px-3 py-1 font-semibold transition border",
-                  activeGroup === g.key
-                    ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                    : "bg-white text-slate-600 border-slate-200 hover:bg-blue-600/10 hover:text-blue-600"
-                )}
-              >
-                {g.label}
-              </button>
+              ["Site", site, setSite, ["All", ...sites]],
+              ["License", type, setType, ["All", "Pro", "Premium", "Cancelled"]],
+              ["Status", status, setStatus, ["All", "Active", "Pending", "Revoked", "Cancelled", "Inactive"]],
+            ].map(([label, value, set, opts]) => (
+              <label key={label as string} className="flex items-center gap-1.5 text-xs text-slate-500">
+                {label as string}
+                <select value={value as string} onChange={(e) => (set as (v: string) => void)(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800">
+                  {(opts as string[]).map((o) => (
+                    <option key={o}>{o}</option>
+                  ))}
+                </select>
+              </label>
             ))}
+            <span className="ml-auto text-xs text-slate-500">
+              {rows.length} of {licenses.length}
+            </span>
           </div>
-        ) : null}
-      </Panel>
-
-      {/* Main Content Area */}
-      {loading ? (
-        <div className="grid place-items-center py-16 text-slate-400">
-          <p className="text-sm font-medium">Loading Power BI License dataset...</p>
-        </div>
-      ) : filteredLicenses.length === 0 ? (
-        <EmptyState>
-          <p className="text-base font-semibold text-slate-800">No license records match your criteria</p>
-          <p className="mt-1 text-xs text-slate-500">Click &quot;Import Excel&quot; or &quot;Add User&quot; to manage licenses</p>
-        </EmptyState>
-      ) : pageViewMode === "table" ? (
-        /* Table View */
-        <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white shadow-xs">
-          <table className="table table-zebra table-xs w-full text-left">
-            <thead className="bg-slate-50 text-blue-600 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="py-3 px-3 whitespace-nowrap">#</th>
-                {activeColumns.map((col) => (
-                  <th key={String(col.key)} className="py-3 px-3 whitespace-nowrap">
-                    {col.header}
-                  </th>
-                ))}
-                <th className="py-3 px-3 text-right whitespace-nowrap">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredLicenses.map((row, idx) => (
-                <tr key={row.id} className="hover:bg-slate-50/80 transition">
-                  <td className="py-2.5 px-3 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                  {activeColumns.map((col) => {
-                    const val = row[col.key as keyof PowerBiLicense];
-                    const isBool = typeof val === "boolean";
-                    return (
-                      <td key={String(col.key)} className="py-2.5 px-3 whitespace-nowrap">
-                        {isBool ? (
-                          val ? (
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                              <Check className="h-3 w-3" />
-                            </span>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )
-                        ) : col.key === "status" ? (
-                          <span
-                            className={clsx(
-                              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                              val === "active"
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-amber-50 text-amber-700 border border-amber-200"
-                            )}
-                          >
-                            {String(val || "active")}
-                          </span>
-                        ) : col.key === "license_type" ? (
-                          <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-semibold text-blue-600 border border-blue-600/20">
-                            {String(val || "-")}
-                          </span>
-                        ) : (
-                          <span className="text-slate-800">{String(val || "-")}</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingLicense(row);
-                          setFormOpen(true);
-                        }}
-                        className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        title="Edit license"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Are you sure you want to delete license for ${row.display_name}?`)) {
-                            void handleDelete(row.id);
-                          }
-                        }}
-                        className="rounded-full p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                        title="Delete user"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </td>
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full min-w-[1100px] text-sm">
+              <thead className="sticky top-0 z-10 bg-white">
+                <tr className="border-b border-slate-100 text-left text-xs text-slate-500">
+                  {["#", "Email", "Name", "Surname", "Position", "Site", "License type", "Status", "Date approved", ""].map((h) => (
+                    <th key={h} className="px-3 py-2.5 font-medium">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading && (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-400" />
+                    </td>
+                  </tr>
+                )}
+                {rows.map((l, i) => {
+                  const st = statusOf(l);
+                  const n = grantCount.get((l.email || "").toLowerCase()) || 0;
+                  return (
+                    <tr key={l.id} className="hover:bg-slate-50/70">
+                      <td className="px-3 py-2 tabular-nums text-slate-400">{i + 1}</td>
+                      <td className="px-3 py-2 text-slate-800">{l.email}</td>
+                      <td className="px-3 py-2 text-slate-900">{l.first_name || l.name}</td>
+                      <td className="px-3 py-2 text-slate-900">{l.last_name || ""}</td>
+                      <td className="max-w-[220px] truncate px-3 py-2 text-slate-600" title={l.position_en || l.position || ""}>
+                        {l.position_en || l.position || ""}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{l.site || l.hospital}</td>
+                      <td className="px-3 py-2 text-slate-600">{licenseShort(l.license_type)}</td>
+                      <td className="px-3 py-2">
+                        <span className={clsx("rounded-md px-2 py-0.5 text-xs", st.tone)}>{st.label}</span>
+                      </td>
+                      <td className="px-3 py-2 tabular-nums text-slate-600">{fmtDate(l.approved_at)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex justify-end gap-1">
+                          <button type="button" onClick={() => setPermFor(l)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50">
+                            <KeyRound className="h-3.5 w-3.5" /> Permissions{n ? ` (${n})` : ""}
+                          </button>
+                          {canEdit && (
+                            <button type="button" onClick={() => setEditing(l)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Edit license">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
-        /* Permission Matrix View */
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredLicenses.map((lic) => {
-            const perms = getGrantedPermissions(lic);
-            const workspaces = getAccessibleWorkspaces(lic);
-            return (
-              <Panel key={lic.id} className="p-4 sm:p-5 flex flex-col justify-between space-y-3">
-                <div>
-                  <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-blue-600 text-white px-2 py-0.2 font-mono text-[11px] font-semibold shadow-2xs">
-                          {lic.site || "PKT"}
-                        </span>
-                        <h4 className="text-sm font-semibold text-slate-900">{lic.display_name}</h4>
-                      </div>
-                      <p className="text-xs text-slate-500">{lic.department_name || lic.department_en}</p>
-                    </div>
-                    <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-semibold text-blue-600 border border-blue-600/20">
-                      {lic.license_type}
-                    </span>
-                  </div>
-
-                  {/* Permissions Chips */}
-                  <div className="mt-3 space-y-1.5">
-                    <span className="text-[11px] font-semibold text-slate-400">Assigned Security Groups:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {perms.length > 0 ? (
-                        perms.map((p) => (
-                          <span
-                            key={p.code}
-                            className={clsx(
-                              "rounded-full px-2 py-0.5 text-[11px] font-semibold border",
-                              p.tone
-                            )}
-                          >
-                            {p.label}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80">
+          <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input value={permQ} onChange={(e) => setPermQ(e.target.value)} placeholder="Search workspace, report or email" className="w-80 rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400" />
+            </div>
+            <button type="button" className="text-xs text-blue-700 hover:underline" onClick={() => setOpen(Object.fromEntries(tree.map(([k]) => [k, true])))}>
+              Expand all
+            </button>
+            <button type="button" className="text-xs text-blue-700 hover:underline" onClick={() => setOpen({})}>
+              Collapse all
+            </button>
+            <span className="ml-auto text-xs text-slate-500">
+              {grants.length} grants across {tree.length} workspaces
+            </span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto">
+            {tree.length === 0 && (
+              <p className="p-10 text-center text-sm text-slate-500">
+                No permissions recorded yet. Open a person in the License list and use <span className="font-medium">Permissions</span> to add some.
+              </p>
+            )}
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="sticky top-0 z-10 bg-white">
+                <tr className="border-b border-slate-100 text-left text-xs text-slate-500">
+                  <th className="px-3 py-2.5 font-medium">Workspace / item</th>
+                  <th className="px-3 py-2.5 font-medium">Type</th>
+                  <th className="px-3 py-2.5 font-medium">Email</th>
+                  <th className="px-3 py-2.5 font-medium">Name</th>
+                  <th className="px-3 py-2.5 font-medium">Permission</th>
+                  <th className="px-3 py-2.5 font-medium">Granted by</th>
+                </tr>
+              </thead>
+              {tree.map(([key, w]) => {
+                const isOpen = open[key] ?? tree.length <= 3;
+                const people = new Set(w.grants.map((g) => g.email)).size;
+                const items = [...w.grants].sort((a, b) => a.resource_type.localeCompare(b.resource_type) || (a.resource_name || "").localeCompare(b.resource_name || "") || a.email.localeCompare(b.email));
+                return (
+                  <tbody key={key} className="border-b border-slate-100">
+                    <tr className="cursor-pointer bg-slate-50/80 hover:bg-slate-100/70" onClick={() => setOpen({ ...open, [key]: !isOpen })}>
+                      <td colSpan={6} className="px-3 py-2.5">
+                        <span className="flex items-center gap-2 font-medium text-slate-900">
+                          {isOpen ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+                          {w.name}
+                          <span className="font-normal text-slate-500">
+                            {people} people, {w.grants.length} grants
                           </span>
-                        ))
-                      ) : (
-                        <span className="text-xs text-slate-400 italic">No specific security groups</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Workspaces accessible */}
-                  <div className="mt-3 space-y-1.5">
-                    <span className="text-[11px] font-semibold text-slate-400">Accessible Workspaces:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {workspaces.map((w) => (
-                        <span
-                          key={w}
-                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
-                        >
-                          {w}
                         </span>
+                      </td>
+                    </tr>
+                    {isOpen &&
+                      items.map((g) => (
+                        <tr key={g.id} className="hover:bg-slate-50/60">
+                          <td className="px-3 py-2 pl-9 text-slate-800">{g.resource_type === "workspace" ? "Whole workspace" : g.resource_name}</td>
+                          <td className="px-3 py-2 text-slate-500">{TYPE_LABEL[g.resource_type]}</td>
+                          <td className="px-3 py-2 text-slate-800">{g.email}</td>
+                          <td className="px-3 py-2 text-slate-600">{nameOf(g.email)}</td>
+                          <td className="px-3 py-2">
+                            <span className={clsx("rounded-md px-2 py-0.5 text-xs", LEVEL_TONE[g.permission] || "bg-slate-100")}>{g.permission}</span>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-500">
+                            {g.granted_by} {fmtDate(g.updated_at)}
+                          </td>
+                        </tr>
                       ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-400">
-                  <span className="font-mono">{lic.ad_account}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingLicense(lic);
-                      setFormOpen(true);
-                    }}
-                    className="text-xs font-semibold text-blue-600 hover:underline"
-                  >
-                    Edit
-                  </button>
-                </div>
-              </Panel>
-            );
-          })}
+                  </tbody>
+                );
+              })}
+            </table>
+          </div>
         </div>
       )}
 
-      {/* Form Modal */}
-      {formOpen ? (
+      {permFor && (
+        <PermissionDialog
+          license={permFor}
+          resources={resources}
+          canEdit={canEdit}
+          onClose={() => setPermFor(null)}
+          onChanged={() => void fetch("/api/licenses/permissions", { cache: "no-store" }).then((r) => r.json()).then((j) => setGrants(j.permissions || []))}
+        />
+      )}
+      {editing && (
         <LicenseFormModal
-          editing={editingLicense}
-          onSave={handleSave}
-          onDelete={handleDelete}
-          onClose={() => setFormOpen(false)}
+          editing={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSave={async (item: LicenseInput) => {
+            await saveLicense(item);
+            setEditing(null);
+            await loadAll();
+          }}
+          onDelete={async (id: string) => {
+            await deleteLicense(id);
+            setEditing(null);
+            await loadAll();
+          }}
         />
-      ) : null}
-
-      {/* Import Modal */}
-      {importOpen ? (
+      )}
+      {importOpen && (
         <LicenseImportModal
-          onImport={handleBatchImport}
           onClose={() => setImportOpen(false)}
+          onImport={async (rows2: LicenseInput[]) => {
+            await batchImportLicenses(rows2);
+            await loadAll();
+          }}
         />
-      ) : null}
+      )}
     </div>
   );
 }

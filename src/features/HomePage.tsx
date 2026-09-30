@@ -2,280 +2,277 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import {
-  ArrowUpRight,
-  FileUp,
-  FunctionSquare,
-  GitCommitHorizontal,
-  LayoutGrid,
-  LogIn,
-  PencilLine,
-  Plus,
-  Trash2,
-  TrendingUp,
-  Upload,
-  Workflow,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowUpRight, FileUp, GitCommitHorizontal, LogIn, PencilLine, Plus, Trash2, type LucideIcon } from "lucide-react";
 import { clsx } from "clsx";
-import { useAuth } from "@/components/auth/LoginGate";
+import { useAccess, useAuth } from "@/components/auth/LoginGate";
 import { initialsOf, toneFor, usePresence } from "@/components/layout/Presence";
+import { TrendChart, type Point } from "@/components/TrendChart";
 
-type ModelMeta = {
-  code: string;
-  name: string;
-  totalMeasures: number;
-  totalColumns: number;
-  totalTables?: number;
-  totalRelationships?: number;
-  lastImportedAt?: string | null;
-  lastImportedBy?: string | null;
-  sourceFile?: string | null;
+type Grain = "day" | "month" | "year";
+type Delta = { now: number; start: number };
+type Insights = {
+  semantic?: {
+    startedAt: string | null;
+    models: { code: string; name: string; tables: number; relationships: number; lastImportedAt: string | null; lastImportedBy: string | null; sourceFile: string | null; measures: Delta; columns: Delta; custom: Delta }[];
+    totals: { measures: number; measuresStart: number; columns: number; columnsStart: number; custom: number; formulaChanges: number };
+    series: Point[];
+  };
+  license?: {
+    startedAt: string | null;
+    totals: { active: number; activeStart: number; pro: number; premium: number; revoked: number; cancelled: number; all: number };
+    bySite: { site: string; n: number }[];
+    series: Point[];
+  };
+  activity?: { id: string; action: string; summary: string; by: string | null; at: string; table: string }[];
 };
 
-type LogRow = {
-  id: string;
-  entity_table: string;
-  action: string;
-  summary: string;
-  changed_by: string | null;
-  changed_at: string;
-};
+const ACTION_ICON: Record<string, LucideIcon> = { login: LogIn, create: Plus, update: PencilLine, delete: Trash2, import: FileUp };
 
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
-}
-
-function relTime(iso?: string | null) {
-  if (!iso) return "never";
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.round(diff / 60000);
+function rel(iso?: string | null) {
+  if (!iso) return "";
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (m < 1) return "just now";
   if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
   if (h < 24) return `${h} h ago`;
   const d = Math.round(h / 24);
-  if (d < 30) return `${d} d ago`;
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  return d < 30 ? `${d} d ago` : new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+function since(iso?: string | null) {
+  return iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "the start";
 }
 
-const ACTION_ICON: Record<string, LucideIcon> = {
-  login: LogIn,
-  create: Plus,
-  update: PencilLine,
-  delete: Trash2,
-  import: FileUp,
-};
+/** ▲ green for increases, ▼ red for decreases. */
+function Change({ now, start, suffix = "since start" }: { now: number; start: number; suffix?: string }) {
+  const d = now - start;
+  if (d === 0) return <span className="text-xs text-slate-400">No change {suffix}</span>;
+  return (
+    <span className={clsx("text-xs tabular-nums", d > 0 ? "text-[#0B7F72]" : "text-coral")}>
+      {d > 0 ? "▲ +" : "▼ −"}
+      {Math.abs(d).toLocaleString()} {suffix}
+    </span>
+  );
+}
 
-const SHORTCUTS: { href: string; label: string; body: string; icon: LucideIcon }[] = [
-  { href: "/reports", label: "Find a report", body: "Browse every Phuket workspace", icon: LayoutGrid },
-  { href: "/dax", label: "Look up a measure", body: "Formulas with business definitions", icon: FunctionSquare },
-  { href: "/whiteboard", label: "Sketch a data flow", body: "Shared canvases for the team", icon: Workflow },
-  { href: "/target-scenario", label: "Model 2027 targets", body: "Cascade targets site by site", icon: TrendingUp },
-];
+function Kpi({ label, value, children }: { label: string; value: number; children?: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 text-[28px] font-semibold leading-tight tabular-nums tracking-tight text-slate-900">{value.toLocaleString()}</p>
+      <div className="mt-1 min-h-[16px]">{children}</div>
+    </div>
+  );
+}
 
 export function HomePage() {
   const { user } = useAuth();
+  const { can } = useAccess();
   const online = usePresence();
-  const [models, setModels] = useState<ModelMeta[]>([]);
-  const [logs, setLogs] = useState<LogRow[]>([]);
+  const [grain, setGrain] = useState<Grain>("day");
+  const [data, setData] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      try {
-        const [daxRes, logRes] = await Promise.all([
-          fetch("/api/powerbi/dax?model=ALL&limit=1", { cache: "no-store" }),
-          fetch("/api/users?includeLogs=true", { cache: "no-store" }),
-        ]);
-        if (!alive) return;
-        if (daxRes.ok) setModels(((await daxRes.json()).models || []) as ModelMeta[]);
-        if (logRes.ok) setLogs((((await logRes.json()).logs || []) as LogRow[]).slice(0, 10));
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoading(true);
+    fetch(`/api/insights?grain=${grain}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => alive && setData(j))
+      .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [grain]);
 
   const firstName = (user?.name || "").split(/\s+/)[0] || "there";
-  const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
-  const others = online.filter((u) => u.email !== user?.email?.toLowerCase());
+  const s = data?.semantic;
+  const l = data?.license;
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-6xl space-y-5 pb-10">
-        {/* Hero */}
-        <section className="model-grid relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white">
-          <div className="grid gap-8 p-6 md:grid-cols-[1.3fr_1fr] md:p-9">
-            <div>
-              <p className="text-sm text-slate-500">{today}</p>
-              <h2 className="mt-2 text-[34px] leading-tight font-semibold tracking-tight text-slate-900 md:text-[42px]">
-                {greeting()}, {firstName}.
-              </h2>
-              <p className="mt-3 max-w-md text-[15px] leading-relaxed text-slate-600">
-                {others.length === 0
-                  ? "You're the only one here right now. Everything you change is saved under your name."
-                  : `${others.length === 1 ? others[0].name.split(/\s+/)[0] + " is" : others.length + " teammates are"} working in the portal with you.`}
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white/90 p-4 backdrop-blur">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-900">Working now</p>
-                <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <span className="presence-dot h-2 w-2 rounded-full bg-teal-live" />
-                  last 10 minutes
-                </span>
-              </div>
-              <ul className="mt-3 space-y-2.5">
-                {online.length === 0 && <li className="text-sm text-slate-400">Loading…</li>}
+      <div className="mx-auto max-w-7xl space-y-6 pb-10">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-sm text-slate-500">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+            <h2 className="mt-1 text-[32px] font-semibold leading-tight tracking-tight text-slate-900">Hello, {firstName}.</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="flex -space-x-2">
                 {online.slice(0, 5).map((u) => (
-                  <li key={u.email} className="flex items-center gap-3">
-                    <span
-                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white"
-                      style={{ backgroundColor: toneFor(u.email) }}
-                    >
-                      {initialsOf(u.name)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-slate-800">
-                        {u.name}
-                        {u.email === user?.email?.toLowerCase() && <span className="text-slate-400"> (you)</span>}
-                      </p>
-                      <p className="truncate text-xs text-slate-400">{u.email}</p>
-                    </div>
-                    <span className="text-xs text-slate-400">{relTime(u.lastSeenAt)}</span>
-                  </li>
+                  <span key={u.email} title={u.name} className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-semibold text-white ring-2 ring-paper" style={{ background: toneFor(u.email) }}>
+                    {initialsOf(u.name)}
+                  </span>
                 ))}
-                {online.length > 5 && <li className="text-xs text-slate-500">and {online.length - 5} more</li>}
-              </ul>
+              </div>
+              <span className="text-xs text-slate-500">{online.length <= 1 ? "Only you online" : `${online.length} online`}</span>
+            </div>
+            <div role="tablist" aria-label="Trend period" className="flex rounded-xl bg-white p-1 ring-1 ring-slate-200">
+              {(["day", "month", "year"] as Grain[]).map((g) => (
+                <button
+                  key={g}
+                  role="tab"
+                  aria-selected={grain === g}
+                  type="button"
+                  onClick={() => setGrain(g)}
+                  className={clsx("rounded-lg px-3.5 py-1.5 text-sm", grain === g ? "bg-ink text-white" : "text-slate-600 hover:bg-slate-50")}
+                >
+                  {g === "day" ? "Daily" : g === "month" ? "Monthly" : "Yearly"}
+                </button>
+              ))}
             </div>
           </div>
-        </section>
+        </div>
 
-        {/* Model pulse */}
-        <section aria-labelledby="models-h">
-          <div className="mb-3 flex items-end justify-between">
-            <h3 id="models-h" className="text-[17px] font-semibold text-slate-900">Semantic models</h3>
-            <Link href="/dax" className="text-sm text-blue-600 hover:underline">
-              Open DAX dictionary
-            </Link>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {loading &&
-              [0, 1].map((i) => <div key={i} className="h-44 animate-pulse rounded-2xl bg-white ring-1 ring-slate-200/80" />)}
-            {models.map((m) => (
-              <Link
-                key={m.code}
-                href={`/dax?model=${m.code}`}
-                className="group rounded-2xl bg-white p-5 ring-1 ring-slate-200/80 transition hover:ring-blue-300"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs text-blue-700">{m.code}</p>
-                    <p className="mt-1 truncate text-[15px] font-medium text-slate-900">{m.name.replace(m.code, "").trim() || m.name}</p>
-                  </div>
-                  <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:text-blue-600" />
-                </div>
-                <dl className="mt-5 grid grid-cols-3 gap-2">
-                  {[
-                    ["Measures", m.totalMeasures],
-                    ["Columns", m.totalColumns],
-                    ["Tables", m.totalTables || 0],
-                  ].map(([label, value]) => (
-                    <div key={label as string}>
-                      <dd className="text-[22px] font-semibold tabular-nums tracking-tight text-slate-900">
-                        {Number(value).toLocaleString()}
-                      </dd>
-                      <dt className="text-xs text-slate-500">{label}</dt>
-                    </div>
-                  ))}
-                </dl>
-                <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  {m.lastImportedAt
-                    ? `Updated from ${m.sourceFile || ".bim"} ${relTime(m.lastImportedAt)} by ${m.lastImportedBy || "someone"}`
-                    : "Not yet updated from a .bim file"}
-                </p>
+        {can("home.semantic") && (
+          <section aria-labelledby="sem-h" className="space-y-3">
+            <div className="flex items-end justify-between">
+              <h3 id="sem-h" className="text-[18px] font-semibold text-slate-900">
+                Semantic models <span className="text-sm font-normal text-slate-500">since {since(s?.startedAt)}</span>
+              </h3>
+              <Link href="/dax" className="text-sm text-blue-600 hover:underline">
+                Open DAX dictionary
               </Link>
-            ))}
-            {!loading && (
-              <Link
-                href="/dax?import=1"
-                className="flex flex-col justify-between rounded-2xl border border-dashed border-slate-300 p-5 text-slate-600 transition hover:border-blue-400 hover:bg-blue-50/40"
-              >
-                <Upload className="h-5 w-5 text-blue-600" />
-                <div>
-                  <p className="text-[15px] font-medium text-slate-900">Update a model from .bim</p>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-500">
-                    Drop the file exported from Tabular Editor. You&rsquo;ll see what changed before anything is saved.
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Kpi label="Model measures" value={s?.totals.measures || 0}>{s && <Change now={s.totals.measures} start={s.totals.measuresStart} />}</Kpi>
+              <Kpi label="Columns" value={s?.totals.columns || 0}>{s && <Change now={s.totals.columns} start={s.totals.columnsStart} />}</Kpi>
+              <Kpi label="Written by the team" value={s?.totals.custom || 0}>
+                <span className="text-xs text-slate-400">Custom DAX measures</span>
+              </Kpi>
+              <Kpi label="Formula changes" value={s?.totals.formulaChanges || 0}>
+                <span className="text-xs text-slate-400">Detected across .bim updates</span>
+              </Kpi>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
+              <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-900">Measures over time</p>
+                  <p className="flex gap-3 text-xs text-slate-500">
+                    <span className="flex items-center gap-1"><span className="h-2 w-3 rounded-sm bg-blue-600" /> Total</span>
+                    <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-teal-live" /> Added</span>
+                    <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-coral" /> Removed</span>
                   </p>
                 </div>
-              </Link>
-            )}
-          </div>
-        </section>
+                {loading && !s ? <div className="h-60 animate-pulse rounded-xl bg-slate-50" /> : <TrendChart data={s?.series || []} totalLabel="Measures" changedLabel="Formula changes" />}
+              </div>
+              <div className="space-y-3">
+                {s?.models.map((m) => (
+                  <Link key={m.code} href={`/dax?model=${m.code}`} className="group block rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 transition hover:ring-blue-300">
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs text-blue-700">{m.code}</p>
+                        <p className="truncate text-[15px] font-medium text-slate-900">{m.name.replace(m.code, "").trim() || m.name}</p>
+                      </div>
+                      <ArrowUpRight className="h-4 w-4 text-slate-300 group-hover:text-blue-600" />
+                    </div>
+                    <dl className="mt-3 grid grid-cols-4 gap-2">
+                      {(
+                        [
+                          ["Measures", m.measures],
+                          ["Columns", m.columns],
+                          ["Team DAX", m.custom],
+                        ] as [string, Delta][]
+                      ).map(([label, d]) => (
+                        <div key={label}>
+                          <dd className="text-lg font-semibold tabular-nums text-slate-900">{d.now.toLocaleString()}</dd>
+                          <dt className="text-[11px] text-slate-500">{label}</dt>
+                          <Change now={d.now} start={d.start} suffix="" />
+                        </div>
+                      ))}
+                      <div>
+                        <dd className="text-lg font-semibold tabular-nums text-slate-900">{m.tables}</dd>
+                        <dt className="text-[11px] text-slate-500">Tables</dt>
+                        <span className="text-[11px] text-slate-400">{m.relationships} links</span>
+                      </div>
+                    </dl>
+                    <p className="mt-3 border-t border-slate-100 pt-2 text-xs text-slate-500">
+                      {m.lastImportedAt ? `Updated ${rel(m.lastImportedAt)} by ${m.lastImportedBy}` : "Not yet updated from a .bim file"}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
-        {/* Activity + shortcuts */}
-        <section className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-          <div className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/80">
-            <div className="mb-3 flex items-end justify-between">
-              <h3 className="text-[17px] font-semibold text-slate-900">Recent changes</h3>
+        {can("home.license") && (
+          <section aria-labelledby="lic-h" className="space-y-3">
+            <div className="flex items-end justify-between">
+              <h3 id="lic-h" className="text-[18px] font-semibold text-slate-900">
+                Power BI licenses <span className="text-sm font-normal text-slate-500">since {since(l?.startedAt)}</span>
+              </h3>
+              <Link href="/licenses" className="text-sm text-blue-600 hover:underline">
+                Open licenses
+              </Link>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Kpi label="Active licenses" value={l?.totals.active || 0}>{l && <Change now={l.totals.active} start={l.totals.activeStart} />}</Kpi>
+              <Kpi label="Pro" value={l?.totals.pro || 0}>
+                <span className="text-xs text-slate-400">{l ? Math.round((l.totals.pro / Math.max(1, l.totals.active)) * 100) : 0}% of active</span>
+              </Kpi>
+              <Kpi label="Premium per capacity" value={l?.totals.premium || 0}>
+                <span className="text-xs text-slate-400">{l ? Math.round((l.totals.premium / Math.max(1, l.totals.active)) * 100) : 0}% of active</span>
+              </Kpi>
+              <Kpi label="Revoked or cancelled" value={(l?.totals.revoked || 0) + (l?.totals.cancelled || 0)}>
+                <span className="text-xs text-slate-400">of {l?.totals.all || 0} records</span>
+              </Kpi>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
+              <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+                <p className="mb-2 text-sm font-medium text-slate-900">Active licenses over time</p>
+                {loading && !l ? <div className="h-60 animate-pulse rounded-xl bg-slate-50" /> : <TrendChart data={l?.series || []} totalLabel="Active" addedLabel="Approved" removedLabel="Revoked" />}
+              </div>
+              <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+                <p className="mb-3 text-sm font-medium text-slate-900">Active by site</p>
+                <ul className="space-y-2.5">
+                  {l?.bySite.map((b) => (
+                    <li key={b.site}>
+                      <div className="mb-1 flex justify-between text-sm">
+                        <span className="text-slate-700">{b.site}</span>
+                        <span className="tabular-nums text-slate-900">{b.n}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div className="h-2 rounded-full bg-blue-600" style={{ width: `${(b.n / Math.max(1, l.totals.active)) * 100}%` }} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {can("home.activity") && (
+          <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/80">
+            <div className="mb-2 flex items-end justify-between">
+              <h3 className="text-[18px] font-semibold text-slate-900">Recent activity</h3>
               <Link href="/changelog" className="text-sm text-blue-600 hover:underline">
                 Full activity log
               </Link>
             </div>
-            <ol className="divide-y divide-slate-100">
-              {!loading && logs.length === 0 && <li className="py-6 text-sm text-slate-400">Nothing has changed yet.</li>}
-              {logs.map((l) => {
-                const Icon = ACTION_ICON[l.action] || GitCommitHorizontal;
+            <ol className="grid md:grid-cols-2 md:gap-x-8">
+              {!loading && !(data?.activity || []).length && <li className="py-4 text-sm text-slate-400">Nothing has changed yet.</li>}
+              {(data?.activity || []).map((a) => {
+                const Icon = ACTION_ICON[a.action] || GitCommitHorizontal;
                 return (
-                  <li key={l.id} className="flex gap-3 py-3">
-                    <span
-                      className={clsx(
-                        "mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg",
-                        l.action === "import" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"
-                      )}
-                    >
+                  <li key={a.id} className="flex gap-3 border-b border-slate-100 py-3">
+                    <span className={clsx("mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg", a.action === "import" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500")}>
                       <Icon className="h-3.5 w-3.5" />
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm leading-snug text-slate-800 line-clamp-2">{l.summary}</p>
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 text-sm leading-snug text-slate-800">{a.summary}</p>
                       <p className="mt-0.5 text-xs text-slate-400">
-                        {l.changed_by || "System"}, {relTime(l.changed_at)}
+                        {a.by || "System"}, {rel(a.at)}
                       </p>
                     </div>
                   </li>
                 );
               })}
             </ol>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/80">
-            <h3 className="mb-3 text-[17px] font-semibold text-slate-900">Jump to</h3>
-            <ul className="space-y-1">
-              {SHORTCUTS.map(({ href, label, body, icon: Icon }) => (
-                <li key={href}>
-                  <Link href={href} className="flex items-center gap-3 rounded-xl p-2.5 hover:bg-slate-50">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-ink text-blue-300">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium text-slate-900">{label}</span>
-                      <span className="block truncate text-xs text-slate-500">{body}</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
     </div>
   );

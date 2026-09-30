@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getDbTargetScenarios,
@@ -64,6 +65,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const _g = await requireModule("target.edit");
+  if (_g.deny) return _g.deny;
   try {
     const body = await req.json();
     const { id, store_key, store_label, name, saved_at_label, sort_order, snapshot, created_by } = body;
@@ -101,6 +104,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const _g = await requireModule("target.edit");
+  if (_g.deny) return _g.deny;
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

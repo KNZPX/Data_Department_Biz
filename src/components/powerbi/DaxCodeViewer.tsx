@@ -242,7 +242,7 @@ export const DaxCodeViewer: React.FC<DaxCodeViewerProps> = ({
             ) : (
               <>
                 <Copy className="h-2.5 w-2.5" />
-                <span>Copy</span>
+                <span>Copy formula</span>
               </>
             )}
           </button>

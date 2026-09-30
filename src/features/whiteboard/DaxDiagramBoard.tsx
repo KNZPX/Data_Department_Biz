@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { BoardCanvas } from "./BoardCanvas";
+import { useAccess } from "@/components/auth/LoginGate";
 import { elementsFromDaxDiagram, normalizeElements, type El } from "./model";
 
 type AstNode = Parameters<typeof elementsFromDaxDiagram>[0][number];
@@ -31,6 +32,7 @@ export function DaxDiagramBoard({
   onClose: () => void;
 }) {
   const boardId = daxBoardId(item.id);
+  const { can } = useAccess();
   const [initial, setInitial] = useState<El[] | null>(null);
   const [version, setVersion] = useState(0);
   const [isNew, setIsNew] = useState(false);
@@ -102,6 +104,7 @@ export function DaxDiagramBoard({
         ) : (
           <BoardCanvas
             key={version}
+            readOnly={!can("whiteboard.edit")}
             meta={meta}
             initial={initial}
             onBack={onClose}

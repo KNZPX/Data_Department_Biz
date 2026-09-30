@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { normalizeLicense, type LicenseInput } from "@/lib/licenseTypes";
@@ -27,6 +28,8 @@ function parseBoolean(val: unknown): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const _g = await requireModule("licenses.edit");
+  if (_g.deny) return _g.deny;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;

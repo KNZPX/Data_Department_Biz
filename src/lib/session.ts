@@ -10,6 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
 import { getSupabaseClient } from "./db";
+import { resolveAccess, type Access, type Permissions } from "./access";
 
 export const SESSION_COOKIE = "biz_sid";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days (refresh token keeps access alive)
@@ -30,7 +31,7 @@ export function newSessionSecret(): string {
   return randomBytes(32).toString("base64url");
 }
 
-function hashSecret(secret: string): string {
+export function hashSecret(secret: string): string {
   return createHash("sha256").update(secret).digest("hex");
 }
 
@@ -146,4 +147,53 @@ export async function getOnlineUsers(minutes = 10): Promise<{ email: string; nam
       lastSeenAt: r.last_seen_at,
     }))
     .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+}
+
+// ---------------------------------------------------------------------------
+// Roles & access
+// ---------------------------------------------------------------------------
+export type CurrentUser = SessionUser & { access: Access; isGuest: boolean };
+
+/** Who is calling, with their resolved page/module access (null when signed out or disabled). */
+export async function getCurrentAccess(): Promise<CurrentUser | null> {
+  const s = await getCurrentSession().catch(() => null);
+  if (!s) return null;
+  const supabase = getSupabaseClient();
+  const { data } = await supabase
+    .from("app_users")
+    .select("email, name, role, permissions, is_active, is_guest")
+    .eq("email", s.userEmail.toLowerCase())
+    .maybeSingle();
+  if (data && data.is_active === false) return null;
+  const access = resolveAccess(data?.role || "member", (data?.permissions as Permissions) || null);
+  return { email: s.userEmail, name: data?.name || s.userName, access, isGuest: Boolean(data?.is_guest) };
+}
+
+export async function recordSessionLogin(secret: string, ip?: string | null, ua?: string | null) {
+  const supabase = getSupabaseClient();
+  await supabase.rpc("user_record_login", { p_session: hashSecret(secret), p_ip: ip || null, p_ua: ua || null });
+}
+
+/** Guest accounts have no Power BI token; the session just carries their identity. */
+export async function saveGuestSession(secret: string, user: { email: string; name: string }, ua?: string | null) {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.rpc("session_upsert", {
+    p_id: hashSecret(secret),
+    p_email: user.email,
+    p_name: user.name,
+    p_access: "",
+    p_refresh: null,
+    p_expires: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    p_ua: ua || null,
+  });
+  if (error) throw error;
+}
+
+/** Calls an admin-only database function with the caller's session (the DB checks the role). */
+export async function adminRpc(fn: string, args: Record<string, unknown>) {
+  const secret = await readSessionSecret();
+  if (!secret) throw new Error("Sign in first.");
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.rpc(fn, { p_session: hashSecret(secret), ...args });
+  if (error) throw new Error(error.message);
 }

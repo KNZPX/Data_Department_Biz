@@ -62,9 +62,12 @@ import {
   ZoomIn,
   ZoomOut,
   Upload,
+  Download,
 } from "lucide-react";
 import { BimImportModal } from "@/components/powerbi/BimImportModal";
 import { DaxDiagramBoard } from "@/features/whiteboard/DaxDiagramBoard";
+import { DaxScriptModal } from "@/components/powerbi/DaxScriptModal";
+import { useAccess } from "@/components/auth/LoginGate";
 import { clsx } from "clsx";
 import { useTheme } from "@/context/ThemeContext";
 import { DaxCodeViewer } from "@/components/powerbi/DaxCodeViewer";
@@ -553,6 +556,8 @@ function parseDaxToProgrammingAst(measureName: string, formula: string | null, t
 
 export function DaxManagementPage() {
   const { currentTheme } = useTheme();
+  const { can } = useAccess();
+  const [scriptOpen, setScriptOpen] = useState(false);
 
   // Floating Sidebar state
   const [floatSidebarOpen, setFloatSidebarOpen] = useState(true);
@@ -1033,6 +1038,7 @@ export function DaxManagementPage() {
 
   // Open Interactive Diagram Modal with Deep AST Parsing (Supports Saved Layout & 4-Port System)
   function handleOpenDiagram(item: ItemRecord) {
+    if (!can("dax.diagram")) return;
     setDiagramTarget(item);
     if (item.notes && item.notes.startsWith("DIAGRAM_LAYOUT:")) {
       try {
@@ -1483,6 +1489,11 @@ export function DaxManagementPage() {
     }
   }
 
+  /** Full definition as Power BI expects it: `Measure name = formula`. */
+  function fullDefinition(name: string, expr: string) {
+    return `${name} =\n${expr}`;
+  }
+
   function copyText(id: string, text: string) {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -1600,14 +1611,14 @@ export function DaxManagementPage() {
                 the team&rsquo;s business definition.
               </p>
             </div>
-            <button
+            {can("dax.import") && <button
               type="button"
               onClick={() => setImportOpen(true)}
               className="inline-flex items-center gap-2 self-start rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
             >
               <Upload className="h-4 w-4" />
               Update from .bim
-            </button>
+            </button>}
           </div>
 
           <div className="mt-8 grid gap-4 md:grid-cols-2">
@@ -1699,8 +1710,30 @@ export function DaxManagementPage() {
             <span>Switch Model</span>
           </button>
 
+          {can("dax.export") && (
+            <a
+              href={`/api/dax/export?model=${encodeURIComponent(activeModel)}`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+              title="Download the whole dataset as an Excel workbook"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export Excel</span>
+            </a>
+          )}
+          {can("dax.generate") && (
+            <button
+              type="button"
+              onClick={() => setScriptOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+              title="Build a script that adds many measures to Power BI at once"
+            >
+              <Code2 className="h-3.5 w-3.5" />
+              <span>Generate for Power BI</span>
+            </button>
+          )}
+
           {/* Update from .bim */}
-          <button
+          {can("dax.import") && <button
             type="button"
             onClick={() => setImportOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
@@ -1708,17 +1741,17 @@ export function DaxManagementPage() {
           >
             <Upload className="h-3.5 w-3.5" />
             <span>Update from .bim</span>
-          </button>
+          </button>}
 
           {/* Add Custom DAX Button */}
-          <button
+          {can("dax.edit") && <button
             type="button"
             onClick={() => openCustomDaxModal()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
             <span>Add Custom DAX</span>
-          </button>
+          </button>}
 
           {/* Floating Sidebar Toggle Button */}
           <button
@@ -2136,8 +2169,8 @@ export function DaxManagementPage() {
                             {it.expression && (
                               <button
                                 type="button"
-                                onClick={() => copyText(it.id, it.expression!)}
-                                title="Copy Formula"
+                                onClick={() => copyText(it.id, fullDefinition(it.name, it.expression!))}
+                                title="Copy name = formula"
                                 className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                               >
                                 {copiedId === it.id ? (
@@ -2524,15 +2557,26 @@ export function DaxManagementPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => copyText(selectedItem.id, sideboxForm.expression || selectedItem.expression || "")}
+                                title="Copy the full definition: name = formula"
+                                onClick={() =>
+                                  copyText(
+                                    `${selectedItem.id}:full`,
+                                    fullDefinition(sideboxForm.name || selectedItem.name, sideboxForm.expression || selectedItem.expression || "")
+                                  )
+                                }
                                 className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer"
                               >
-                                {copiedId === selectedItem.id ? (
-                                  <Check className="h-2.5 w-2.5 text-emerald-600" />
-                                ) : (
-                                  <Copy className="h-2.5 w-2.5" />
-                                )}
-                                <span>{copiedId === selectedItem.id ? "Copied" : "Copy"}</span>
+                                {copiedId === `${selectedItem.id}:full` ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5" />}
+                                <span>{copiedId === `${selectedItem.id}:full` ? "Copied" : "Copy"}</span>
+                              </button>
+                              <button
+                                type="button"
+                                title="Copy only the formula (after =)"
+                                onClick={() => copyText(`${selectedItem.id}:expr`, sideboxForm.expression || selectedItem.expression || "")}
+                                className="text-[11px] font-semibold text-slate-600 hover:text-slate-800 flex items-center gap-0.5 cursor-pointer"
+                              >
+                                {copiedId === `${selectedItem.id}:expr` ? <Check className="h-2.5 w-2.5 text-emerald-600" /> : <Copy className="h-2.5 w-2.5" />}
+                                <span>{copiedId === `${selectedItem.id}:expr` ? "Copied" : "Copy formula"}</span>
                               </button>
                               <button
                                 type="button"
@@ -2686,7 +2730,7 @@ export function DaxManagementPage() {
                         {it.expression && (
                           <button
                             type="button"
-                            onClick={() => copyText(it.id, it.expression!)}
+                            onClick={() => copyText(it.id, fullDefinition(it.name, it.expression!))}
                             className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-white text-blue-700 hover:bg-blue-50 border border-blue-200 transition cursor-pointer"
                           >
                             {copiedId === it.id ? (
@@ -2793,6 +2837,8 @@ export function DaxManagementPage() {
           </div>
         </div>
       )}
+
+      {scriptOpen && <DaxScriptModal model={activeModel} onClose={() => setScriptOpen(false)} />}
 
       {/* ================= FORMULA DIAGRAM — rendered by the Whiteboard module ================= */}
       {wbDiagramOpen && diagramTarget && (

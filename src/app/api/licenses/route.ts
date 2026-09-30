@@ -1,3 +1,4 @@
+import { requireModule } from "@/lib/guard";
 import { NextRequest, NextResponse } from "next/server";
 import { getDbLicenses, saveDbLicense, deleteDbLicense } from "@/lib/db";
 import { normalizeLicense, type LicenseInput } from "@/lib/licenseTypes";
@@ -17,6 +18,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const _g = await requireModule("licenses.edit");
+  if (_g.deny) return _g.deny;
   try {
     const body = (await req.json()) as LicenseInput;
     const normalized = normalizeLicense(body);
@@ -31,6 +34,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const _g = await requireModule("licenses.edit");
+  if (_g.deny) return _g.deny;
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

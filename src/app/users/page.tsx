@@ -1,5 +1,5 @@
-import { UserManagementPage } from "@/features/UserManagementPage";
+import { AccessManagementPage } from "@/features/AccessManagementPage";
 
-export default function UsersPage() {
-  return <UserManagementPage />;
+export default function Page() {
+  return <AccessManagementPage />;
 }

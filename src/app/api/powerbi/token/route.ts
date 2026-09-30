@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStoredPowerBiToken, savePowerBiToken } from "@/lib/powerbiToken";
 import { getDbProvider } from "@/lib/db";
 import {
+  getCurrentAccess,
   attachSessionCookie,
   newSessionSecret,
   readSessionSecret,
@@ -21,6 +22,11 @@ export async function GET() {
       return Response.json({ hasToken: false, accessToken: null, expiresAt: null, expired: true, user: null, dbProvider: provider });
     }
     void touchSession(await readSessionSecret()).catch(() => {});
+    const current = await getCurrentAccess();
+    if (!current) {
+      // Account disabled by an admin.
+      return Response.json({ hasToken: false, accessToken: null, expiresAt: null, expired: true, user: null, disabled: true, dbProvider: provider });
+    }
     const expired = new Date(stored.expiresAt).getTime() - Date.now() < 5_000;
     // A session with a refresh token can silently renew, so it is still usable.
     const usable = !expired || Boolean(stored.refreshToken);
@@ -31,6 +37,8 @@ export async function GET() {
       expired: !usable,
       canRefresh: Boolean(stored.refreshToken),
       user: stored.user || userFromAccessToken(stored.accessToken),
+      access: current.access,
+      isGuest: current.isGuest,
       dbProvider: provider,
     });
   } catch (error) {
