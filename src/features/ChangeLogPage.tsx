@@ -97,7 +97,7 @@ export function ChangeLogPage() {
               onClick={() => setActionFilter("publish")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                actionFilter === "publish" ? "bg-[#3B82F6] text-white shadow-xs" : "text-slate-600 hover:text-[#3B82F6]"
+                actionFilter === "publish" ? "bg-blue-500 text-white shadow-xs" : "text-slate-600 hover:text-blue-500"
               )}
             >
               Publishes Only ({publishCount})
@@ -107,7 +107,7 @@ export function ChangeLogPage() {
               onClick={() => setActionFilter("update")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                actionFilter === "update" ? "bg-[#2563EB] text-white shadow-xs" : "text-slate-600 hover:text-[#2563EB]"
+                actionFilter === "update" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
               )}
             >
               Updates Only ({logs.length - publishCount})
@@ -115,7 +115,7 @@ export function ChangeLogPage() {
           </div>
 
           <Button type="button" variant="secondary" dense onClick={fetchLogs}>
-            <RefreshCw className={clsx("h-3.5 w-3.5", loading && "animate-spin text-[#2563EB]")} />
+            <RefreshCw className={clsx("h-3.5 w-3.5", loading && "animate-spin text-blue-600")} />
             <span>Refresh Logs</span>
           </Button>
         </div>
@@ -135,7 +135,7 @@ export function ChangeLogPage() {
       {/* Timeline Stream */}
       {loading ? (
         <div className="grid place-items-center py-16 text-slate-400">
-          <Loader2 className="h-8 w-8 animate-spin text-[#2563EB] mb-2" />
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-2" />
           <p className="text-sm font-medium">Loading change log stream...</p>
         </div>
       ) : filteredLogs.length === 0 ? (
@@ -161,15 +161,15 @@ export function ChangeLogPage() {
               : "-";
 
             return (
-              <Panel key={log.id} className="p-4 sm:p-5 transition hover:border-[#2563EB]/30">
+              <Panel key={log.id} className="p-4 sm:p-5 transition hover:border-blue-600/30">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="flex items-start gap-3 min-w-0">
                     <span
                       className={clsx(
                         "rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase border shrink-0",
                         isPublish
-                          ? "bg-[#3B82F6]/15 text-[#2563EB] border-[#3B82F6]/25"
-                          : "bg-[#2563EB]/10 text-[#2563EB] border-[#2563EB]/20"
+                          ? "bg-blue-500/15 text-blue-600 border-blue-500/25"
+                          : "bg-blue-600/10 text-blue-600 border-blue-600/20"
                       )}
                     >
                       {isPublish ? "PUBLISH" : "UPDATE"}

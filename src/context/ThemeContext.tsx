@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-export type ColorPresetId = "violet" | "amber" | "sapphire" | "emerald" | "rose" | "slate";
+export type ColorPresetId = "harbor" | "violet" | "amber" | "sapphire" | "emerald" | "rose" | "slate";
 export type CanvasPresetId = "soft" | "crisp" | "warm";
 export type RadiusPresetId = "squircle" | "standard";
 
@@ -19,6 +19,17 @@ export interface ColorPreset {
 }
 
 export const COLOR_PRESETS: Record<ColorPresetId, ColorPreset> = {
+  harbor: {
+    id: "harbor",
+    name: "Harbor Blue (default)",
+    primary: "#1F5FD6",
+    primaryHover: "#1A4FB3",
+    primaryLight: "#E3ECFB",
+    primaryGlow: "rgba(31, 95, 214, 0.30)",
+    gradientFrom: "#2B6BE3",
+    gradientTo: "#1A4FB3",
+    textColor: "#ffffff",
+  },
   violet: {
     id: "violet",
     name: "Royal Violet",
@@ -54,8 +65,8 @@ export const COLOR_PRESETS: Record<ColorPresetId, ColorPreset> = {
   },
   emerald: {
     id: "emerald",
-    name: "Emerald Mint",
-    primary: "#059669",
+    name: "Andaman Teal",
+    primary: "#0E9F8E",
     primaryHover: "#047857",
     primaryLight: "#D1FAE5",
     primaryGlow: "rgba(5, 150, 105, 0.35)",
@@ -97,8 +108,8 @@ export interface CanvasPreset {
 export const CANVAS_PRESETS: Record<CanvasPresetId, CanvasPreset> = {
   soft: {
     id: "soft",
-    name: "Soft Lavender/Slate (As Reference)",
-    bg: "#F4F6FB",
+    name: "Paper (default)",
+    bg: "#F4F6F9",
     cardBg: "#ffffff",
   },
   crisp: {
@@ -127,18 +138,18 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  colorPreset: "sapphire",
+  colorPreset: "harbor",
   setColorPreset: () => {},
   canvasPreset: "soft",
   setCanvasPreset: () => {},
   radiusPreset: "squircle",
   setRadiusPreset: () => {},
-  currentTheme: COLOR_PRESETS.sapphire,
+  currentTheme: COLOR_PRESETS.harbor,
   currentCanvas: CANVAS_PRESETS.soft,
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [colorPreset, setColorPresetState] = useState<ColorPresetId>("sapphire");
+  const [colorPreset, setColorPresetState] = useState<ColorPresetId>("harbor");
   const [canvasPreset, setCanvasPresetState] = useState<CanvasPresetId>("soft");
   const [radiusPreset, setRadiusPresetState] = useState<RadiusPresetId>("squircle");
 
@@ -180,7 +191,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   };
 
-  const currentTheme = COLOR_PRESETS[colorPreset] || COLOR_PRESETS.violet;
+  const currentTheme = COLOR_PRESETS[colorPreset] || COLOR_PRESETS.harbor;
   const currentCanvas = CANVAS_PRESETS[canvasPreset] || CANVAS_PRESETS.soft;
 
   useEffect(() => {

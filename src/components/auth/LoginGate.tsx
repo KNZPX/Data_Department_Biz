@@ -1,22 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { useSearchParams, usePathname } from "next/navigation";
-import {
-  AlertCircle,
-  BarChart3,
-  CheckCircle2,
-  ChevronDown,
-  Database,
-  KeyRound,
-  Loader2,
-  Lock,
-  LogIn,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { AlertCircle, ChevronDown, FunctionSquare, LayoutGrid, Loader2, Users } from "lucide-react";
 import { Button, Textarea } from "@/components/ui";
-import { BizAnalyticLogo } from "@/components/brand/BizAnalyticLogo";
 
 export type AuthUser = {
   name: string;
@@ -41,9 +28,25 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+function MicrosoftMark() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 21 21" aria-hidden>
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  );
+}
+
+const PROMISES = [
+  { icon: LayoutGrid, title: "Every Power BI report in one place", body: "Search 465+ reports across all Phuket workspaces and see who published what." },
+  { icon: FunctionSquare, title: "One DAX dictionary for the team", body: "Formulas, definitions and notes for PKT-D01 and PKT-D02, updated from each model release." },
+  { icon: Users, title: "Your own session", body: "Each person signs in with their own Microsoft account and sees only their own Power BI access." },
+];
+
 export function LoginGate({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
-  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -61,30 +64,12 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
   async function checkAuth() {
     try {
-      setLoading(true);
       const res = await fetch("/api/powerbi/token", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        const isValid = Boolean(data.hasToken && !data.expired);
-        setAuthenticated(isValid);
-        const userData = data.user || null;
-        setUser(userData);
+        setAuthenticated(Boolean(data.hasToken && !data.expired));
+        setUser(data.user || null);
         if (data.dbProvider) setDbProvider(data.dbProvider);
-
-        if (isValid && userData && userData.email) {
-          const sessionKey = `login_recorded_${userData.email}`;
-          if (!sessionStorage.getItem(sessionKey)) {
-            sessionStorage.setItem(sessionKey, "true");
-            void fetch("/api/users", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                name: userData.name || userData.email,
-                email: userData.email,
-              }),
-            });
-          }
-        }
       } else {
         setAuthenticated(false);
       }
@@ -115,223 +100,138 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ token: manualToken.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save Token");
+      if (!res.ok) throw new Error(data.error || "The token could not be saved.");
       setManualToken("");
       setManualOpen(false);
       await checkAuth();
     } catch (err) {
-      setManualError(err instanceof Error ? err.message : "An error occurred while saving Token");
+      setManualError(err instanceof Error ? err.message : "The token could not be saved.");
     } finally {
       setManualSaving(false);
     }
   }
 
-  // 1. Loading State
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-4">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <div className="relative">
-            <div className="grid h-16 w-16 place-items-center rounded-3xl bg-blue-600 text-slate-950 shadow-lg shadow-blue-500/20 animate-pulse">
-              <BarChart3 className="h-8 w-8" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-slate-900 text-white shadow-xs">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-            </div>
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-slate-800">Verifying access authorization...</h3>
-            <p className="text-xs text-slate-400">Power BI Enterprise Analytics Portal</p>
-          </div>
+      <div className="flex min-h-screen items-center justify-center bg-paper">
+        <div className="flex items-center gap-3 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+          Checking your session
         </div>
       </div>
     );
   }
 
-  // 2. On Landing Page (/), allow rendering so Full-page Vertical Scroll with Login Section 1 is shown
-  if (pathname === "/") {
+  if (authenticated) {
     return (
-      <AuthContext.Provider
-        value={{
-          authenticated,
-          user,
-          dbProvider,
-          refreshAuth: checkAuth,
-          logout: handleLogout,
-        }}
-      >
+      <AuthContext.Provider value={{ authenticated, user, dbProvider, refreshAuth: checkAuth, logout: handleLogout }}>
         {children}
       </AuthContext.Provider>
     );
   }
 
-  // 3. Unauthenticated on protected routes (/reports, /settings): Show Gatekeeper
-  if (!authenticated) {
-    return (
-      <div className="relative flex min-h-screen flex-col justify-between bg-gradient-to-b from-slate-50 via-white to-blue-50/30 text-slate-800 selection:bg-blue-600 selection:text-white">
-        {/* Brand CI Top Accent Bar - Dark Yellow / Amber */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#60A5FA]" />
-
-        {/* Ambient Analytics Soft Lighting */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-blue-600/5 blur-3xl" />
-          <div className="absolute top-1/3 -right-32 h-96 w-96 rounded-full bg-blue-500/5 blur-3xl" />
-          <div className="absolute -bottom-32 left-1/4 h-96 w-96 rounded-full bg-sky-400/5 blur-3xl" />
+  return (
+    <div className="grid min-h-screen overflow-y-auto lg:grid-cols-[1.05fr_1fr] bg-white">
+      {/* Left: what this place is */}
+      <section className="ink-surface relative hidden lg:flex flex-col justify-between p-12 text-slate-300 overflow-hidden">
+        <div className="model-grid absolute inset-0 opacity-[0.35] [filter:invert(1)]" aria-hidden />
+        <div className="relative flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">BA</span>
+          <div className="leading-tight">
+            <p className="text-[15px] font-semibold text-white">Biz-Analytic</p>
+            <p className="text-xs text-slate-400">BDMS Phuket data team</p>
+          </div>
         </div>
 
-        {/* Top Header Branding */}
-        <header className="relative z-10 mx-auto w-full max-w-7xl px-6 py-6 sm:px-10">
-          <div className="flex items-center justify-between">
-            <BizAnalyticLogo size="md" subtext="Enterprise Analytics Portal" />
-            <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3.5 py-1 text-[11px] font-medium text-slate-600 shadow-2xs backdrop-blur-xs">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Biz-Analytic Department</span>
-            </div>
-          </div>
-        </header>
-
-        {/* Center Main Login Card */}
-        <main className="relative z-10 mx-auto my-auto w-full max-w-md px-4 py-8">
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-7 shadow-xl shadow-slate-200/70 sm:p-9">
-            {/* Top decorative stripe inside card */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#60A5FA]" />
-
-            {/* Analytics Emblem & Title */}
-            <div className="text-center pt-2">
-              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 border border-blue-200 shadow-2xs">
-                <Lock className="h-6 w-6 text-blue-600" />
-              </div>
-              <h1 className="text-xl font-bold tracking-tight text-blue-600 sm:text-2xl">
-                Enterprise Sign In
-              </h1>
-              <p className="mt-1.5 text-xs text-slate-500">
-                Biz-Analytic Intelligence & Power BI Portal
-              </p>
-              <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-0.5 text-[11px] font-semibold text-blue-600 border border-blue-200">
-                <Sparkles className="h-3 w-3" />
-                <span>Enterprise Business Analytics & Intelligence</span>
-              </div>
-            </div>
-
-            {/* Error Message if redirected back with error */}
-            {authError ? (
-              <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800">
-                <div className="flex items-start gap-2.5">
-                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Authentication error:</span>
-                    <p className="mt-1 text-[11px] leading-relaxed text-rose-700">{authError}</p>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Primary Action: Sign in with Microsoft */}
-            <div className="mt-7 space-y-3.5">
-              <a
-                href="/api/powerbi/auth/start"
-                className="group relative flex w-full items-center justify-center gap-3 rounded-2xl border-2 border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-xs hover:border-blue-600 hover:bg-blue-50/50 hover:text-blue-600 active:scale-[0.99] transition duration-150"
-              >
-                {/* Official Microsoft 4-square logo */}
-                <svg className="h-5 w-5 shrink-0" viewBox="0 0 21 21">
-                  <rect x="1" y="1" width="9" height="9" fill="#F25022" />
-                  <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
-                  <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
-                  <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
-                </svg>
-                <span>Sign in with Microsoft 365</span>
-              </a>
-
-              <div className="flex items-center justify-center gap-1.5 pt-0.5 text-[11px] text-slate-500">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Secured via Microsoft Entra ID (Single Sign-On)</span>
-              </div>
-            </div>
-
-            {/* Secondary Option: Manual Token Fallback */}
-            <div className="mt-7 border-t border-slate-100 pt-4">
-              <button
-                type="button"
-                onClick={() => setManualOpen((v) => !v)}
-                className="flex w-full items-center justify-between text-xs text-slate-500 hover:text-blue-600 transition"
-              >
-                <span className="flex items-center gap-1.5">
-                  <KeyRound className="h-3.5 w-3.5 text-slate-400" />
-                  <span>Administrator Access (Manual Token Fallback)</span>
+        <div className="relative max-w-lg">
+          <h2 className="text-[40px] leading-[1.1] font-semibold tracking-tight text-white">
+            The data team&rsquo;s workbench for Power BI.
+          </h2>
+          <ul className="mt-10 space-y-6">
+            {PROMISES.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="flex gap-4">
+                <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/[0.07] text-blue-300">
+                  <Icon className="h-[18px] w-[18px]" />
                 </span>
-                <ChevronDown className={`h-4 w-4 transition duration-150 ${manualOpen ? "rotate-180" : ""}`} />
-              </button>
-
-              {manualOpen ? (
-                <div className="mt-3 space-y-2.5 rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs animate-in fade-in duration-150">
-                  <p className="text-[11px] text-slate-600">
-                    If Microsoft Online is temporarily unreachable, you may paste a valid Power BI Bearer Token:
-                  </p>
-                  <Textarea
-                    rows={3}
-                    placeholder="Paste Bearer eyJhbGciOi..."
-                    value={manualToken}
-                    onChange={(e) => setManualToken(e.target.value)}
-                    className="font-mono text-[11px] bg-white border-slate-200 text-slate-800 placeholder:text-slate-400"
-                  />
-                  {manualError ? (
-                    <p className="text-[11px] text-rose-600 font-medium">{manualError}</p>
-                  ) : null}
-                  <div className="flex justify-end pt-1">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      dense
-                      disabled={manualSaving || !manualToken.trim()}
-                      onClick={handleSaveManualToken}
-                    >
-                      {manualSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                      <span>Save Token & Sign In</span>
-                    </Button>
-                  </div>
+                <div>
+                  <p className="text-[15px] font-medium text-white">{title}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-400">{body}</p>
                 </div>
-              ) : null}
-            </div>
+              </li>
+            ))}
+          </ul>
+        </div>
 
-            {/* System Status Pills */}
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3.5 py-2.5 text-[11px] text-slate-500 border border-slate-200/80">
-              <span className="flex items-center gap-1.5">
-                <Database className="h-3 w-3 text-blue-600" />
-                <span>DB:</span>
-                <span className="font-semibold text-blue-600 uppercase font-mono">
-                  {dbProvider === "supabase" ? "Supabase Cloud" : "SQLite Local"}
-                </span>
-              </span>
-              <span className="flex items-center gap-1 text-emerald-700 font-medium">
-                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
-                <span>Connected & Ready</span>
-              </span>
-            </div>
+        <p className="relative text-xs text-slate-500">For Bangkok Hospital Phuket, Siriroj and Dibuk</p>
+      </section>
+
+      {/* Right: sign in */}
+      <section className="flex flex-col justify-center px-6 py-12 sm:px-16">
+        <div className="mx-auto w-full max-w-sm">
+          <div className="mb-10 flex items-center gap-3 lg:hidden">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">BA</span>
+            <p className="text-[15px] font-semibold text-slate-900">Biz-Analytic</p>
           </div>
-        </main>
 
-        {/* Brand Footer */}
-        <footer className="relative z-10 px-6 py-5 text-center text-xs text-slate-400">
-          <p>
-            Biz-Analytic Department &bull; Enterprise Business Intelligence &bull; Power BI Platform
+          <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Sign in</h1>
+          <p className="mt-2 text-[15px] leading-relaxed text-slate-500">
+            Use your hospital Microsoft 365 account. Your Power BI permissions come with you.
           </p>
-        </footer>
-      </div>
-    );
-  }
 
-  // 3. Authenticated: Render Full Portal App
-  return (
-    <AuthContext.Provider
-      value={{
-        authenticated,
-        user,
-        dbProvider,
-        refreshAuth: checkAuth,
-        logout: handleLogout,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+          {authError && (
+            <div role="alert" className="mt-6 flex gap-3 rounded-xl border border-coral/30 bg-coral/[0.06] p-4 text-sm text-slate-800">
+              <AlertCircle className="h-5 w-5 shrink-0 text-coral" />
+              <div>
+                <p className="font-medium">Sign-in didn&rsquo;t finish</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-slate-600">{authError}</p>
+              </div>
+            </div>
+          )}
+
+          <a
+            href="/api/powerbi/auth/start"
+            className="mt-8 flex w-full items-center justify-center gap-3 rounded-xl bg-ink px-5 py-3.5 text-[15px] font-medium text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.99]"
+          >
+            <MicrosoftMark />
+            Continue with Microsoft
+          </a>
+
+          <p className="mt-4 text-[13px] leading-relaxed text-slate-500">
+            Signing in on this device doesn&rsquo;t sign anyone else in or out.
+          </p>
+
+          <div className="mt-10 border-t border-slate-200 pt-5">
+            <button
+              type="button"
+              onClick={() => setManualOpen(!manualOpen)}
+              className="flex w-full items-center justify-between text-[13px] text-slate-500 hover:text-slate-800"
+              aria-expanded={manualOpen}
+            >
+              Paste an access token instead
+              <ChevronDown className={`h-4 w-4 transition ${manualOpen ? "rotate-180" : ""}`} />
+            </button>
+            {manualOpen && (
+              <div className="mt-3 space-y-3">
+                <Textarea
+                  dense
+                  rows={4}
+                  value={manualToken}
+                  onChange={(e) => setManualToken(e.target.value)}
+                  placeholder="eyJ0eXAiOiJKV1Qi..."
+                  className="font-mono text-xs"
+                />
+                {manualError && <p className="text-xs text-coral">{manualError}</p>}
+                <Button dense onClick={handleSaveManualToken} disabled={manualSaving || !manualToken.trim()}>
+                  {manualSaving ? "Saving…" : "Sign in with token"}
+                </Button>
+                <p className="text-xs leading-relaxed text-slate-400">
+                  For admins when Microsoft sign-in is unavailable. Tokens expire after about an hour.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

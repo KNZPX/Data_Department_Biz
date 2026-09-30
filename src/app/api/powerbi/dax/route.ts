@@ -2,43 +2,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { executeDaxQuery } from "@/lib/powerbi";
 import {
   getAllDaxAnnotations,
-  getAllCustomDaxItems,
   saveDaxAnnotation,
   saveCustomDaxItem,
   deleteCustomDaxItem,
-  logSystemActivity,
   getSupabaseClient,
 } from "@/lib/db";
-import fs from "fs";
-import path from "path";
+import { getDaxModels, getDaxRows, invalidateDaxCache, type DaxModelRow, type DaxRow } from "@/lib/daxStore";
+import { getCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-interface SemanticModelStore {
-  [key: string]: {
-    id: string;
-    code: string;
-    name: string;
-    measures: any[];
-    columns: any[];
-  };
-}
+type DictItem = {
+  id: string;
+  name: string;
+  tableName: string;
+  type: string;
+  dataType: string;
+  description: string;
+  expression: string | null;
+  formatString: string | null;
+  isHidden: boolean;
+  modelCode: string;
+  modelName: string;
+  mathDefinition: string;
+  businessDefinition: string;
+  notes: string;
+  isCustom: boolean;
+  displayFolder?: string | null;
+  createdBy?: string;
+  sampleValues: unknown[] | null;
+  matchReason?: string;
+};
 
-let cachedModels: SemanticModelStore | null = null;
-
-function loadModels(): SemanticModelStore {
-  if (cachedModels) return cachedModels;
-  try {
-    const filePath = path.join(process.cwd(), "src/data/d01_d02_dictionary.json");
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, "utf-8");
-      cachedModels = JSON.parse(raw);
-      return cachedModels || {};
-    }
-  } catch (err) {
-    console.error("Error reading d01_d02_dictionary.json:", err);
-  }
-  return {};
+async function resolveDatasetId(code: string): Promise<string> {
+  const models = await getDaxModels().catch(() => [] as DaxModelRow[]);
+  const hit = models.find((m) => m.code === code.toUpperCase());
+  return hit?.dataset_id || code;
 }
 
 export async function GET(request: NextRequest) {
@@ -52,166 +51,54 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "150", 10);
 
-    const store = loadModels();
-    const isAllModels = modelCode === "ALL";
-    const activeModelKey = isAllModels
-      ? "ALL"
-      : store[modelCode]
-      ? modelCode
-      : store["PKT-D01"]
-      ? "PKT-D01"
-      : Object.keys(store)[0];
-    const activeModel = isAllModels
-      ? {
-          code: "ALL",
-          name: "All Semantic Models",
-          id: "all-models",
-          measures: Object.values(store).flatMap((m: any) => m.measures || []),
-          columns: Object.values(store).flatMap((m: any) => m.columns || []),
-        }
-      : store[activeModelKey];
-
-    if (!activeModel && !isAllModels) {
-      return NextResponse.json({
-        items: [],
-        meta: { total: 0, totalMeasures: 0, totalColumns: 0, totalTables: 0, tables: [] },
-        models: [],
-      });
-    }
-
-    // Load saved database annotations, custom DAX, and sample values from Supabase
-    const [annotationsMap, customDaxList, sampleValuesMap] = (await Promise.all([
+    // Single source of truth: Supabase (kept current by .bim imports)
+    const [rows, modelRows, annotationsMap] = await Promise.all([
+      getDaxRows(),
+      getDaxModels(),
       getAllDaxAnnotations().catch(() => ({} as Record<string, any>)),
-      getAllCustomDaxItems().catch(() => [] as any[]),
-      (async () => {
-        try {
-          const supabase = getSupabaseClient();
-          const { data } = await supabase
-            .from("dax_dictionary_items")
-            .select("id, sample_values")
-            .not("sample_values", "is", null);
-          const map: Record<string, any[]> = {};
-          if (data) {
-            for (const r of data) {
-              if (r.sample_values) map[r.id] = r.sample_values;
-            }
-          }
-          return map;
-        } catch {
-          return {};
-        }
-      })(),
-    ])) as [Record<string, any>, any[], Record<string, any[]>];
+    ]);
 
-    // Build unified measures list
-    const rawMeasures = isAllModels
-      ? Object.entries(store).flatMap(([k, m]: [string, any]) =>
-          (m.measures || []).map((meas: any) => ({ ...meas, _modelCode: m.code, _modelName: m.name }))
-        )
-      : (activeModel.measures || []).map((meas: any) => ({
-          ...meas,
-          _modelCode: activeModel.code,
-          _modelName: activeModel.name,
-        }));
+    const isAllModels = modelCode === "ALL";
+    const known = new Set(modelRows.map((m) => m.code));
+    const activeCode = isAllModels ? "ALL" : known.has(modelCode) ? modelCode : modelRows[0]?.code || "PKT-D01";
+    const activeRow = modelRows.find((m) => m.code === activeCode);
+    const activeModel = {
+      code: activeCode,
+      name: isAllModels ? "All Semantic Models" : activeRow?.name || activeCode,
+      id: isAllModels ? "all-models" : activeRow?.dataset_id || activeCode,
+    };
+    const nameOf = (code: string) => modelRows.find((m) => m.code === code)?.name || code;
 
-    const measures = rawMeasures.map((m: any) => {
-      const name = m["[Name]"] || "Unnamed Measure";
-      const tableName = m["[Table]"] || "Unknown Table";
-      const mCode = m._modelCode || activeModel.code;
-      const mName = m._modelName || activeModel.name;
-      const id = String(m["[ID]"] || `${mCode}_ms_${tableName}_${name}`.replace(/[^a-zA-Z0-9_-]/g, "_"));
-      const saved = annotationsMap[id];
+    const inScope = rows.filter((r) => isAllModels || r.model_code === activeCode);
 
+    const toItem = (r: DaxRow): DictItem => {
+      const saved = annotationsMap[r.id];
       return {
-        id,
-        name,
-        tableName,
-        type: "Measure",
-        dataType: m["[DataType]"] || "Double",
-        description: m["[Description]"] || "Standard calculation logic defined in semantic model.",
-        expression: m["[Expression]"] || `CALCULATE([${name}])`,
-        formatString: m["[FormatString]"] || null,
-        isHidden: Boolean(m["[IsHidden]"]),
-        modelCode: mCode,
-        modelName: mName,
-        mathDefinition: saved?.mathDefinition || "",
-        businessDefinition: saved?.businessDefinition || "",
-        notes: saved?.notes || m["[Notes]"] || "",
-        isCustom: false,
-        sampleValues: sampleValuesMap[id] || null,
+        id: r.id,
+        name: r.name,
+        tableName: r.table_name,
+        type: r.is_custom ? "Custom DAX" : r.item_type,
+        dataType: r.data_type || (r.item_type === "Measure" ? "Double" : "String"),
+        description: r.description || "",
+        expression: r.expression || null,
+        formatString: r.format_string || null,
+        isHidden: Boolean(r.is_hidden),
+        modelCode: r.model_code,
+        modelName: r.model_name || nameOf(r.model_code),
+        mathDefinition: r.math_definition || saved?.mathDefinition || "",
+        businessDefinition: r.business_definition || saved?.businessDefinition || "",
+        notes: r.notes || saved?.notes || "",
+        isCustom: Boolean(r.is_custom),
+        displayFolder: r.display_folder,
+        sampleValues: (r.sample_values as unknown[] | null) || null,
       };
-    });
+    };
 
-    // Build unified columns list (All column types: Data, Calculated, CalculatedTableColumn, RowNumber)
-    const rawColumns = isAllModels
-      ? Object.entries(store).flatMap(([k, m]: [string, any]) =>
-          (m.columns || []).map((col: any) => ({ ...col, _modelCode: m.code, _modelName: m.name }))
-        )
-      : (activeModel.columns || []).map((col: any) => ({
-          ...col,
-          _modelCode: activeModel.code,
-          _modelName: activeModel.name,
-        }));
-
-    const columns = rawColumns.map((c: any) => {
-      const name = c["[Name]"] || "Unnamed Column";
-      const tableName = c["[Table]"] || "Unknown Table";
-      const mCode = c._modelCode || activeModel.code;
-      const mName = c._modelName || activeModel.name;
-      const rawType = c["[Type]"] || "";
-      let colType = "Data Column";
-      if (rawType === "Calculated") colType = "Calculated Column";
-      else if (rawType === "CalculatedTableColumn") colType = "Calculated Table Column";
-      else if (rawType === "RowNumber") colType = "System Row Column";
-
-      const id = String(c["[ID]"] || `${mCode}_col_${tableName}_${name}`.replace(/[^a-zA-Z0-9_-]/g, "_"));
-      const saved = annotationsMap[id];
-
-      return {
-        id,
-        name,
-        tableName,
-        type: colType,
-        dataType: c["[DataType]"] || "String",
-        description: c["[Description]"] || "Column attribute in semantic model table.",
-        expression: c["[Expression]"] || null,
-        formatString: c["[FormatString]"] || null,
-        isHidden: Boolean(c["[IsHidden]"]),
-        modelCode: mCode,
-        modelName: mName,
-        mathDefinition: saved?.mathDefinition || "",
-        businessDefinition: saved?.businessDefinition || "",
-        notes: saved?.notes || c["[Notes]"] || "",
-        isCustom: false,
-        sampleValues: sampleValuesMap[id] || null,
-      };
-    });
-
-    // Custom DAX items for this model or global
-    const customItems = customDaxList
-      .filter((c) => !c.datasetId || c.datasetId === activeModel.code || c.datasetId === "ALL")
-      .map((c) => {
-        const saved = annotationsMap[c.id];
-        return {
-          id: c.id,
-          name: c.name,
-          tableName: c.tableName,
-          type: "Custom DAX",
-          dataType: c.dataType || "Custom",
-          description: "Manually registered calculation measure.",
-          expression: c.expression,
-          formatString: c.formatString || null,
-          isHidden: false,
-          modelCode: activeModel.code,
-          modelName: activeModel.name,
-          mathDefinition: c.mathDefinition || saved?.mathDefinition || "",
-          businessDefinition: c.businessDefinition || saved?.businessDefinition || "",
-          notes: c.notes || saved?.notes || "",
-          isCustom: true,
-          createdBy: c.createdBy,
-          sampleValues: sampleValuesMap[c.id] || null,
-        };
-      });
+    const measures = inScope.filter((r) => !r.is_custom && r.item_type === "Measure").map(toItem);
+    const columns = inScope.filter((r) => !r.is_custom && r.item_type !== "Measure").map(toItem);
+    const customItems = rows
+      .filter((r) => r.is_custom && (isAllModels || r.model_code === activeCode || r.model_code === "ALL"))
+      .map(toItem);
 
     // Collect all tables across all items
     const tablesSet = new Set<string>();
@@ -220,7 +107,7 @@ export async function GET(request: NextRequest) {
     customItems.forEach((ci) => tablesSet.add(ci.tableName));
 
     // Filter by type (including Semantic Model and Custom by User)
-    let allItems: any[] = [];
+    let allItems: DictItem[] = [];
     if (type === "semantic" || type === "semantic_model") {
       allItems = [...measures, ...columns];
     } else if (type === "custom" || type === "custom_by_user" || type === "custom dax") {
@@ -246,7 +133,7 @@ export async function GET(request: NextRequest) {
       const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const wordRegex = new RegExp(`\\b${escaped}\\b`, "i");
 
-      const scoredItems: { item: any; score: number; matchReason?: string }[] = [];
+      const scoredItems: { item: DictItem; score: number; matchReason?: string }[] = [];
 
       for (const it of allItems) {
         let score = 0;
@@ -312,15 +199,20 @@ export async function GET(request: NextRequest) {
     const startIndex = (page - 1) * limit;
     const paginated = allItems.slice(startIndex, startIndex + limit);
 
-    // Metadata for the available models
-    const modelsMeta = Object.keys(store).map((k) => {
-      const m = store[k];
+    // Live counts per model straight from the dictionary
+    const modelsMeta = modelRows.map((m) => {
+      const own = rows.filter((r) => r.model_code === m.code && !r.is_custom);
       return {
         code: m.code,
         name: m.name,
-        id: m.id,
-        totalMeasures: (m.measures || []).length,
-        totalColumns: (m.columns || []).length,
+        id: m.dataset_id || m.code,
+        totalMeasures: own.filter((r) => r.item_type === "Measure").length,
+        totalColumns: own.filter((r) => r.item_type !== "Measure").length,
+        totalTables: m.table_count || new Set(own.map((r) => r.table_name)).size,
+        totalRelationships: m.relationship_count || 0,
+        lastImportedAt: m.last_imported_at,
+        lastImportedBy: m.last_imported_by,
+        sourceFile: m.source_file,
       };
     });
 
@@ -352,10 +244,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { action } = body;
+    // Audit identity always comes from the signed-in session, not the request body.
+    const sessionUser = await getCurrentUser();
+    const actor = sessionUser?.name || body.user || "Analyst";
 
     // 1. Save Math / Business Definitions
     if (action === "save_annotation") {
-      const { id, mathDefinition, businessDefinition, notes, user } = body;
+      const { id, mathDefinition, businessDefinition, notes } = body;
       if (!id) return NextResponse.json({ error: "Item id is required" }, { status: 400 });
 
       await saveDaxAnnotation({
@@ -363,15 +258,16 @@ export async function POST(request: NextRequest) {
         mathDefinition,
         businessDefinition,
         notes,
-        changedBy: user || "Analyst",
+        changedBy: actor,
       });
 
+      invalidateDaxCache();
       return NextResponse.json({ success: true, message: "Definition saved successfully" });
     }
 
     // 2. Save Custom DAX Measure
     if (action === "save_custom") {
-      const { id, datasetId, tableName, name, expression, formatString, dataType, mathDefinition, businessDefinition, notes, user } = body;
+      const { id, datasetId, tableName, name, expression, formatString, dataType, mathDefinition, businessDefinition, notes } = body;
       if (!name || !expression) {
         return NextResponse.json({ error: "Name and Expression are required" }, { status: 400 });
       }
@@ -389,18 +285,20 @@ export async function POST(request: NextRequest) {
         mathDefinition,
         businessDefinition,
         notes,
-        createdBy: user || "Analyst",
+        createdBy: actor,
       });
 
+      invalidateDaxCache();
       return NextResponse.json({ success: true, id: customId, message: "Custom DAX measure created" });
     }
 
     // 3. Delete Custom DAX Measure
     if (action === "delete_custom") {
-      const { id, user } = body;
+      const { id } = body;
       if (!id) return NextResponse.json({ error: "Item id is required" }, { status: 400 });
 
-      await deleteCustomDaxItem(id, user || "Analyst");
+      await deleteCustomDaxItem(id, actor);
+      invalidateDaxCache();
       return NextResponse.json({ success: true, message: "Custom DAX measure deleted" });
     }
 
@@ -415,15 +313,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Resolve dataset ID to actual GUID if model code was passed
-      const store = loadModels();
-      let resolvedDatasetId = datasetId;
-      if (store[datasetId]?.id) {
-        resolvedDatasetId = store[datasetId].id;
-      } else if (datasetId.toUpperCase().includes("D01")) {
-        resolvedDatasetId = store["PKT-D01"]?.id || "aa345483-35dc-4a57-a3a8-b09dffeb39e0";
-      } else if (datasetId.toUpperCase().includes("D02")) {
-        resolvedDatasetId = store["PKT-D02"]?.id || "e78dfd10-e9b6-45ac-a74d-14a1f5d1b7fc";
-      }
+      const resolvedDatasetId = /^[0-9a-f-]{36}$/i.test(datasetId) ? datasetId : await resolveDatasetId(datasetId);
 
       // Safely escape DAX identifiers
       const cleanTable = tableName.replace(/^'|'$/g, "").replace(/'/g, "''");
@@ -465,6 +355,7 @@ export async function POST(request: NextRequest) {
             .from("dax_dictionary_items")
             .update({ sample_values: distinctValues, updated_at: new Date().toISOString() })
             .eq("id", itemId);
+          invalidateDaxCache();
         } catch (dbErr) {
           console.error("Failed to persist sample values to Supabase:", dbErr);
         }

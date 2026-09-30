@@ -61,7 +61,9 @@ import {
   Zap,
   ZoomIn,
   ZoomOut,
+  Upload,
 } from "lucide-react";
+import { BimImportModal } from "@/components/powerbi/BimImportModal";
 import { clsx } from "clsx";
 import { useTheme } from "@/context/ThemeContext";
 import { DaxCodeViewer } from "@/components/powerbi/DaxCodeViewer";
@@ -586,15 +588,27 @@ export function DaxManagementPage() {
   // Active Model: "PKT-D01" | "PKT-D02" | "ALL"
   const [activeModel, setActiveModel] = useState<string>("PKT-D01");
 
+  // .bim import dialog
+  const [importOpen, setImportOpen] = useState<boolean>(false);
+
   // Read URL query parameter for model on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const m = params.get("model");
-      if (m && (m === "PKT-D01" || m === "PKT-D02" || m === "ALL")) {
+      if (m && /^(PKT-D\d{2}|ALL)$/.test(m)) {
         setActiveModel(m);
         setModelChosen(true);
       }
+      const q = params.get("q");
+      if (q) {
+        setSearchQuery(q);
+        if (!m) {
+          setActiveModel("ALL");
+          setModelChosen(true);
+        }
+      }
+      if (params.get("import") === "1") setImportOpen(true);
     }
   }, []);
 
@@ -1564,190 +1578,96 @@ export function DaxManagementPage() {
   // VIEW 0: PRE-SELECTION LANDING SCREEN (CHOOSE SEMANTIC MODEL BEFORE WORKSPACE)
   // =========================================================================
   if (!modelChosen) {
+    const realModels = models.filter((m) => m.code !== "ALL");
+    const totalMeasures = realModels.reduce((n, m) => n + (m.totalMeasures || 0), 0);
+    const totalColumns = realModels.reduce((n, m) => n + (m.totalColumns || 0), 0);
     return (
-      <div className="h-full w-full overflow-y-auto bg-slate-50 flex flex-col p-6 animate-in fade-in select-none">
-        {/* Top Header */}
-        <div className="max-w-5xl mx-auto w-full mb-8 text-center space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-bold uppercase tracking-wider">
-            <FunctionSquare className="h-4 w-4 text-blue-600" />
-            <span>Semantic Model Catalog</span>
-          </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-            Choose a Semantic Model to Explore
-          </h1>
-          <p className="text-sm text-slate-500 max-w-xl mx-auto">
-            Select an enterprise Power BI semantic model dataset to inspect measures, table schemas, relationships, and custom DAX formulations.
-          </p>
-        </div>
-
-        {/* Global Statistics Banner */}
-        <div className="max-w-5xl mx-auto w-full grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Datasets</span>
-            <span className="text-2xl font-black text-slate-800">2 Active</span>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Measures</span>
-            <span className="text-2xl font-black text-blue-600">1,455</span>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Columns</span>
-            <span className="text-2xl font-black text-indigo-600">3,336</span>
-          </div>
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Supabase Sync</span>
-            <span className="text-sm font-bold text-emerald-600 flex items-center justify-center gap-1 mt-1">
-              <CheckCircle2 className="h-4 w-4" /> Connected
-            </span>
-          </div>
-        </div>
-
-        {/* Semantic Model Selection Cards */}
-        <div className="max-w-5xl mx-auto w-full grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Card 1: PKT-D01 Strategy */}
-          <div
-            onClick={() => {
-              setActiveModel("PKT-D01");
-              setModelChosen(true);
-            }}
-            className="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-blue-500 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
-          >
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="px-3 py-1 rounded-full text-xs font-black uppercase bg-blue-100 text-blue-800">
-                  PKT-D01
-                </span>
-                <span className="text-xs text-slate-400 font-mono">Strategy</span>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition">
-                  PKT-D01 Strategy Semantic Model
-                </h3>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Primary clinical and operational hospital dataset encompassing patient encounters, inpatient &amp; outpatient volume, and clinical quality metrics.
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center font-mono">
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Measures</span>
-                  <span className="text-sm font-bold text-slate-800">849</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Columns</span>
-                  <span className="text-sm font-bold text-slate-800">1,877</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Tables</span>
-                  <span className="text-sm font-bold text-slate-800">191</span>
-                </div>
-              </div>
+      <div className="h-full w-full overflow-y-auto">
+        <div className="mx-auto max-w-5xl py-4 md:py-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-[30px] font-semibold tracking-tight text-slate-900">Which model are you working in?</h2>
+              <p className="mt-2 max-w-xl text-[15px] leading-relaxed text-slate-500">
+                {totalMeasures.toLocaleString()} measures and {totalColumns.toLocaleString()} columns, each with its formula and
+                the team&rsquo;s business definition.
+              </p>
             </div>
             <button
               type="button"
-              className="mt-6 w-full py-2.5 rounded-xl bg-blue-50 group-hover:bg-blue-600 text-blue-700 group-hover:text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              onClick={() => setImportOpen(true)}
+              className="inline-flex items-center gap-2 self-start rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
             >
-              <span>Open Model Workspace</span>
-              <ArrowRight className="h-4 w-4" />
+              <Upload className="h-4 w-4" />
+              Update from .bim
             </button>
           </div>
 
-          {/* Card 2: PKT-D02 Cost */}
-          <div
-            onClick={() => {
-              setActiveModel("PKT-D02");
-              setModelChosen(true);
-            }}
-            className="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-purple-500 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
-          >
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="px-3 py-1 rounded-full text-xs font-black uppercase bg-purple-100 text-purple-800">
-                  PKT-D02
-                </span>
-                <span className="text-xs text-slate-400 font-mono">Cost &amp; Finance</span>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 group-hover:text-purple-600 transition">
-                  PKT-D02 Cost Semantic Model
-                </h3>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Healthcare financial analytics, hospital activity-based costing (ABC), revenue cycles, billing, and doctor fee calculations.
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {realModels.map((m) => (
+              <button
+                key={m.code}
+                type="button"
+                onClick={() => {
+                  setActiveModel(m.code);
+                  setModelChosen(true);
+                }}
+                className="group rounded-2xl bg-white p-6 text-left ring-1 ring-slate-200/80 transition hover:ring-blue-400"
+              >
+                <p className="font-mono text-xs text-blue-700">{m.code}</p>
+                <p className="mt-1 text-lg font-medium text-slate-900">{m.name}</p>
+                <div className="mt-6 flex gap-8">
+                  <div>
+                    <p className="text-[26px] font-semibold tabular-nums tracking-tight text-slate-900">
+                      {(m.totalMeasures || 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-slate-500">measures</p>
+                  </div>
+                  <div>
+                    <p className="text-[26px] font-semibold tabular-nums tracking-tight text-slate-900">
+                      {(m.totalColumns || 0).toLocaleString()}
+                    </p>
+                    <p className="text-xs text-slate-500">columns</p>
+                  </div>
+                  {(m as any).totalRelationships ? (
+                    <div>
+                      <p className="text-[26px] font-semibold tabular-nums tracking-tight text-slate-900">
+                        {(m as any).totalRelationships}
+                      </p>
+                      <p className="text-xs text-slate-500">relationships</p>
+                    </div>
+                  ) : null}
+                </div>
+                <p className="mt-5 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  {(m as any).lastImportedAt
+                    ? `Updated from ${(m as any).sourceFile} on ${new Date((m as any).lastImportedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })} by ${(m as any).lastImportedBy}`
+                    : "Not yet updated from a .bim file"}
                 </p>
-              </div>
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center font-mono">
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Measures</span>
-                  <span className="text-sm font-bold text-slate-800">606</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Columns</span>
-                  <span className="text-sm font-bold text-slate-800">1,459</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Tables</span>
-                  <span className="text-sm font-bold text-slate-800">130+</span>
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="mt-6 w-full py-2.5 rounded-xl bg-purple-50 group-hover:bg-purple-600 text-purple-700 group-hover:text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>Open Model Workspace</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
+              </button>
+            ))}
           </div>
 
-          {/* Card 3: Global Catalog */}
-          <div
+          <button
+            type="button"
             onClick={() => {
               setActiveModel("ALL");
               setModelChosen(true);
             }}
-            className="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-emerald-500 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between"
+            className="mt-4 w-full rounded-2xl border border-dashed border-slate-300 p-5 text-left text-sm text-slate-600 hover:border-blue-400 hover:bg-white"
           >
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-100 text-emerald-800">
-                  ALL MODELS
-                </span>
-                <span className="text-xs text-slate-400 font-mono">Global</span>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 group-hover:text-emerald-600 transition">
-                  Global Unified Catalog
-                </h3>
-                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                  Unified cross-model search across all measures, columns, and custom DAX formulations across both Strategy and Financial models.
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center font-mono">
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Measures</span>
-                  <span className="text-sm font-bold text-slate-800">1,455</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Columns</span>
-                  <span className="text-sm font-bold text-slate-800">3,336</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-xl">
-                  <span className="text-[10px] text-slate-400 block font-sans">Datasets</span>
-                  <span className="text-sm font-bold text-slate-800">2</span>
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="mt-6 w-full py-2.5 rounded-xl bg-emerald-50 group-hover:bg-emerald-600 text-emerald-700 group-hover:text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>Explore All Models</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
+            <span className="font-medium text-slate-900">Search across all models</span>
+            <span className="block text-slate-500">Useful when you know the measure name but not where it lives.</span>
+          </button>
         </div>
+        <BimImportModal
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onImported={() => void fetchItems()}
+          defaultModel={activeModel}
+        />
       </div>
     );
   }
+
 
   return (
     <div className="h-full w-full overflow-hidden flex flex-col gap-3 font-sans select-none">
@@ -1789,6 +1709,17 @@ export function DaxManagementPage() {
           >
             <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
             <span>Switch Model</span>
+          </button>
+
+          {/* Update from .bim */}
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
+            title="Update this model from a .bim file"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            <span>Update from .bim</span>
           </button>
 
           {/* Add Custom DAX Button */}
@@ -3843,6 +3774,12 @@ export function DaxManagementPage() {
           </div>
         </div>
       )}
+      <BimImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => void fetchItems()}
+        defaultModel={activeModel}
+      />
     </div>
   );
 }

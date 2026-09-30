@@ -55,7 +55,7 @@ export function SpotlightCard({
 
       {/* Spotlight Border Glow */}
       <div
-        className="pointer-events-none absolute inset-0 rounded-2xl border border-[#2563EB]/30 opacity-0 transition-opacity duration-300"
+        className="pointer-events-none absolute inset-0 rounded-2xl border border-blue-600/30 opacity-0 transition-opacity duration-300"
         style={{
           opacity,
           maskImage: "radial-gradient(220px circle at " + position.x + "px " + position.y + "px, black 30%, transparent 80%)",

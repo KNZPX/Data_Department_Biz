@@ -4,19 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import {
-  Activity,
   Bell,
-  Check,
-  CheckCircle2,
   ChevronDown,
-  ChevronRight,
-  Database,
-  ExternalLink,
-  Filter,
   FunctionSquare,
   History,
   Home,
-  Inbox,
   KeyRound,
   LayoutGrid,
   LogOut,
@@ -26,34 +18,85 @@ import {
   RefreshCw,
   Search,
   Settings,
-  Shield,
   ShieldCheck,
-  Sparkles,
+  TrendingUp,
   Users,
   Workflow,
   X,
-  Zap,
-  TrendingUp,
+  type LucideIcon,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { TokenModal } from "@/components/TokenModal";
 import { LoginGate, useAuth } from "@/components/auth/LoginGate";
 import { useTheme } from "@/context/ThemeContext";
+import { PresenceStack, usePresence } from "@/components/layout/Presence";
+
+type NavItem = { href: string; label: string; hint: string; icon: LucideIcon };
+type NavGroup = { title: string; items: NavItem[] };
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    title: "Overview",
+    items: [{ href: "/", label: "Home", hint: "Team activity and model pulse", icon: Home }],
+  },
+  {
+    title: "Catalog",
+    items: [
+      { href: "/reports", label: "Power BI reports", hint: "Workspaces, reports and publish history", icon: LayoutGrid },
+      { href: "/licenses", label: "Team & licenses", hint: "Pro, Premium and security groups", icon: Users },
+    ],
+  },
+  {
+    title: "Modeling",
+    items: [
+      { href: "/dax", label: "DAX dictionary", hint: "Measures and columns of each semantic model", icon: FunctionSquare },
+      { href: "/whiteboard", label: "Whiteboard", hint: "Workflow and data-flow canvases", icon: Workflow },
+    ],
+  },
+  {
+    title: "Planning",
+    items: [{ href: "/target-scenario", label: "Target scenario", hint: "BDMS Phuket 2027 target simulator", icon: TrendingUp }],
+  },
+  {
+    title: "Admin",
+    items: [
+      { href: "/users", label: "People", hint: "Who signed in and what changed", icon: ShieldCheck },
+      { href: "/changelog", label: "Activity log", hint: "Audit trail across the portal", icon: History },
+      { href: "/settings", label: "Settings", hint: "Appearance and connections", icon: Settings },
+    ],
+  },
+];
+
+const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
+
+function isActive(pathname: string, href: string) {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
+function initials(name?: string | null) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return (parts[0][0] + (parts[1]?.[0] || "")).toUpperCase();
+}
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, dbProvider, logout, refreshAuth } = useAuth();
-  const { currentTheme, currentCanvas } = useTheme();
+  const { user, logout, refreshAuth } = useAuth();
+  const { currentTheme } = useTheme();
+  const online = usePresence();
 
   const [tokenOpen, setTokenOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Notification / Audit Events Popup State
   const [auditPopupOpen, setAuditPopupOpen] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [logFilter, setLogFilter] = useState<"all" | "publish" | "update">("all");
@@ -61,12 +104,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const popupRef = useRef<HTMLDivElement>(null);
 
-  // Load saved sidebar state
   useEffect(() => {
     const saved = localStorage.getItem("portal_sidebar_collapsed");
-    if (saved !== null) {
-      setCollapsed(saved === "true");
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (saved !== null) setCollapsed(saved === "true");
   }, []);
 
   function toggleSidebar() {
@@ -77,24 +118,36 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     });
   }
 
+  // ⌘K / Ctrl+K focuses search
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === "Escape") {
+        setUserDropdownOpen(false);
+        setAuditPopupOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     void fetchLogs();
     const interval = setInterval(fetchLogs, 30_000);
     return () => clearInterval(interval);
   }, []);
 
-  // Close popup when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-        setAuditPopupOpen(false);
-      }
+      if (popupRef.current && !popupRef.current.contains(event.target as Node)) setAuditPopupOpen(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) setUserDropdownOpen(false);
     }
-    if (auditPopupOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [auditPopupOpen]);
+  }, []);
 
   async function fetchLogs() {
     setLoadingLogs(true);
@@ -104,11 +157,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         const logJson = await logRes.json();
         const fetchedLogs = logJson.logs || [];
         setLogs(fetchedLogs);
-
         const saved = localStorage.getItem("powerbi_read_log_ids");
         const readSet = new Set(saved ? JSON.parse(saved) : []);
-        const unread = fetchedLogs.filter((l: { id: string }) => !readSet.has(l.id)).length;
-        setUnreadCount(unread);
+        setUnreadCount(fetchedLogs.filter((l: { id: string }) => !readSet.has(l.id)).length);
       }
     } catch {
     } finally {
@@ -117,133 +168,213 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   }
 
   function handleMarkAllRead() {
-    const allIds = logs.map((l) => l.id);
-    localStorage.setItem("powerbi_read_log_ids", JSON.stringify(allIds));
+    localStorage.setItem("powerbi_read_log_ids", JSON.stringify(logs.map((l) => l.id)));
     setUnreadCount(0);
   }
 
-  // Filtered logs inside popup
   const filteredLogs = logs.filter((log) => {
     const matchType =
       logFilter === "all" ||
       (logFilter === "publish" && (log.change_type === "PUBLISH" || log.change_type === "VERSION_UPDATE")) ||
       (logFilter === "update" && log.change_type === "METADATA_UPDATE");
+    const q = logSearch.toLowerCase();
     const matchSearch =
       !logSearch.trim() ||
-      (log.item_name && log.item_name.toLowerCase().includes(logSearch.toLowerCase())) ||
-      (log.summary && log.summary.toLowerCase().includes(logSearch.toLowerCase())) ||
-      (log.responsible_user && log.responsible_user.toLowerCase().includes(logSearch.toLowerCase()));
+      (log.item_name && log.item_name.toLowerCase().includes(q)) ||
+      (log.summary && log.summary.toLowerCase().includes(q)) ||
+      (log.responsible_user && log.responsible_user.toLowerCase().includes(q));
     return matchType && matchSearch;
   });
-
-  const publishCount = logs.filter(
-    (l) => l.change_type === "PUBLISH" || l.change_type === "VERSION_UPDATE"
-  ).length;
+  const publishCount = logs.filter((l) => l.change_type === "PUBLISH" || l.change_type === "VERSION_UPDATE").length;
   const updateCount = logs.filter((l) => l.change_type === "METADATA_UPDATE").length;
 
-  // Navigation Items with Page Names and Subtitles
-  const navItems = [
-    { href: "/reports", label: "Power BI Catalog", sub: "465 Workspaces & Reports", icon: LayoutGrid },
-    { href: "/dax", label: "DAX Management", sub: "D01 & D02 Semantic Models", icon: FunctionSquare },
-    { href: "/target-scenario", label: "Target Scenario", sub: "BDMS Phuket 2027 Simulator", icon: TrendingUp },
-    { href: "/whiteboard", label: "Whiteboard", sub: "Interactive Workflow Canvas", icon: Workflow },
-    { href: "/licenses", label: "Team & Licenses", sub: "Capacity & Group Governance", icon: Users },
-    { href: "/users", label: "User Management", sub: "Login Activity & Audit Logs", icon: ShieldCheck },
-    { href: "/settings", label: "System Settings", sub: "Database & OAuth Config", icon: Settings },
-  ];
+  const activeNavItem = ALL_NAV.find((item) => isActive(pathname, item.href)) || ALL_NAV[0];
 
-  // Current active page name
-  const activeNavItem = navItems.find((item) =>
-    pathname === "/" ? item.href === "/reports" : pathname.startsWith(item.href)
-  ) || navItems[0];
+  function submitSearch() {
+    const q = searchQuery.trim();
+    if (!q) return;
+    // DAX-looking queries go to the dictionary, everything else to the report catalog.
+    const looksDax = /^[_%\[]|\(|\bcalculate\b|measure|dax/i.test(q) || pathname.startsWith("/dax");
+    router.push(looksDax ? `/dax?model=ALL&q=${encodeURIComponent(q)}` : `/reports?q=${encodeURIComponent(q)}`);
+  }
+
+  const sidebar = (
+    <aside
+      className={clsx(
+        "ink-surface h-full z-40 shrink-0 flex flex-col text-slate-300 transition-[width] duration-300 ease-out",
+        collapsed ? "w-[76px]" : "w-64",
+        mobileOpen ? "fixed inset-y-0 left-0 z-50 w-64 flex" : "hidden md:flex"
+      )}
+    >
+      {/* Brand */}
+      <div className={clsx("h-16 shrink-0 flex items-center gap-3", collapsed ? "justify-center px-2" : "px-5")}>
+        <Link href="/" className="flex items-center gap-3 min-w-0" onClick={() => setMobileOpen(false)}>
+          <span
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[13px] font-bold text-white"
+            style={{ background: `linear-gradient(140deg, ${currentTheme.gradientFrom}, ${currentTheme.gradientTo})` }}
+          >
+            BA
+          </span>
+          {!collapsed && (
+            <span className="min-w-0 leading-tight">
+              <span className="block text-[15px] font-semibold text-white tracking-tight">Biz-Analytic</span>
+              <span className="block text-[11px] text-slate-400">BDMS Phuket data team</span>
+            </span>
+          )}
+        </Link>
+        {mobileOpen && (
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="ml-auto grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white/10"
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-5" aria-label="Main">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.title}>
+            {!collapsed ? (
+              <p className="px-3 pb-1.5 text-[11px] font-medium text-slate-500">{group.title}</p>
+            ) : (
+              <div className="mx-auto mb-2 h-px w-6 bg-white/10" />
+            )}
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = isActive(pathname, item.href);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      title={collapsed ? item.label : item.hint}
+                      aria-current={active ? "page" : undefined}
+                      className={clsx(
+                        "group relative flex items-center gap-3 rounded-xl px-3 py-2 text-[13.5px] transition-colors",
+                        active ? "bg-white/[0.09] text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-100",
+                        collapsed && "justify-center px-0"
+                      )}
+                    >
+                      {active && (
+                        <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-blue-400" aria-hidden />
+                      )}
+                      <Icon className={clsx("h-[18px] w-[18px] shrink-0", active ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300")} />
+                      {!collapsed && <span className="truncate font-medium">{item.label}</span>}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+
+      {/* Who's here */}
+      <div className={clsx("shrink-0 border-t border-white/[0.07] p-3", collapsed && "px-2")}>
+        {!collapsed && (
+          <div className="mb-3 px-2">
+            <p className="text-[11px] text-slate-500 mb-2">
+              {online.length <= 1 ? "Only you right now" : `${online.length} people working now`}
+            </p>
+            <PresenceStack users={online} dark max={6} />
+          </div>
+        )}
+        <div className={clsx("flex items-center gap-1", collapsed ? "flex-col" : "")}>
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="hidden md:grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTokenOpen(true)}
+            title="Your Power BI connection"
+            className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white"
+          >
+            <KeyRound className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => logout()}
+            title="Sign out"
+            className={clsx(
+              "flex h-9 items-center gap-2 rounded-lg px-2.5 text-[13px] text-slate-400 hover:bg-coral/15 hover:text-coral",
+              collapsed ? "w-9 justify-center px-0" : "ml-auto"
+            )}
+          >
+            <LogOut className="h-4 w-4" />
+            {!collapsed && <span>Sign out</span>}
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#F4F6FB] text-slate-800 flex flex-col font-sans select-none">
-      {/* Mobile Drawer Backdrop */}
+    <div className="h-screen w-screen overflow-hidden bg-paper text-slate-800 flex font-sans select-none">
       {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden transition-opacity"
-          onClick={() => setMobileOpen(false)}
-        />
+        <div className="fixed inset-0 z-40 bg-ink/50 backdrop-blur-[2px] md:hidden" onClick={() => setMobileOpen(false)} />
       )}
+      {sidebar}
 
-      {/* TOP HEADER OF THE WEBSITE */}
-      <header className="h-16 shrink-0 bg-white border-b border-slate-200/80 px-4 md:px-6 flex items-center justify-between gap-4 z-30 shadow-2xs">
-        <div className="flex items-center gap-3 md:gap-5">
-          {/* Mobile Menu Button */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar */}
+        <header className="h-16 shrink-0 border-b border-slate-200/70 bg-white/80 backdrop-blur px-4 md:px-6 flex items-center gap-3 z-30">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            style={{ backgroundColor: currentTheme.primary }}
-            className="grid md:hidden h-9 w-9 place-items-center rounded-xl text-white shadow-xs"
+            className="grid md:hidden h-9 w-9 place-items-center rounded-xl bg-ink text-white"
+            aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Brand Logo & Name */}
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div
-              style={{
-                background: `linear-gradient(135deg, ${currentTheme.gradientFrom} 0%, ${currentTheme.gradientTo} 100%)`,
-                boxShadow: `0 4px 10px -2px ${currentTheme.primaryGlow}`,
-              }}
-              className="h-9 w-9 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-xs"
-            >
-              BA
+          <div className="min-w-0">
+            <h1 className="truncate text-[17px] font-semibold tracking-tight text-slate-900">{activeNavItem.label}</h1>
+            <p className="hidden sm:block truncate text-xs text-slate-500">{activeNavItem.hint}</p>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2 md:gap-3">
+            <div className="relative hidden md:flex items-center">
+              <Search className="absolute left-3 h-4 w-4 text-slate-400 pointer-events-none" />
+              <input
+                ref={searchRef}
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitSearch()}
+                placeholder="Search reports or measures"
+                aria-label="Search reports or measures"
+                className="w-56 lg:w-80 rounded-xl bg-slate-100/80 pl-9 pr-14 py-2 text-[13px] text-slate-800 border border-transparent placeholder:text-slate-400 focus:bg-white focus:border-slate-200 focus:outline-none transition"
+              />
+              <kbd className="pointer-events-none absolute right-2.5 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-400">
+                Ctrl K
+              </kbd>
             </div>
-            <div className="hidden sm:flex flex-col">
-              <span className="font-extrabold text-xs text-slate-900 tracking-tight leading-tight">
-                BIZ-ANALYTIC
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">Enterprise BI Portal</span>
+
+            <div className="hidden lg:block">
+              <PresenceStack users={online} max={4} />
             </div>
-          </Link>
-
-          {/* Active Page Name Breadcrumb */}
-          <div className="hidden lg:flex items-center gap-2 border-l border-slate-200 pl-4 text-xs">
-            <span className="text-slate-400 font-medium">Platform</span>
-            <span className="text-slate-300">/</span>
-            <span className="font-bold text-slate-900">{activeNavItem.label}</span>
-            <span className="text-[11px] text-slate-400 hidden xl:inline">({activeNavItem.sub})</span>
-          </div>
-
-          {/* Operational Status Pill */}
-          <div className="hidden xl:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-800">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Operational &bull; 465 Reports Cached in Supabase</span>
-          </div>
-        </div>
-
-        {/* Header Right Actions */}
-        <div className="flex items-center gap-3">
-          {/* Global Search Pill */}
-          <div className="relative hidden md:flex items-center">
-            <Search className="absolute left-3.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && searchQuery.trim()) {
-                  router.push(`/reports?q=${encodeURIComponent(searchQuery.trim())}`);
-                }
-              }}
-              placeholder="Search reports, metrics, DAX..."
-              className="w-52 lg:w-72 rounded-full bg-slate-50 pl-9 pr-4 py-1.5 text-xs text-slate-700 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-400 transition"
-            />
-          </div>
 
           {/* Notification Bell (Audit Events Popover Box) */}
           <div className="relative" ref={popupRef}>
             <button
               type="button"
               onClick={() => setAuditPopupOpen(!auditPopupOpen)}
-              title="Audit & Version Events"
+              title="Recent publishes and changes" aria-label="Recent publishes and changes"
               className={clsx(
-                "relative h-9 w-9 rounded-full bg-slate-50 border flex items-center justify-center transition",
+                "relative h-9 w-9 rounded-xl flex items-center justify-center transition",
                 auditPopupOpen
-                  ? "border-slate-800 text-slate-900 bg-white shadow-sm"
-                  : "border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  ? "bg-slate-100 text-slate-900"
+                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
               )}
             >
               <Bell className="h-4 w-4" />
@@ -421,34 +552,28 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          {/* User Profile Pill with Dropdown */}
-          <div className="relative">
+          {/* User menu */}
+          <div className="relative" ref={userMenuRef}>
             <button
               type="button"
               onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-              className="flex items-center gap-2 rounded-full bg-slate-50 pl-1 pr-3 py-1 border border-slate-200 hover:bg-slate-100 transition"
+              className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-2 hover:bg-slate-100 transition"
+              aria-haspopup="menu"
+              aria-expanded={userDropdownOpen}
             >
-              <div
-                style={{
-                  backgroundColor: currentTheme.primary,
-                  boxShadow: `0 4px 8px -2px ${currentTheme.primaryGlow}`,
-                }}
-                className="h-7 w-7 rounded-full text-white font-bold text-xs flex items-center justify-center"
-              >
-                {user?.name ? user.name.slice(0, 1).toUpperCase() : "A"}
-              </div>
-              <span className="text-xs font-bold text-slate-800 max-w-[100px] truncate hidden sm:inline">
-                {user?.name || "Analyst"}
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-blue-600 text-[12px] font-semibold text-white">
+                {initials(user?.name)}
               </span>
-              <ChevronDown className="h-3 w-3 text-slate-400" />
+              <span className="hidden sm:block max-w-[140px] truncate text-[13px] font-medium text-slate-800">
+                {user?.name || "Signed in"}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
             </button>
-
-            {/* Dropdown Menu */}
             {userDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white p-2 shadow-xl border border-slate-100 z-50 text-xs animate-in fade-in">
-                <div className="px-3 py-2 border-b border-slate-100">
-                  <p className="font-bold text-slate-800 truncate">{user?.name || "Biz Analyst"}</p>
-                  <p className="text-[10px] text-slate-400 truncate font-mono">{user?.email || "analyst@bizanalytic.com"}</p>
+              <div role="menu" className="absolute right-0 mt-2 w-64 rounded-2xl bg-white p-2 shadow-xl ring-1 ring-slate-200 z-50 text-[13px]">
+                <div className="px-3 py-2.5 border-b border-slate-100 mb-1">
+                  <p className="font-semibold text-slate-900 truncate">{user?.name}</p>
+                  <p className="text-xs text-slate-500 truncate">{user?.email}</p>
                 </div>
                 <button
                   type="button"
@@ -456,154 +581,46 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     setUserDropdownOpen(false);
                     setTokenOpen(true);
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-slate-700 hover:bg-slate-50 transition text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-slate-50 text-left"
                 >
-                  <KeyRound className="h-4 w-4 text-blue-600" />
-                  <span>Inspect OAuth Token</span>
+                  <KeyRound className="h-4 w-4 text-slate-400" />
+                  Power BI connection
                 </button>
                 <Link
                   href="/settings"
                   onClick={() => setUserDropdownOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-slate-700 hover:bg-slate-50 transition"
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-700 hover:bg-slate-50"
                 >
-                  <Settings className="h-4 w-4 text-slate-500" />
-                  <span>System Settings</span>
+                  <Settings className="h-4 w-4 text-slate-400" />
+                  Settings
                 </Link>
                 <button
                   type="button"
                   onClick={() => logout()}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 transition text-left font-semibold"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-coral hover:bg-coral/10 text-left font-medium"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span>Sign Out</span>
+                  Sign out
                 </button>
               </div>
             )}
           </div>
-        </div>
-      </header>
-
-      {/* BODY VIEWPORT (Fixed Fullscreen, No Outer Vertical Scrollbar) */}
-      <div className="flex flex-1 overflow-hidden min-h-0 relative">
-        {/* EXPANDABLE LEFT NAVBAR SIDEBAR */}
-        <aside
-          className={clsx(
-            "h-full z-40 bg-white border-r border-slate-200/80 transition-all duration-300 ease-in-out shrink-0 flex flex-col justify-between py-4 shadow-xs",
-            collapsed ? "w-20" : "w-64",
-            mobileOpen ? "fixed inset-y-0 left-0 z-50" : "hidden md:flex"
-          )}
-        >
-          {/* Top Section: Expand Toggle and Nav Links */}
-          <div className="flex flex-col space-y-4">
-            {/* Expand / Collapse Control Button */}
-            <div className={clsx("flex items-center px-4", collapsed ? "justify-center" : "justify-between")}>
-              {!collapsed && (
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Navigation
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                title={collapsed ? "Expand sidebar (Reveal Page Names)" : "Collapse sidebar"}
-                className="h-8 w-8 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition"
-              >
-                {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-              </button>
-            </div>
-
-            {/* Nav Items List */}
-            <nav className="flex flex-col space-y-1.5 px-3">
-              {navItems.map((item) => {
-                const active = pathname === "/" ? item.href === "/reports" : pathname.startsWith(item.href);
-                const Icon = item.icon;
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    title={collapsed ? `${item.label} (${item.sub})` : undefined}
-                    className={clsx(
-                      "flex items-center gap-3 rounded-2xl px-3 py-2.5 transition-all duration-150",
-                      active
-                        ? "bg-blue-600 text-white font-bold shadow-md shadow-blue-500/20"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-                      collapsed && "justify-center px-0"
-                    )}
-                  >
-                    <Icon className={clsx("h-5 w-5 shrink-0", active ? "text-white stroke-[2.4]" : "text-slate-500")} />
-
-                    {!collapsed && (
-                      <div className="flex flex-col min-w-0 leading-tight">
-                        <span className="text-xs font-bold truncate">{item.label}</span>
-                        <span className={clsx("text-[10px] truncate", active ? "text-blue-100 font-normal" : "text-slate-400")}>
-                          {item.sub}
-                        </span>
-                      </div>
-                    )}
-                  </Link>
-                );
-              })}
-            </nav>
           </div>
+        </header>
 
-          {/* Bottom Actions: Token Inspector & Sign Out */}
-          <div className="border-t border-slate-100 pt-3 px-3 space-y-2">
-            {!collapsed && (
-              <div className="flex items-center gap-2 px-2 text-[10px] text-slate-400 font-mono">
-                <Database className="h-3 w-3 text-blue-600 shrink-0" />
-                <span className="truncate">Database: Supabase Cloud</span>
-              </div>
-            )}
-
-            <div className={clsx("flex items-center gap-2", collapsed ? "flex-col" : "justify-between")}>
-              <button
-                type="button"
-                onClick={() => setTokenOpen(true)}
-                title="Inspect OAuth Token"
-                className={clsx(
-                  "h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 transition",
-                  collapsed ? "w-9" : "flex-1 gap-2 text-xs font-bold px-3 bg-slate-50 border border-slate-200"
-                )}
-              >
-                <KeyRound className="h-4 w-4 text-blue-600" />
-                {!collapsed && <span>Token Inspector</span>}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => logout()}
-                title="Sign Out"
-                className="h-9 w-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition shrink-0"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        {/* MAIN CANVAS VIEWPORT (No Outer Vertical Scrollbar, Visuals Scroll Internally) */}
-        <main
-          key={pathname}
-          className="flex-1 h-full overflow-hidden p-4 md:p-6 page-transition"
-        >
+        <main key={pathname} className="flex-1 min-h-0 overflow-hidden p-3 md:p-5 page-transition">
           {children}
         </main>
       </div>
 
-      <TokenModal
-        isOpen={tokenOpen}
-        onClose={() => setTokenOpen(false)}
-        onSuccess={() => refreshAuth()}
-      />
+      <TokenModal isOpen={tokenOpen} onClose={() => setTokenOpen(false)} onSuccess={() => refreshAuth()} />
     </div>
   );
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={<div className="h-screen w-screen bg-slate-50" />}>
+    <Suspense fallback={<div className="h-screen w-screen bg-paper" />}>
       <LoginGate>
         <AppShellInner>{children}</AppShellInner>
       </LoginGate>

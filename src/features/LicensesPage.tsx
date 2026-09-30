@@ -197,7 +197,7 @@ export function LicensesPage() {
               onClick={() => setPageViewMode("table")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                pageViewMode === "table" ? "bg-[#2563EB] text-white shadow-xs" : "text-slate-600 hover:text-[#2563EB]"
+                pageViewMode === "table" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
               )}
             >
               License Table (32 Columns)
@@ -207,7 +207,7 @@ export function LicensesPage() {
               onClick={() => setPageViewMode("permissions")}
               className={clsx(
                 "rounded-full px-4 py-1.5 text-xs font-bold transition",
-                pageViewMode === "permissions" ? "bg-[#2563EB] text-white shadow-xs" : "text-slate-600 hover:text-[#2563EB]"
+                pageViewMode === "permissions" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
               )}
             >
               Permission Matrix Analysis
@@ -221,7 +221,7 @@ export function LicensesPage() {
               dense
               onClick={() => setImportOpen(true)}
             >
-              <Upload className="h-3.5 w-3.5 text-[#2563EB]" />
+              <Upload className="h-3.5 w-3.5 text-blue-600" />
               <span>Import Excel</span>
             </Button>
             <Button
@@ -302,8 +302,8 @@ export function LicensesPage() {
                 className={clsx(
                   "rounded-full px-3 py-1 font-semibold transition border",
                   activeGroup === g.key
-                    ? "bg-[#2563EB] text-white border-[#2563EB] shadow-xs"
-                    : "bg-white text-slate-600 border-slate-200 hover:bg-[#2563EB]/10 hover:text-[#2563EB]"
+                    ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-blue-600/10 hover:text-blue-600"
                 )}
               >
                 {g.label}
@@ -327,7 +327,7 @@ export function LicensesPage() {
         /* Table View */
         <div className="overflow-x-auto rounded-3xl border border-slate-200/90 bg-white shadow-xs">
           <table className="table table-zebra table-xs w-full text-left">
-            <thead className="bg-slate-50 text-[#2563EB] font-bold border-b border-slate-200">
+            <thead className="bg-slate-50 text-blue-600 font-bold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-3 whitespace-nowrap">#</th>
                 {activeColumns.map((col) => (
@@ -367,7 +367,7 @@ export function LicensesPage() {
                             {String(val || "active")}
                           </span>
                         ) : col.key === "license_type" ? (
-                          <span className="rounded-full bg-[#2563EB]/10 px-2 py-0.5 text-[11px] font-bold text-[#2563EB] border border-[#2563EB]/20">
+                          <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[11px] font-bold text-blue-600 border border-blue-600/20">
                             {String(val || "-")}
                           </span>
                         ) : (
@@ -420,14 +420,14 @@ export function LicensesPage() {
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-[#2563EB] text-white px-2 py-0.2 font-mono text-[10px] font-bold shadow-2xs">
+                        <span className="rounded-full bg-blue-600 text-white px-2 py-0.2 font-mono text-[10px] font-bold shadow-2xs">
                           {lic.site || "PKT"}
                         </span>
                         <h4 className="text-sm font-bold text-slate-900">{lic.display_name}</h4>
                       </div>
                       <p className="text-xs text-slate-500">{lic.department_name || lic.department_en}</p>
                     </div>
-                    <span className="rounded-full bg-[#2563EB]/10 px-2 py-0.5 text-[10px] font-bold text-[#2563EB] border border-[#2563EB]/20">
+                    <span className="rounded-full bg-blue-600/10 px-2 py-0.5 text-[10px] font-bold text-blue-600 border border-blue-600/20">
                       {lic.license_type}
                     </span>
                   </div>
@@ -478,7 +478,7 @@ export function LicensesPage() {
                       setEditingLicense(lic);
                       setFormOpen(true);
                     }}
-                    className="text-xs font-semibold text-[#2563EB] hover:underline"
+                    className="text-xs font-semibold text-blue-600 hover:underline"
                   >
                     Edit
                   </button>

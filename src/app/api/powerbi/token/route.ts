@@ -1,47 +1,36 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getStoredPowerBiToken, savePowerBiToken } from "@/lib/powerbiToken";
-
 import { getDbProvider } from "@/lib/db";
+import {
+  attachSessionCookie,
+  newSessionSecret,
+  readSessionSecret,
+  touchSession,
+  userFromAccessToken,
+} from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-function extractUserFromToken(token: string) {
-  try {
-    const parts = token.split(".");
-    if (parts.length < 2) return null;
-    const json = Buffer.from(parts[1], "base64").toString("utf-8");
-    const payload = JSON.parse(json);
-    return {
-      name: (payload.name as string) || "Microsoft User",
-      email: (payload.upn as string) || (payload.unique_name as string) || (payload.email as string) || "",
-    };
-  } catch {
-    return null;
-  }
-}
-
+// Returns the status of the *caller's own* session. The token is only ever
+// returned to the browser that owns it (used by the Token Inspector).
 export async function GET() {
   try {
     const provider = getDbProvider();
     const stored = await getStoredPowerBiToken();
     if (!stored) {
-      return Response.json({
-        hasToken: false,
-        accessToken: null,
-        expiresAt: null,
-        expired: true,
-        user: null,
-        dbProvider: provider,
-      });
+      return Response.json({ hasToken: false, accessToken: null, expiresAt: null, expired: true, user: null, dbProvider: provider });
     }
+    void touchSession(await readSessionSecret()).catch(() => {});
     const expired = new Date(stored.expiresAt).getTime() - Date.now() < 5_000;
-    const user = extractUserFromToken(stored.accessToken);
+    // A session with a refresh token can silently renew, so it is still usable.
+    const usable = !expired || Boolean(stored.refreshToken);
     return Response.json({
       hasToken: true,
       accessToken: stored.accessToken,
       expiresAt: stored.expiresAt,
-      expired,
-      user,
+      expired: !usable,
+      canRefresh: Boolean(stored.refreshToken),
+      user: stored.user || userFromAccessToken(stored.accessToken),
       dbProvider: provider,
     });
   } catch (error) {
@@ -53,8 +42,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { token?: string };
     const raw = typeof body.token === "string" ? body.token : "";
-    const saved = await savePowerBiToken(raw);
-    return Response.json({ expiresAt: saved.expiresAt });
+    const existing = await readSessionSecret();
+    const secret = existing || newSessionSecret();
+    const saved = await savePowerBiToken(raw, secret);
+    const response = NextResponse.json({ expiresAt: saved.expiresAt, user: saved.user || null });
+    if (!existing) attachSessionCookie(response, secret);
+    return response;
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Failed to save token" }, { status: 400 });
   }

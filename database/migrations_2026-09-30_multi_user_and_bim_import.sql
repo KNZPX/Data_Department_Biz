@@ -1,0 +1,8 @@
+-- Applied to Supabase project wwnzwsjquostxfpjerla on 2026-09-30 via MCP (migration: multi_user_sessions_and_dax_model_import).
+-- Kept here for reference / new environments.
+-- 1. app_sessions (+ SECURITY DEFINER RPCs session_get / session_upsert / session_touch / session_delete / sessions_online)
+--    RLS on, no policies, anon has no table privileges: tokens are only reachable by exact session hash.
+-- 2. dax_dictionary_items: + lineage_tag, display_folder, source_column, is_deleted, deleted_at, last_import_id, last_imported_at
+-- 3. dax_models, dax_model_tables, dax_model_relationships, dax_imports, view dax_items_fingerprint
+-- 4. app_users: + is_active
+-- See the Supabase migration history for the exact SQL.

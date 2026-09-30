@@ -25,7 +25,7 @@ export function BizAnalyticLogo({
     <div className={`flex items-center gap-2.5 ${className}`}>
       {/* Modern Analytics Vector Icon: Ascending Growth Bars & Dynamic Trend Pulse */}
       <div
-        className={`relative ${dimensions.icon} shrink-0 grid place-items-center rounded-2xl bg-gradient-to-br from-[#2563EB] via-[#3B82F6] to-[#60A5FA] p-1.5 shadow-sm shadow-[#2563EB]/25 ring-1 ring-[#2563EB]/30`}
+        className={`relative ${dimensions.icon} shrink-0 grid place-items-center rounded-2xl bg-gradient-to-br from-blue-600 via-blue-500 to-blue-400 p-1.5 shadow-sm shadow-blue-600/25 ring-1 ring-blue-600/30`}
       >
         <svg
           viewBox="0 0 36 36"
@@ -70,9 +70,9 @@ export function BizAnalyticLogo({
             <span
               className={`font-black tracking-tight text-slate-900 uppercase font-sans ${dimensions.text}`}
             >
-              BIZ<span className="text-[#2563EB]">-ANALYTIC</span>
+              BIZ<span className="text-blue-600">-ANALYTIC</span>
             </span>
-            <span className="rounded-full bg-[#2563EB]/10 px-1.5 py-0.5 text-[8.5px] font-bold text-[#2563EB] border border-[#2563EB]/25 font-sans tracking-wide">
+            <span className="rounded-full bg-blue-600/10 px-1.5 py-0.5 text-[8.5px] font-bold text-blue-600 border border-blue-600/25 font-sans tracking-wide">
               BI HUB
             </span>
           </div>

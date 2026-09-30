@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForTokens } from "@/lib/powerbiAuth";
 import { saveOAuthTokens } from "@/lib/powerbiToken";
+import { attachSessionCookie, newSessionSecret } from "@/lib/session";
+import { recordUserLogin } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -38,15 +40,27 @@ export async function GET(request: NextRequest) {
     return redirectWithError("Sign-in didn't complete (missing or mismatched state) - please try again.");
   }
 
+  let sessionSecret = "";
   try {
     const redirectUri = process.env.AZURE_REDIRECT_URI || new URL("/api/powerbi/auth/callback", origin).toString();
     const tokens = await exchangeCodeForTokens({ code, codeVerifier: verifier, redirectUri });
-    await saveOAuthTokens(tokens);
+    // Every sign-in gets its own session, so several people can use the portal at once.
+    sessionSecret = newSessionSecret();
+    const saved = await saveOAuthTokens(tokens, sessionSecret, request.headers.get("user-agent"));
+    if (saved.user) {
+      await recordUserLogin({
+        email: saved.user.email,
+        name: saved.user.name,
+        userAgent: request.headers.get("user-agent") || "",
+        ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined,
+      }).catch(() => {});
+    }
   } catch (error) {
     return redirectWithError(error instanceof Error ? error.message : "Failed to complete Microsoft sign-in.");
   }
 
   const response = NextResponse.redirect(new URL("/", origin));
   clearOAuthCookies(response);
+  attachSessionCookie(response, sessionSecret);
   return response;
 }

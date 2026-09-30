@@ -45,6 +45,13 @@ export function ReportsPage() {
   const [selectedSiteFolder, setSelectedSiteFolder] = useState<string | null>(null);
   const [workspaceSearch, setWorkspaceSearch] = useState("");
   const [itemSearch, setItemSearch] = useState("");
+
+  // Global search in the top bar lands here as /reports?q=...
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q) setItemSearch(q);
+  }, []);
   const [selectedLogItem, setSelectedLogItem] = useState<PowerBiItem | null>(null);
   const [exporting, setExporting] = useState(false);
 
