@@ -45,6 +45,8 @@ export interface Plan {
   rootId: string;
   targetYear: number; // the year being planned; prior = targetYear − 2, base = targetYear − 1
   rolled?: boolean; // base / prior come from an earlier plan, not the data
+  bottomUp?: boolean; // totals add up from the units, instead of being fixed from the top
+  blank?: BlankStructure; // a plan typed from scratch on the team's organisation
   step: number; // THB rounding step
   actualMonths: number; // how many months of the base year are actual (0–12); the rest is estimate
   nodes: Record<string, PlanNode>;
@@ -64,6 +66,12 @@ export interface ChangeReport {
 }
 
 export const MB = 1_000_000;
+
+/** The organisation a blank plan was built on (kept with the plan so it reopens the same). */
+export type BlankStructure = {
+  sites: { code: string; name: string; color?: string }[];
+  units: { name: string; group: string; sites: string[]; opdShare?: number }[];
+};
 
 // ---- small helpers -----------------------------------------------------------
 
@@ -212,6 +220,13 @@ export function setTarget(input: Plan, id: string, requestedTHB: number, opts: {
   if (!node.parentId) {
     plan.nodes[id] = { ...node, target: roundTo(requested, plan.step) };
     splitDown(plan, id, report.scaledLocked);
+  } else if (plan.bottomUp) {
+    // Totals follow the units: set this one, re-split below it, add up above it.
+    plan.nodes[id] = { ...node, target: roundTo(requested, plan.step), locked: opts.lock ?? true };
+    splitDown(plan, id, report.scaledLocked);
+    for (let p: string | null = node.parentId; p; p = plan.nodes[p].parentId) {
+      plan.nodes[p] = { ...plan.nodes[p], target: sum(childrenOf(plan, p).map((k) => k.target)) };
+    }
   } else {
     const max = maxFor(plan, id);
     let value = roundTo(requested, plan.step);
@@ -416,6 +431,23 @@ export function setActual(input: Plan, id: string, actualTHB: number | null): Pl
   return plan;
 }
 
+/** Type the base year's full year for a CoE / sub-unit directly (clears a typed actual). */
+export function setBase(input: Plan, id: string, baseTHB: number): Plan {
+  const plan = clonePlan(input);
+  const n = plan.nodes[id];
+  rescaleBase(plan, id, Math.max(0, baseTHB));
+  plan.nodes[id] = { ...plan.nodes[id], actual: undefined, dataBase26: Math.max(0, baseTHB) };
+  rollUpBase(plan, n.parentId);
+  return plan;
+}
+
+/** Switch between totals fixed from the top and totals that add up from the units. */
+export function setBottomUp(input: Plan, on: boolean): Plan {
+  const plan = clonePlan(input);
+  plan.bottomUp = on;
+  return plan;
+}
+
 /** Change how many months are actual; typed actuals are re-annualised with the new split. */
 export function setActualMonths(input: Plan, months: number): Plan {
   let plan = clonePlan(input);
@@ -595,6 +627,8 @@ export interface PlanSnapshot {
   version: 2;
   step: number;
   targetYear?: number;
+  bottomUp?: boolean;
+  blank?: BlankStructure;
   // Plans rolled forward from another plan carry their own base / prior years.
   bases?: Record<string, number>;
   priors?: Record<string, number>;
@@ -633,6 +667,8 @@ export function toSnapshot(plan: Plan): PlanSnapshot {
     version: 2,
     step: plan.step,
     targetYear: plan.targetYear,
+    bottomUp: plan.bottomUp,
+    blank: plan.blank,
     actualMonths: plan.actualMonths,
     actuals,
     priorTyped,
@@ -653,6 +689,7 @@ export function fromSnapshot(base: Plan, snap: PlanSnapshot): Plan {
   if (snap.step) plan.step = snap.step;
   for (const s of snap.subs || []) if (plan.nodes[s.coeId]) plan = addSub(plan, s.coeId, s.name).plan;
   if (typeof snap.targetYear === "number") plan.targetYear = snap.targetYear;
+  if (snap.bottomUp) plan.bottomUp = true;
   if (snap.bases) {
     // A rolled-forward plan: its own base and prior years replace the data's.
     plan.rolled = true;
