@@ -79,6 +79,14 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   const [manualToken, setManualToken] = useState("");
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
+  // Leaving for Microsoft's sign-in page takes a moment: show it's on its way.
+  const [redirecting, setRedirecting] = useState(false);
+  useEffect(() => {
+    // Coming back with the browser's Back button restores this page from cache.
+    const onShow = (e: PageTransitionEvent) => e.persisted && setRedirecting(false);
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
 
   const authError = searchParams.get("powerbi_auth_error");
 
@@ -159,16 +167,8 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-paper">
-        <div className="flex items-center gap-3 text-sm text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-          Checking your session
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <SigningIn label="Signing in" note="Checking your session" />;
+  if (redirecting) return <SigningIn label="Signing in" note="Taking you to Microsoft" />;
 
   if (authenticated) {
     return (
@@ -243,6 +243,10 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
           <a
             href="/api/powerbi/auth/start"
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+              setRedirecting(true);
+            }}
             className="mt-8 flex w-full items-center justify-center gap-3 rounded-lg bg-blue-600 px-5 py-3 text-[15px] font-medium text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.99]"
           >
             <MicrosoftMark />
@@ -294,11 +298,11 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                 <button
                   type="submit"
                   disabled={guestBusy || !guestUser.trim() || !guestPass}
-                  className="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className={`w-full rounded-lg bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 ${guestBusy ? "cursor-wait" : "disabled:opacity-50"}`}
                 >
-                  {guestBusy ? "Signing in…" : "Sign in as guest"}
+                  {guestBusy ? <BusyLabel text="Signing in" /> : "Sign in as guest"}
                 </button>
-                <p className="text-xs text-slate-400">Guest accounts are created by an admin and see only the pages they're given.</p>
+                <p className="text-xs text-slate-400">Guest accounts are created by an admin and see only the pages they&rsquo;re given.</p>
               </form>
             )}
           </div>
@@ -325,7 +329,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                 />
                 {manualError && <p className="text-xs text-coral">{manualError}</p>}
                 <Button dense onClick={handleSaveManualToken} disabled={manualSaving || !manualToken.trim()}>
-                  {manualSaving ? "Saving…" : "Sign in with token"}
+                  {manualSaving ? <BusyLabel text="Signing in" /> : "Sign in with token"}
                 </Button>
                 <p className="text-xs leading-relaxed text-slate-400">
                   For admins when Microsoft sign-in is unavailable. Tokens expire after about an hour.
@@ -335,6 +339,51 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/** Animated "Signing in..." dots. */
+function Dots() {
+  return (
+    <span className="signin-dots ml-0.5 inline-flex" aria-hidden>
+      <span>.</span>
+      <span>.</span>
+      <span>.</span>
+    </span>
+  );
+}
+
+function BusyLabel({ text }: { text: string }) {
+  return (
+    <span className="inline-flex items-center justify-center gap-2">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span>
+        {text}
+        <Dots />
+      </span>
+    </span>
+  );
+}
+
+/** Full-screen sign-in loader: the logo breathes inside a spinning ring, with a sliding progress bar. */
+function SigningIn({ label, note }: { label: string; note: string }) {
+  return (
+    <div className="fade-enter flex min-h-screen items-center justify-center bg-paper" role="status" aria-live="polite">
+      <div className="flex flex-col items-center">
+        <div className="relative grid h-20 w-20 place-items-center">
+          <span className="signin-ring absolute inset-0 rounded-full" aria-hidden />
+          <span className="signin-logo grid h-12 w-12 place-items-center rounded-xl bg-blue-600 text-[15px] font-bold text-white shadow-[0_8px_24px_-8px_rgb(37_99_235/0.6)]">BA</span>
+        </div>
+        <p className="mt-6 text-[17px] font-semibold tracking-tight text-slate-900">
+          {label}
+          <Dots />
+        </p>
+        <p className="mt-1 text-[13px] text-slate-500">{note}</p>
+        <div className="mt-5 h-1 w-44 overflow-hidden rounded-full bg-slate-200/80">
+          <div className="signin-bar h-full w-1/3 rounded-full bg-blue-600" />
+        </div>
+      </div>
     </div>
   );
 }
