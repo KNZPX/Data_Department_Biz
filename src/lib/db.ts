@@ -1126,6 +1126,8 @@ export interface WhiteboardBoardDb {
   nodes: any[];
   updated_at: string;
   created_at?: string;
+  created_by?: string | null;
+  updated_by?: string | null;
 }
 
 export async function getDbWhiteboardBoards(): Promise<WhiteboardBoardDb[]> {
@@ -1151,6 +1153,8 @@ export async function getDbWhiteboardBoards(): Promise<WhiteboardBoardDb[]> {
         nodes: typeof row.nodes === "string" ? JSON.parse(row.nodes) : row.nodes || [],
         updated_at: row.updated_at,
         created_at: row.created_at,
+        created_by: row.created_by ?? null,
+        updated_by: row.updated_by ?? null,
       }));
     } catch (err) {
       console.error("Error reading whiteboard boards from Supabase:", err);
@@ -1186,6 +1190,8 @@ export async function saveDbWhiteboardBoard(board: {
   folder_name?: string;
   description?: string;
   nodes: any[];
+  /** Display name of the person saving (set by the API from the session). */
+  updated_by?: string | null;
 }): Promise<void> {
   const provider = getDbProvider();
   const now = new Date().toISOString();
@@ -1203,6 +1209,7 @@ export async function saveDbWhiteboardBoard(board: {
         description: board.description || "",
         nodes: board.nodes || [],
         updated_at: now,
+        ...(board.updated_by ? { updated_by: board.updated_by } : {}),
       },
       { onConflict: "id" }
     );

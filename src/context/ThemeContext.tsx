@@ -1,14 +1,100 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-export type ColorPresetId = "harbor" | "violet" | "amber" | "sapphire" | "emerald" | "rose" | "slate";
-export type CanvasPresetId = "soft" | "crisp" | "warm";
-export type RadiusPresetId = "squircle" | "standard";
+// -----------------------------------------------------------------------------
+// Per-person appearance. Saved to the signed-in person's row in Supabase
+// (/api/me/preferences) and cached in localStorage per email so the next load
+// paints with the right look before the request comes back.
+// -----------------------------------------------------------------------------
 
-export interface ColorPreset {
-  id: ColorPresetId;
-  name: string;
+export type SurfaceId = "white" | "snow" | "mist";
+export type RadiusId = "rounded" | "soft" | "sharp";
+export type FontId = "plex" | "noto" | "anuphan";
+export type MotionId = "full" | "reduced" | "off";
+export type DensityId = "comfortable" | "compact";
+
+export type Appearance = {
+  accent: string;
+  surface: SurfaceId;
+  radius: RadiusId;
+  font: FontId;
+  motion: MotionId;
+  density: DensityId;
+  sidebarCollapsed: boolean;
+};
+
+export const DEFAULT_APPEARANCE: Appearance = {
+  accent: "#2563EB",
+  surface: "snow",
+  radius: "rounded",
+  font: "plex",
+  motion: "full",
+  density: "comfortable",
+  sidebarCollapsed: false,
+};
+
+export const ACCENTS: { id: string; name: string; hex: string }[] = [
+  { id: "blue", name: "Blue", hex: "#2563EB" },
+  { id: "royal", name: "Royal", hex: "#4262FF" },
+  { id: "sky", name: "Sky", hex: "#0284C7" },
+  { id: "teal", name: "Teal", hex: "#0D9488" },
+  { id: "indigo", name: "Indigo", hex: "#4F46E5" },
+  { id: "violet", name: "Violet", hex: "#7C3AED" },
+  { id: "rose", name: "Rose", hex: "#E11D48" },
+  { id: "amber", name: "Amber", hex: "#D97706" },
+  { id: "graphite", name: "Graphite", hex: "#334155" },
+];
+
+export const SURFACES: { id: SurfaceId; name: string; hint: string; bg: string }[] = [
+  { id: "white", name: "Pure white", hint: "Everything on white", bg: "#FFFFFF" },
+  { id: "snow", name: "Snow", hint: "White panels on a hint of grey", bg: "#F8F9FB" },
+  { id: "mist", name: "Mist", hint: "More contrast between panels", bg: "#F1F3F6" },
+];
+
+export const RADII: { id: RadiusId; name: string; hint: string }[] = [
+  { id: "rounded", name: "Rounded", hint: "Friendly, soft corners" },
+  { id: "soft", name: "Subtle", hint: "Tighter corners" },
+  { id: "sharp", name: "Sharp", hint: "Square, dense data look" },
+];
+
+export const FONTS: { id: FontId; name: string; family: string }[] = [
+  { id: "plex", name: "IBM Plex Sans Thai", family: '"IBM Plex Sans Thai", sans-serif' },
+  { id: "noto", name: "Noto Sans Thai", family: '"Noto Sans Thai", sans-serif' },
+  { id: "anuphan", name: "Anuphan", family: '"Anuphan", sans-serif' },
+];
+
+export const MOTIONS: { id: MotionId; name: string; hint: string }[] = [
+  { id: "full", name: "Full", hint: "Page, menu and number animations" },
+  { id: "reduced", name: "Reduced", hint: "Quick fades only" },
+  { id: "off", name: "Off", hint: "No animation" },
+];
+
+export const DENSITIES: { id: DensityId; name: string; hint: string }[] = [
+  { id: "comfortable", name: "Comfortable", hint: "Default spacing" },
+  { id: "compact", name: "Compact", hint: "Fit more rows on screen" },
+];
+
+// ---- colour helpers ---------------------------------------------------------
+function toRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  const n = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  return [0, 2, 4].map((i) => parseInt(n.slice(i, i + 2), 16) || 0) as [number, number, number];
+}
+function toHex([r, g, b]: number[]) {
+  return "#" + [r, g, b].map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+export function mix(hex: string, with_: string, amount: number) {
+  const a = toRgb(hex);
+  const b = toRgb(with_);
+  return toHex(a.map((v, i) => v + (b[i] - v) * amount));
+}
+export function isHex(v: string) {
+  return /^#([0-9a-f]{6})$/i.test(v);
+}
+
+/** The colour object older pages read via useTheme().currentTheme. */
+export type ColorPreset = {
   primary: string;
   primaryHover: string;
   primaryLight: string;
@@ -16,222 +102,184 @@ export interface ColorPreset {
   gradientFrom: string;
   gradientTo: string;
   textColor: string;
-}
-
-export const COLOR_PRESETS: Record<ColorPresetId, ColorPreset> = {
-  harbor: {
-    id: "harbor",
-    name: "Harbor Blue (default)",
-    primary: "#1F5FD6",
-    primaryHover: "#1A4FB3",
-    primaryLight: "#E3ECFB",
-    primaryGlow: "rgba(31, 95, 214, 0.30)",
-    gradientFrom: "#2B6BE3",
-    gradientTo: "#1A4FB3",
-    textColor: "#ffffff",
-  },
-  violet: {
-    id: "violet",
-    name: "Royal Violet",
-    primary: "#6C5CE7",
-    primaryHover: "#5B4DDF",
-    primaryLight: "#EDE9FE",
-    primaryGlow: "rgba(108, 92, 231, 0.35)",
-    gradientFrom: "#7048E8",
-    gradientTo: "#5F3DC4",
-    textColor: "#ffffff",
-  },
-  amber: {
-    id: "amber",
-    name: "Biz Gold (Amber CI)",
-    primary: "#B45309",
-    primaryHover: "#92400E",
-    primaryLight: "#FEF3C7",
-    primaryGlow: "rgba(180, 83, 9, 0.35)",
-    gradientFrom: "#D97706",
-    gradientTo: "#B45309",
-    textColor: "#ffffff",
-  },
-  sapphire: {
-    id: "sapphire",
-    name: "Ocean Sapphire",
-    primary: "#2563EB",
-    primaryHover: "#1D4ED8",
-    primaryLight: "#DBEAFE",
-    primaryGlow: "rgba(37, 99, 235, 0.35)",
-    gradientFrom: "#3B82F6",
-    gradientTo: "#1D4ED8",
-    textColor: "#ffffff",
-  },
-  emerald: {
-    id: "emerald",
-    name: "Andaman Teal",
-    primary: "#0E9F8E",
-    primaryHover: "#047857",
-    primaryLight: "#D1FAE5",
-    primaryGlow: "rgba(5, 150, 105, 0.35)",
-    gradientFrom: "#10B981",
-    gradientTo: "#047857",
-    textColor: "#ffffff",
-  },
-  rose: {
-    id: "rose",
-    name: "Rose Sunset",
-    primary: "#E11D48",
-    primaryHover: "#BE123C",
-    primaryLight: "#FFE4E6",
-    primaryGlow: "rgba(225, 29, 72, 0.35)",
-    gradientFrom: "#F43F5E",
-    gradientTo: "#BE123C",
-    textColor: "#ffffff",
-  },
-  slate: {
-    id: "slate",
-    name: "Midnight Slate",
-    primary: "#1E293B",
-    primaryHover: "#0F172A",
-    primaryLight: "#F1F5F9",
-    primaryGlow: "rgba(30, 41, 59, 0.35)",
-    gradientFrom: "#334155",
-    gradientTo: "#0F172A",
-    textColor: "#ffffff",
-  },
 };
 
-export interface CanvasPreset {
-  id: CanvasPresetId;
-  name: string;
-  bg: string;
-  cardBg: string;
+function colorsFor(accent: string): ColorPreset {
+  const [r, g, b] = toRgb(accent);
+  return {
+    primary: accent,
+    primaryHover: mix(accent, "#000000", 0.14),
+    primaryLight: mix(accent, "#FFFFFF", 0.9),
+    primaryGlow: `rgba(${r}, ${g}, ${b}, 0.28)`,
+    gradientFrom: mix(accent, "#FFFFFF", 0.12),
+    gradientTo: mix(accent, "#000000", 0.12),
+    textColor: "#FFFFFF",
+  };
 }
 
-export const CANVAS_PRESETS: Record<CanvasPresetId, CanvasPreset> = {
-  soft: {
-    id: "soft",
-    name: "Paper (default)",
-    bg: "#F4F6F9",
-    cardBg: "#ffffff",
-  },
-  crisp: {
-    id: "crisp",
-    name: "Crisp Minimal White",
-    bg: "#F8FAFC",
-    cardBg: "#ffffff",
-  },
-  warm: {
-    id: "warm",
-    name: "Warm Pastel Sand",
-    bg: "#FAF8F5",
-    cardBg: "#ffffff",
-  },
-};
+function sanitize(raw: unknown): Partial<Appearance> {
+  if (!raw || typeof raw !== "object") return {};
+  const r = raw as Record<string, unknown>;
+  const out: Partial<Appearance> = {};
+  if (typeof r.accent === "string" && isHex(r.accent)) out.accent = r.accent.toUpperCase();
+  if (SURFACES.some((s) => s.id === r.surface)) out.surface = r.surface as SurfaceId;
+  if (RADII.some((s) => s.id === r.radius)) out.radius = r.radius as RadiusId;
+  if (FONTS.some((s) => s.id === r.font)) out.font = r.font as FontId;
+  if (MOTIONS.some((s) => s.id === r.motion)) out.motion = r.motion as MotionId;
+  if (DENSITIES.some((s) => s.id === r.density)) out.density = r.density as DensityId;
+  if (typeof r.sidebarCollapsed === "boolean") out.sidebarCollapsed = r.sidebarCollapsed;
+  return out;
+}
 
-interface ThemeContextType {
-  colorPreset: ColorPresetId;
-  setColorPreset: (id: ColorPresetId) => void;
-  canvasPreset: CanvasPresetId;
-  setCanvasPreset: (id: CanvasPresetId) => void;
-  radiusPreset: RadiusPresetId;
-  setRadiusPreset: (id: RadiusPresetId) => void;
+const LAST_KEY = "appearance:last";
+const keyFor = (email: string) => `appearance:${email.toLowerCase()}`;
+
+function readLocal(key: string): Partial<Appearance> {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? sanitize(JSON.parse(v)) : {};
+  } catch {
+    return {};
+  }
+}
+function writeLocal(key: string, value: Appearance) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function applyToDocument(a: Appearance) {
+  const root = document.documentElement;
+  const c = colorsFor(a.accent);
+  root.style.setProperty("--theme-primary", c.primary);
+  root.style.setProperty("--theme-primary-hover", c.primaryHover);
+  root.style.setProperty("--theme-primary-light", c.primaryLight);
+  root.style.setProperty("--theme-primary-glow", c.primaryGlow);
+  root.style.setProperty("--theme-gradient-from", c.gradientFrom);
+  root.style.setProperty("--theme-gradient-to", c.gradientTo);
+  root.dataset.surface = a.surface;
+  root.dataset.radius = a.radius;
+  root.dataset.font = a.font;
+  root.dataset.motion = a.motion;
+  root.dataset.density = a.density;
+}
+
+type Ctx = {
+  appearance: Appearance;
+  /** Change one or more settings; saved for the signed-in person. */
+  setAppearance: (patch: Partial<Appearance>) => void;
+  resetAppearance: () => void;
+  /** Load the signed-in person's saved look (called once they're known). */
+  loadFor: (email: string | null) => void;
+  saveState: "idle" | "saving" | "saved" | "error" | "local";
   currentTheme: ColorPreset;
-  currentCanvas: CanvasPreset;
-}
+  // Kept for older callers.
+  currentCanvas: { bg: string; cardBg: string };
+};
 
-const ThemeContext = createContext<ThemeContextType>({
-  colorPreset: "harbor",
-  setColorPreset: () => {},
-  canvasPreset: "soft",
-  setCanvasPreset: () => {},
-  radiusPreset: "squircle",
-  setRadiusPreset: () => {},
-  currentTheme: COLOR_PRESETS.harbor,
-  currentCanvas: CANVAS_PRESETS.soft,
+const ThemeContext = createContext<Ctx>({
+  appearance: DEFAULT_APPEARANCE,
+  setAppearance: () => {},
+  resetAppearance: () => {},
+  loadFor: () => {},
+  saveState: "idle",
+  currentTheme: colorsFor(DEFAULT_APPEARANCE.accent),
+  currentCanvas: { bg: "#F8F9FB", cardBg: "#FFFFFF" },
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [colorPreset, setColorPresetState] = useState<ColorPresetId>("harbor");
-  const [canvasPreset, setCanvasPresetState] = useState<CanvasPresetId>("soft");
-  const [radiusPreset, setRadiusPresetState] = useState<RadiusPresetId>("squircle");
+  const [appearance, setState] = useState<Appearance>(DEFAULT_APPEARANCE);
+  const [saveState, setSaveState] = useState<Ctx["saveState"]>("idle");
+  const emailRef = useRef<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Paint with the last look used in this browser while we find out who's here.
   useEffect(() => {
-    try {
-      const savedColor = localStorage.getItem("portal_theme_color") as ColorPresetId | null;
-      if (savedColor && COLOR_PRESETS[savedColor]) {
-        setColorPresetState(savedColor);
-      }
-      const savedCanvas = localStorage.getItem("portal_theme_canvas") as CanvasPresetId | null;
-      if (savedCanvas && CANVAS_PRESETS[savedCanvas]) {
-        setCanvasPresetState(savedCanvas);
-      }
-      const savedRadius = localStorage.getItem("portal_theme_radius") as RadiusPresetId | null;
-      if (savedRadius === "squircle" || savedRadius === "standard") {
-        setRadiusPresetState(savedRadius);
-      }
-    } catch {}
+    const last = { ...DEFAULT_APPEARANCE, ...readLocal(LAST_KEY) };
+    applyToDocument(last);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState(last);
   }, []);
 
-  const setColorPreset = (id: ColorPresetId) => {
-    setColorPresetState(id);
-    try {
-      localStorage.setItem("portal_theme_color", id);
-    } catch {}
-  };
-
-  const setCanvasPreset = (id: CanvasPresetId) => {
-    setCanvasPresetState(id);
-    try {
-      localStorage.setItem("portal_theme_canvas", id);
-    } catch {}
-  };
-
-  const setRadiusPreset = (id: RadiusPresetId) => {
-    setRadiusPresetState(id);
-    try {
-      localStorage.setItem("portal_theme_radius", id);
-    } catch {}
-  };
-
-  const currentTheme = COLOR_PRESETS[colorPreset] || COLOR_PRESETS.harbor;
-  const currentCanvas = CANVAS_PRESETS[canvasPreset] || CANVAS_PRESETS.soft;
-
   useEffect(() => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    root.style.setProperty("--theme-primary", currentTheme.primary);
-    root.style.setProperty("--theme-primary-hover", currentTheme.primaryHover);
-    root.style.setProperty("--theme-primary-light", currentTheme.primaryLight);
-    root.style.setProperty("--theme-primary-glow", currentTheme.primaryGlow);
-    root.style.setProperty("--theme-gradient-from", currentTheme.gradientFrom);
-    root.style.setProperty("--theme-gradient-to", currentTheme.gradientTo);
-    root.style.setProperty("--theme-canvas", currentCanvas.bg);
-    root.style.setProperty("--theme-card", currentCanvas.cardBg);
-    root.style.setProperty("--theme-radius", radiusPreset === "squircle" ? "1.75rem" : "1rem");
-  }, [currentTheme, currentCanvas, radiusPreset]);
+    applyToDocument(appearance);
+  }, [appearance]);
 
-  return (
-    <ThemeContext.Provider
-      value={{
-        colorPreset,
-        setColorPreset,
-        canvasPreset,
-        setCanvasPreset,
-        radiusPreset,
-        setRadiusPreset,
-        currentTheme,
-        currentCanvas,
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: currentCanvas.bg,
-          minHeight: "100vh",
-          transition: "background-color 0.3s ease",
-        }}
-      >
-        {children}
-      </div>
-    </ThemeContext.Provider>
+  const persist = useCallback((next: Appearance) => {
+    writeLocal(LAST_KEY, next);
+    const email = emailRef.current;
+    if (!email) {
+      setSaveState("local");
+      return;
+    }
+    writeLocal(keyFor(email), next);
+    setSaveState("saving");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/me/preferences", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prefs: { appearance: next } }),
+        });
+        setSaveState(res.ok ? "saved" : "error");
+      } catch {
+        setSaveState("error");
+      }
+    }, 450);
+  }, []);
+
+  const setAppearance = useCallback(
+    (patch: Partial<Appearance>) => {
+      setState((prev) => {
+        const next = { ...prev, ...sanitize({ ...prev, ...patch }) };
+        persist(next);
+        return next;
+      });
+    },
+    [persist]
   );
+
+  const resetAppearance = useCallback(() => {
+    setState(DEFAULT_APPEARANCE);
+    persist(DEFAULT_APPEARANCE);
+  }, [persist]);
+
+  const loadFor = useCallback((email: string | null) => {
+    const e = email?.toLowerCase() || null;
+    if (emailRef.current === e) return;
+    emailRef.current = e;
+    if (!e) return;
+    const cached = readLocal(keyFor(e));
+    if (Object.keys(cached).length) setState({ ...DEFAULT_APPEARANCE, ...cached });
+    fetch("/api/me/preferences", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!json || emailRef.current !== e) return;
+        const saved = sanitize(json.prefs?.appearance);
+        if (!Object.keys(saved).length) return;
+        const next = { ...DEFAULT_APPEARANCE, ...saved };
+        writeLocal(keyFor(e), next);
+        writeLocal(LAST_KEY, next);
+        setState(next);
+      })
+      .catch(() => {});
+  }, []);
+
+  const value = useMemo<Ctx>(() => {
+    const surface = SURFACES.find((s) => s.id === appearance.surface) || SURFACES[1];
+    return {
+      appearance,
+      setAppearance,
+      resetAppearance,
+      loadFor,
+      saveState,
+      currentTheme: colorsFor(appearance.accent),
+      currentCanvas: { bg: surface.bg, cardBg: "#FFFFFF" },
+    };
+  }, [appearance, setAppearance, resetAppearance, loadFor, saveState]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export const useTheme = () => useContext(ThemeContext);

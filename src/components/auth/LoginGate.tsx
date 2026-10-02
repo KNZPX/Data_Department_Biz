@@ -181,41 +181,46 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid min-h-screen overflow-y-auto lg:grid-cols-[1.05fr_1fr] bg-white">
       {/* Left: what this place is */}
-      <section className="ink-surface relative hidden lg:flex flex-col justify-between p-12 text-slate-300 overflow-hidden">
-        <div className="model-grid absolute inset-0 opacity-[0.35] [filter:invert(1)]" aria-hidden />
-        <div className="relative flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">BA</span>
+      <section className="relative hidden flex-col justify-between overflow-hidden border-r border-slate-200/80 bg-slate-50 p-12 lg:flex">
+        <div className="model-grid absolute inset-0" aria-hidden />
+        <div
+          className="absolute -right-24 -top-24 h-80 w-80 rounded-full opacity-60 blur-3xl"
+          style={{ background: "radial-gradient(circle, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%)" }}
+          aria-hidden
+        />
+        <div className="relative flex items-center gap-3 fade-enter">
+          <span className="grid h-10 w-10 place-items-center rounded-lg bg-blue-600 text-sm font-bold text-white">BA</span>
           <div className="leading-tight">
-            <p className="text-[15px] font-semibold text-white">Biz-Analytic</p>
-            <p className="text-xs text-slate-400">BDMS Phuket data team</p>
+            <p className="text-[15px] font-semibold text-slate-900">Biz-Analytic</p>
+            <p className="text-xs text-slate-500">Data &amp; Business Analysis · BDMS Phuket</p>
           </div>
         </div>
 
         <div className="relative max-w-lg">
-          <h2 className="text-[40px] leading-[1.1] font-semibold tracking-tight text-white">
-            The data team&rsquo;s workbench for Power BI.
+          <h2 className="page-enter text-[38px] font-semibold leading-[1.1] tracking-tight text-slate-900">
+            The data team&rsquo;s workbench for <span className="text-blue-600">Power BI</span>.
           </h2>
-          <ul className="mt-10 space-y-6">
+          <ul className="stagger mt-10 space-y-5">
             {PROMISES.map(({ icon: Icon, title, body }) => (
               <li key={title} className="flex gap-4">
-                <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/[0.07] text-blue-300">
+                <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-blue-600 shadow-[0_1px_2px_rgb(16_24_40/0.05)]">
                   <Icon className="h-[18px] w-[18px]" />
                 </span>
                 <div>
-                  <p className="text-[15px] font-medium text-white">{title}</p>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-400">{body}</p>
+                  <p className="text-[15px] font-medium text-slate-900">{title}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-500">{body}</p>
                 </div>
               </li>
             ))}
           </ul>
         </div>
 
-        <p className="relative text-xs text-slate-500">For Bangkok Hospital Phuket, Siriroj and Dibuk</p>
+        <p className="relative text-xs text-slate-400">For Bangkok Hospital Phuket, Siriroj and Dibuk</p>
       </section>
 
       {/* Right: sign in */}
       <section className="flex flex-col justify-center px-6 py-12 sm:px-16">
-        <div className="mx-auto w-full max-w-sm">
+        <div className="page-enter mx-auto w-full max-w-sm">
           <div className="mb-10 flex items-center gap-3 lg:hidden">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-sm font-bold text-white">BA</span>
             <p className="text-[15px] font-semibold text-slate-900">Biz-Analytic</p>
@@ -238,7 +243,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
           <a
             href="/api/powerbi/auth/start"
-            className="mt-8 flex w-full items-center justify-center gap-3 rounded-xl bg-ink px-5 py-3.5 text-[15px] font-medium text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.99]"
+            className="mt-8 flex w-full items-center justify-center gap-3 rounded-lg bg-blue-600 px-5 py-3 text-[15px] font-medium text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.99]"
           >
             <MicrosoftMark />
             Continue with Microsoft
@@ -254,7 +259,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
             </p>
           )}
 
-          <div className="mt-8 rounded-xl ring-1 ring-slate-200">
+          <div className="mt-8 rounded-lg border border-slate-200">
             <button
               type="button"
               onClick={() => setGuestOpen(!guestOpen)}
@@ -265,14 +270,14 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
               <ChevronDown className={`h-4 w-4 text-slate-400 transition ${guestOpen ? "rotate-180" : ""}`} />
             </button>
             {guestOpen && (
-              <form onSubmit={handleGuestLogin} className="space-y-3 border-t border-slate-100 p-4">
+              <form onSubmit={handleGuestLogin} className="pop-in space-y-3 border-t border-slate-100 p-4">
                 <label className="block text-[13px] text-slate-600">
                   Username
                   <input
                     value={guestUser}
                     onChange={(e) => setGuestUser(e.target.value)}
                     autoComplete="username"
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
                   />
                 </label>
                 <label className="block text-[13px] text-slate-600">
@@ -282,7 +287,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
                     value={guestPass}
                     onChange={(e) => setGuestPass(e.target.value)}
                     autoComplete="current-password"
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
                   />
                 </label>
                 {guestError && <p className="text-[13px] text-coral">{guestError}</p>}

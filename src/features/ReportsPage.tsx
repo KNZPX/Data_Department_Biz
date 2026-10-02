@@ -253,7 +253,7 @@ export function ReportsPage() {
       {/* Top Action Bar in Ocean Sapphire Styling */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-2xs">
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 shadow-2xs">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-100">
             <BarChart3 className="h-4 w-4 text-blue-600" />
             <span className="text-xs font-semibold text-blue-700">
               Power BI Reports Catalog ({items.length})
@@ -263,7 +263,7 @@ export function ReportsPage() {
           <button
             type="button"
             onClick={() => setManageModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-xs font-medium text-slate-700 transition"
           >
             <SlidersHorizontal className="h-3.5 w-3.5 text-blue-600" />
             <span>Manage Workspaces ({enabledWorkspaces.size}/{allWorkspaceNames.length})</span>
@@ -321,7 +321,7 @@ export function ReportsPage() {
                 value={workspaceSearch}
                 onChange={(e) => setWorkspaceSearch(e.target.value)}
                 placeholder="Filter workspaces & sub-folders..."
-                className="w-full rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 outline-none transition"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 outline-none transition"
               />
               {workspaceSearch && (
                 <button
@@ -486,7 +486,7 @@ export function ReportsPage() {
                     value={itemSearch}
                     onChange={(e) => setItemSearch(e.target.value)}
                     placeholder="Search reports or author..."
-                    className="w-full rounded-full border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 outline-none transition"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 outline-none transition"
                   />
                   {itemSearch && (
                     <button
@@ -577,7 +577,7 @@ export function ReportsPage() {
                               href={item.webUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-semibold shadow-xs active:scale-95 transition"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-medium shadow-xs active:scale-95 transition"
                             >
                               <span>Open in Power BI</span>
                               <ExternalLink className="h-3.5 w-3.5" />

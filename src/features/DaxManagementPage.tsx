@@ -1614,7 +1614,7 @@ export function DaxManagementPage() {
             {can("dax.import") && <button
               type="button"
               onClick={() => setImportOpen(true)}
-              className="inline-flex items-center gap-2 self-start rounded-xl bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+              className="inline-flex items-center gap-2 self-start rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 active:scale-[0.98]"
             >
               <Upload className="h-4 w-4" />
               Update from .bim
@@ -1736,7 +1736,7 @@ export function DaxManagementPage() {
           {can("dax.import") && <button
             type="button"
             onClick={() => setImportOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white transition cursor-pointer"
             title="Update this model from a .bim file"
           >
             <Upload className="h-3.5 w-3.5" />
@@ -1861,7 +1861,7 @@ export function DaxManagementPage() {
                   className={clsx(
                     "w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition text-left cursor-pointer",
                     selectedTable === "all"
-                      ? "bg-slate-900 text-white font-semibold"
+                      ? "bg-blue-600 text-white font-semibold"
                       : "text-slate-600 hover:bg-slate-100"
                   )}
                 >
