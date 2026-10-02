@@ -11,6 +11,7 @@ import {
 } from "@/lib/db";
 import { getDaxModels, getDaxRows, invalidateDaxCache, type DaxModelRow, type DaxRow } from "@/lib/daxStore";
 import { getCurrentUser } from "@/lib/session";
+import { getCommentCounts, getReviewMap } from "@/lib/collab";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,8 @@ type DictItem = {
   /** When the team's text (or a custom formula) last changed, and by whom. */
   updatedAt: string | null;
   updatedBy: string | null;
+  reviewStatus: "draft" | "reviewed";
+  comments: number;
 };
 
 const sameTime = (a?: string | null, b?: string | null) => (a ? new Date(a).getTime() : 0) === (b ? new Date(b).getTime() : 0);
@@ -62,10 +65,12 @@ export async function GET(request: NextRequest) {
     const onlyId = searchParams.get("id");
 
     // Single source of truth: Supabase (kept current by .bim imports)
-    const [rows, modelRows, annotationsMap] = await Promise.all([
+    const [rows, modelRows, annotationsMap, reviewMap, commentCounts] = await Promise.all([
       getDaxRows(),
       getDaxModels(),
       getAllDaxAnnotations().catch(() => ({} as Record<string, any>)),
+      getReviewMap().catch(() => ({} as Record<string, string>)),
+      getCommentCounts().catch(() => ({} as Record<string, number>)),
     ]);
 
     const isAllModels = modelCode === "ALL";
@@ -103,6 +108,8 @@ export async function GET(request: NextRequest) {
         sampleValues: (r.sample_values as unknown[] | null) || null,
         updatedAt: r.is_custom ? r.updated_at : saved?.updatedAt || null,
         updatedBy: r.is_custom ? null : saved?.updatedBy || null,
+        reviewStatus: reviewMap[r.id] === "reviewed" ? "reviewed" : "draft",
+        comments: commentCounts[r.id] || 0,
       };
     };
 

@@ -34,6 +34,11 @@ export async function GET(req: NextRequest) {
       ? scenarios.filter((s) => s.store_key === storeKey)
       : scenarios;
 
+    // The planner only needs the saved scenarios; skip the large baseline payload.
+    if (searchParams.get("only") === "scenarios") {
+      return NextResponse.json({ success: true, scenarios: filtered });
+    }
+
     return NextResponse.json({
       success: true,
       meta: TARGET_META,
@@ -69,7 +74,19 @@ export async function POST(req: NextRequest) {
   if (_g.deny) return _g.deny;
   try {
     const body = await req.json();
-    const { id, store_key, store_label, name, saved_at_label, sort_order, snapshot, created_by } = body;
+    const { id, store_key, store_label, name, saved_at_label, sort_order, snapshot, baseUpdatedAt, force } = body;
+    const created_by = _g.user.name || _g.user.email;
+
+    // Saving over an existing scenario: stop if someone else saved it after we loaded it.
+    if (id && !force) {
+      const current = (await getDbTargetScenarios()).find((s) => s.id === id);
+      if (current && baseUpdatedAt && new Date(current.updated_at).getTime() !== new Date(baseUpdatedAt).getTime()) {
+        return NextResponse.json(
+          { success: false, error: "conflict", conflict: { updatedAt: current.updated_at, updatedBy: current.created_by, name: current.name } },
+          { status: 409 }
+        );
+      }
+    }
 
     if (!name) {
       return NextResponse.json(

@@ -43,7 +43,29 @@ export function getDbProvider(): "sqlite" | "supabase" {
 // -----------------------------------------------------------------------------
 // Supabase Client Helper
 // -----------------------------------------------------------------------------
-export function getSupabaseClient() {
+// Row-level security only lets a request through when it carries the hash of a
+// live sign-in session (x-app-session). On the server we read it from the
+// request's session cookie; the sign-in route passes the brand-new session
+// explicitly because the cookie isn't set yet. The anon key on its own reads
+// and writes nothing.
+const SESSION_COOKIE_NAME = "biz_sid";
+
+async function sessionHashForRequest(explicitSecret?: string): Promise<string | null> {
+  let secret = explicitSecret || null;
+  if (!secret) {
+    try {
+      const { cookies } = await import("next/headers");
+      secret = (await cookies()).get(SESSION_COOKIE_NAME)?.value || null;
+    } catch {
+      secret = null; // outside a request (build, scripts)
+    }
+  }
+  if (!secret) return null;
+  const { createHash } = await import("node:crypto");
+  return createHash("sha256").update(secret).digest("hex");
+}
+
+export function getSupabaseClient(sessionSecret?: string) {
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
@@ -61,7 +83,18 @@ export function getSupabaseClient() {
   if (!url || !key) {
     throw new Error("Supabase is not configured (missing URL or Key)");
   }
-  return createClient(url, key);
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const hash = await sessionHashForRequest(sessionSecret);
+        if (!hash) return fetch(input, init);
+        const headers = new Headers(init?.headers);
+        headers.set("x-app-session", hash);
+        return fetch(input, { ...init, headers });
+      },
+    },
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -347,12 +380,12 @@ export async function getDbChangeLogs(options: {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function insertDbChangeLogs(logs: any[]): Promise<void> {
+export async function insertDbChangeLogs(logs: any[], sessionSecret?: string): Promise<void> {
   if (!logs || logs.length === 0) return;
   const provider = getDbProvider();
 
   if (provider === "supabase") {
-    const supabase = getSupabaseClient();
+    const supabase = getSupabaseClient(sessionSecret);
     const { error } = await supabase.from("change_log").insert(logs);
     if (error) console.error("Supabase insert change_log error:", error);
     return;
@@ -599,12 +632,15 @@ export type AppUserSummary = {
   recentLogins: Array<{ date: string; userAgent?: string; ip?: string }>;
 };
 
-export async function recordUserLogin(user: {
-  email: string;
-  name: string;
-  userAgent?: string;
-  ip?: string;
-}): Promise<void> {
+export async function recordUserLogin(
+  user: {
+    email: string;
+    name: string;
+    userAgent?: string;
+    ip?: string;
+  },
+  sessionSecret?: string
+): Promise<void> {
   const now = new Date().toISOString();
   const provider = getDbProvider();
 
@@ -630,7 +666,7 @@ export async function recordUserLogin(user: {
         login_at: now,
       },
     },
-  ]);
+  ], sessionSecret);
 }
 
 export async function getAppUsers(): Promise<AppUserSummary[]> {

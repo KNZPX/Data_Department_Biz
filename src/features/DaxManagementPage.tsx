@@ -16,6 +16,7 @@ import {
   FunctionSquare,
   Link,
   MoreHorizontal,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -38,6 +39,8 @@ import { DaxScriptModal } from "@/components/powerbi/DaxScriptModal";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, toast } from "@/components/feedback";
 import { DAX_OPEN_EVENT } from "@/components/layout/CommandPalette";
+import { CommentsSection, PresenceChips, ReviewAndWatch, useCollabActions, useItemCollab, useItemPresence } from "@/features/dax/ItemCollab";
+import { useT } from "@/lib/i18n";
 import { clsx } from "clsx";
 import { DaxCodeViewer } from "@/components/powerbi/DaxCodeViewer";
 import { formatDax } from "@/lib/daxFormatter";
@@ -63,6 +66,8 @@ interface ItemRecord {
   matchReason?: string;
   updatedAt?: string | null;
   updatedBy?: string | null;
+  reviewStatus?: "draft" | "reviewed";
+  comments?: number;
 }
 
 interface ModelMeta {
@@ -792,6 +797,16 @@ export function DaxManagementPage() {
     dirtyRef.current = isSideboxDirty;
   }, [isSideboxDirty]);
 
+  // Working together: comments, review status, watching, who else is looking.
+  const t = useT();
+  const collabItem = useMemo(
+    () => (selectedItem ? { id: selectedItem.id, name: selectedItem.name, modelCode: selectedItem.modelCode } : null),
+    [selectedItem?.id, selectedItem?.name, selectedItem?.modelCode]
+  );
+  const collab = useItemCollab(collabItem);
+  const collabActions = useCollabActions(collabItem, collab);
+  const peers = useItemPresence(modelChosen ? selectedItem?.id || null : null, isSideboxDirty || formulaEditing);
+
   // Instant Search Debounce Effect (250ms)
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1379,7 +1394,7 @@ export function DaxManagementPage() {
         <div className="mx-auto max-w-5xl py-4 md:py-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="text-[28px] font-semibold tracking-tight text-slate-900">Which model are you working in?</h2>
+              <h2 className="text-[28px] font-semibold tracking-tight text-slate-900">{t("Which model are you working in?")}</h2>
               <p className="mt-2 max-w-xl text-[15px] leading-relaxed text-slate-500">
                 {totalMeasures.toLocaleString()} measures and {totalColumns.toLocaleString()}{" "}
                 columns, each with its formula and the team&rsquo;s plain-language
@@ -1555,7 +1570,7 @@ export function DaxManagementPage() {
                 (e.target as HTMLInputElement).blur();
               }
             }}
-            placeholder="Search by name, table, formula or meaning"
+            placeholder={t("Search by name, table, formula or meaning")}
             className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-28 text-[13.5px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
           />
           <span className="absolute right-2 flex items-center gap-1">
@@ -1589,7 +1604,7 @@ export function DaxManagementPage() {
               className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[13px] font-medium text-white transition hover:bg-blue-700 active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New measure</span>
+              <span className="hidden sm:inline">{t("New measure")}</span>
             </button>
           )}
           <div className="relative">
@@ -1644,20 +1659,20 @@ export function DaxManagementPage() {
       {/* ---------- Filters ---------- */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200/80 px-3 py-2 md:px-4">
         <div className="flex max-w-full overflow-x-auto rounded-lg bg-slate-100 p-0.5 [scrollbar-width:none]" role="tablist" aria-label="Type">
-          {TYPE_TABS.map((t) => (
+          {TYPE_TABS.map((tab) => (
             <button
-              key={t.id}
+              key={tab.id}
               type="button"
               role="tab"
-              aria-selected={selectedType === t.id}
-              onClick={() => setSelectedType(t.id)}
+              aria-selected={selectedType === tab.id}
+              onClick={() => setSelectedType(tab.id)}
               className={clsx(
                 "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-[12.5px] font-medium transition-all duration-200",
-                selectedType === t.id ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
+                selectedType === tab.id ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
               )}
             >
-              {t.label}
-              {t.count !== null && <span className="tabular-nums text-[11px] text-slate-400">{Number(t.count).toLocaleString()}</span>}
+              {t(tab.label)}
+              {tab.count !== null && <span className="tabular-nums text-[11px] text-slate-400">{Number(tab.count).toLocaleString()}</span>}
             </button>
           ))}
         </div>
@@ -1673,7 +1688,7 @@ export function DaxManagementPage() {
           title="Show only items nobody has explained yet"
         >
           <span className={clsx("h-2 w-2 rounded-full", docFilter === "missing" ? "bg-amber-500" : "bg-slate-300")} />
-          Needs a definition
+          {t("Needs a definition")}
           {coverage && <span className="tabular-nums text-[11px] opacity-70">{(coverage.total - coverage.documented).toLocaleString()}</span>}
         </button>
 
@@ -1920,6 +1935,15 @@ export function DaxManagementPage() {
                             <HighlightText text={it.name} match={searchQuery} active={Boolean(searchQuery.trim())} />
                           </span>
                           {it.isHidden && <EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-300" aria-label="Hidden in reports" />}
+                          <span className="ml-auto flex shrink-0 items-center gap-1.5 self-center">
+                            {it.reviewStatus === "reviewed" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-label="Reviewed" />}
+                            {!!it.comments && (
+                              <span className="flex items-center gap-0.5 text-[11px] tabular-nums text-slate-400" title={`${it.comments} comments`}>
+                                <MessageSquare className="h-3 w-3" />
+                                {it.comments}
+                              </span>
+                            )}
+                          </span>
                         </span>
                         <span className="mt-0.5 block truncate text-[12px] text-slate-500">
                           <span className="font-mono">{it.tableName}</span>
@@ -1930,7 +1954,7 @@ export function DaxManagementPage() {
                           <span className="mt-1 line-clamp-1 block text-[12.5px] text-slate-600">{it.businessDefinition}</span>
                         ) : (
                           <span className="mt-1 inline-flex items-center gap-1 text-[12px] text-slate-400">
-                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> No definition yet
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" /> {t("No definition yet")}
                           </span>
                         )}
                       </span>
@@ -1966,7 +1990,7 @@ export function DaxManagementPage() {
               aria-label="Details"
             >
               {!sel || !selMeta ? (
-                <div className="grid h-full place-items-center p-8 text-center text-[13px] text-slate-400">Pick something on the left to see what it means.</div>
+                <div className="grid h-full place-items-center p-8 text-center text-[13px] text-slate-400">{t("Pick something on the left to see what it means.")}</div>
               ) : (
                 <>
                   <div key={sel.id} className="fade-enter min-h-0 flex-1 overflow-y-auto">
@@ -2003,7 +2027,7 @@ export function DaxManagementPage() {
                               className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] font-medium text-slate-700 transition hover:bg-slate-50"
                               title="See how the formula is built"
                             >
-                              <Workflow className="h-4 w-4 text-slate-400" /> Diagram
+                              <Workflow className="h-4 w-4 text-slate-400" /> {t("Diagram")}
                             </button>
                           )}
                           {(sel.expression || sideboxForm.expression) && (
@@ -2051,6 +2075,10 @@ export function DaxManagementPage() {
                         </div>
                       </div>
                       <h2 className="break-words font-mono text-[18px] font-semibold leading-snug text-slate-900">{sel.name}</h2>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <ReviewAndWatch collab={collab.data} canReview={canEdit} onReview={(st) => void collabActions.review(st)} onWatch={(on) => void collabActions.watch(on)} />
+                        <PresenceChips peers={peers} />
+                      </div>
                       <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px]">
                         <div className="flex gap-1.5">
                           <dt className="text-slate-400">Table</dt>
@@ -2107,8 +2135,8 @@ export function DaxManagementPage() {
                       {/* Meaning */}
                       <section>
                         <div className="mb-1.5 flex items-baseline justify-between">
-                          <h3 className="text-[13px] font-semibold text-slate-900">What it means</h3>
-                          <span className="hidden text-[11.5px] text-slate-400 sm:inline">In plain words, for anyone reading a report</span>
+                          <h3 className="text-[13px] font-semibold text-slate-900">{t("What it means")}</h3>
+                          <span className="hidden text-[11.5px] text-slate-400 sm:inline">{t("In plain words, for anyone reading a report")}</span>
                         </div>
                         {canEdit ? (
                           <textarea
@@ -2127,7 +2155,7 @@ export function DaxManagementPage() {
                       {isFormulaItem && (
                         <section>
                           <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <h3 className="text-[13px] font-semibold text-slate-900">Formula</h3>
+                            <h3 className="text-[13px] font-semibold text-slate-900">{t("Formula")}</h3>
                             {canEdit &&
                               (formulaEditing ? (
                                 <span className="flex items-center gap-1">
@@ -2137,7 +2165,7 @@ export function DaxManagementPage() {
                                     className="flex h-7 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-slate-600 hover:bg-slate-100"
                                     title="Indent the formula neatly"
                                   >
-                                    <Sparkles className="h-3.5 w-3.5" /> Tidy up
+                                    <Sparkles className="h-3.5 w-3.5" /> {t("Tidy up")}
                                   </button>
                                   <button type="button" onClick={() => setFormulaEditing(false)} className="h-7 rounded-md px-2 text-[12px] font-medium text-slate-600 hover:bg-slate-100">
                                     Preview
@@ -2145,7 +2173,7 @@ export function DaxManagementPage() {
                                 </span>
                               ) : (
                                 <button type="button" onClick={() => setFormulaEditing(true)} className="flex h-7 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-blue-600 hover:bg-blue-50">
-                                  <Pencil className="h-3.5 w-3.5" /> Edit formula
+                                  <Pencil className="h-3.5 w-3.5" /> {t("Edit formula")}
                                 </button>
                               ))}
                           </div>
@@ -2183,7 +2211,7 @@ export function DaxManagementPage() {
                       {!isFormulaItem && (
                         <section>
                           <div className="mb-1.5 flex items-center justify-between">
-                            <h3 className="text-[13px] font-semibold text-slate-900">Example values</h3>
+                            <h3 className="text-[13px] font-semibold text-slate-900">{t("Example values")}</h3>
                             <button
                               type="button"
                               onClick={() => handleFetchColumnSamples(sel)}
@@ -2242,6 +2270,16 @@ export function DaxManagementPage() {
                         </div>
                       </details>
 
+                      <CommentsSection
+                        collab={collab.data}
+                        onPost={async (text) => {
+                          const ok = await collabActions.comment(text);
+                          if (ok) setItems((prev) => prev.map((it) => (it.id === sel.id ? { ...it, comments: (it.comments || 0) + 1 } : it)));
+                          return ok;
+                        }}
+                        onDelete={(id) => void collabActions.remove(id)}
+                      />
+
                       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4 text-[12px] text-slate-500">
                         <span>
                           {sel.updatedAt ? (
@@ -2265,7 +2303,7 @@ export function DaxManagementPage() {
                   {isSideboxDirty && canEdit && (
                     <div className="pop-in flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-5 py-3 shadow-[0_-8px_16px_-12px_rgb(16_24_40/0.2)]">
                       <span className="flex items-center gap-2 text-[13px] text-slate-600">
-                        <span className="h-2 w-2 rounded-full bg-amber-500" /> Unsaved changes
+                        <span className="h-2 w-2 rounded-full bg-amber-500" /> {t("Unsaved changes")}
                       </span>
                       <span className="flex items-center gap-2">
                         <button type="button" onClick={handleDiscardEdits} className="h-9 rounded-lg px-3 text-[13px] font-medium text-slate-600 hover:bg-slate-100">
@@ -2509,7 +2547,7 @@ export function DaxManagementPage() {
                         className="flex h-7 items-center gap-1 rounded-md px-2 text-[12px] font-medium text-slate-600 hover:bg-slate-100"
                         title="Indent the formula neatly"
                       >
-                        <Sparkles className="h-3.5 w-3.5" /> Tidy up
+                        <Sparkles className="h-3.5 w-3.5" /> {t("Tidy up")}
                       </button>
                       <div className="flex rounded-md bg-slate-100 p-0.5" role="tablist">
                         {(["edit", "preview"] as const).map((t) => (

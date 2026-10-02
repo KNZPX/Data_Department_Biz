@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ArrowRight, Columns, CornerDownLeft, FunctionSquare, LayoutGrid, Loader2, Search, Sparkles, type LucideIcon } from "lucide-react";
 import { clsx } from "clsx";
+import { useT } from "@/lib/i18n";
 
 // Ctrl K: one box to jump to a page, open a measure or column, or search reports.
 
@@ -27,6 +28,7 @@ export function CommandPalette({ open, onClose, pages, canDax, canReports }: { o
 function Palette({ onClose, pages, canDax, canReports }: { onClose: () => void; pages: PaletteLink[]; canDax: boolean; canReports: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
+  const t = useT();
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,17 +57,17 @@ function Palette({ onClose, pages, canDax, canReports }: { onClose: () => void; 
   const rows = useMemo<Row[]>(() => {
     const lower = query.toLowerCase();
     const pageRows: Row[] = pages
-      .filter((p) => !lower || p.label.toLowerCase().includes(lower) || p.hint.toLowerCase().includes(lower))
-      .map((p) => ({ kind: "page", key: `page:${p.href}`, label: p.label, hint: p.hint, icon: p.icon, href: p.href }));
+      .filter((p) => !lower || [p.label, p.hint, t(p.label), t(p.hint)].some((x) => x.toLowerCase().includes(lower)))
+      .map((p) => ({ kind: "page", key: `page:${p.href}`, label: t(p.label), hint: t(p.hint), icon: p.icon, href: p.href }));
     if (!query) return pageRows;
     const itemRows: Row[] = query.length >= 2 ? hits.map((h) => ({ kind: "item", key: `item:${h.id}`, hit: h })) : [];
     const searchRows: Row[] = [];
     if (canDax)
-      searchRows.push({ kind: "search", key: "s:dax", label: `Search the DAX dictionary for “${query}”`, hint: "Every model", icon: FunctionSquare, href: `/dax?model=ALL&q=${encodeURIComponent(query)}` });
+      searchRows.push({ kind: "search", key: "s:dax", label: t("Search the DAX dictionary for “{q}”", { q: query }), hint: t("Every model"), icon: FunctionSquare, href: `/dax?model=ALL&q=${encodeURIComponent(query)}` });
     if (canReports)
-      searchRows.push({ kind: "search", key: "s:rep", label: `Search Power BI reports for “${query}”`, hint: "Report catalog", icon: LayoutGrid, href: `/reports?q=${encodeURIComponent(query)}` });
+      searchRows.push({ kind: "search", key: "s:rep", label: t("Search Power BI reports for “{q}”", { q: query }), hint: t("Report catalog"), icon: LayoutGrid, href: `/reports?q=${encodeURIComponent(query)}` });
     return [...itemRows, ...pageRows.slice(0, 4), ...searchRows];
-  }, [pages, query, hits, canDax, canReports]);
+  }, [pages, query, hits, canDax, canReports, t]);
 
   const current = Math.min(active, Math.max(rows.length - 1, 0));
 
@@ -87,9 +89,9 @@ function Palette({ onClose, pages, canDax, canReports }: { onClose: () => void; 
   }
 
   const groups: { title: string; kind: Row["kind"] }[] = [
-    { title: "Measures and columns", kind: "item" },
-    { title: query ? "Pages" : "Go to", kind: "page" },
-    { title: "Search everywhere", kind: "search" },
+    { title: t("Measures and columns"), kind: "item" },
+    { title: query ? t("Pages") : t("Go to"), kind: "page" },
+    { title: t("Search everywhere"), kind: "search" },
   ];
 
   return (
@@ -119,7 +121,7 @@ function Palette({ onClose, pages, canDax, canReports }: { onClose: () => void; 
                 onClose();
               }
             }}
-            placeholder={canDax ? "Jump to a page, a measure, a report…" : "Jump to a page or a report…"}
+            placeholder={canDax ? t("Jump to a page, a measure, a report…") : t("Jump to a page or a report…")}
             aria-label="Search"
             className="no-focus-outline h-12 min-w-0 flex-1 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-400"
           />
@@ -128,7 +130,7 @@ function Palette({ onClose, pages, canDax, canReports }: { onClose: () => void; 
 
         <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {rows.length === 0 && (
-            <p className="px-3 py-8 text-center text-[13px] text-slate-400">{loading ? "Searching…" : "Nothing matches. Try another word."}</p>
+            <p className="px-3 py-8 text-center text-[13px] text-slate-400">{loading ? t("Searching…") : t("Nothing matches. Try another word.")}</p>
           )}
           {groups.map((g) => {
             const groupRows = rows.filter((r) => r.kind === g.kind);
@@ -179,12 +181,12 @@ function Palette({ onClose, pages, canDax, canReports }: { onClose: () => void; 
 
         <div className="flex items-center gap-4 border-t border-slate-100 bg-slate-50/70 px-4 py-2 text-[11.5px] text-slate-400">
           <span>
-            <kbd className="font-sans">↑↓</kbd> move
+            <kbd className="font-sans">↑↓</kbd> {t("move")}
           </span>
           <span>
-            <kbd className="font-sans">Enter</kbd> open
+            <kbd className="font-sans">Enter</kbd> {t("open")}
           </span>
-          <span className="ml-auto">Opens from anywhere with Ctrl K</span>
+          <span className="ml-auto">{t("Opens from anywhere with Ctrl K")}</span>
         </div>
       </div>
     </div>

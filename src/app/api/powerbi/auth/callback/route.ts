@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
         name: saved.user.name,
         userAgent: request.headers.get("user-agent") || "",
         ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined,
-      }).catch(() => {});
+      }, sessionSecret).catch(() => {});
     }
   } catch (error) {
     return redirectWithError(error instanceof Error ? error.message : "Failed to complete Microsoft sign-in.");

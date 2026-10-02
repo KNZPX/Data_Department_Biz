@@ -13,6 +13,8 @@ export type RadiusId = "rounded" | "soft" | "sharp";
 export type FontId = "plex" | "noto" | "anuphan";
 export type MotionId = "full" | "reduced" | "off";
 export type DensityId = "comfortable" | "compact";
+export type ThemeId = "light" | "dark" | "system";
+export type LanguageId = "en" | "th";
 
 export type Appearance = {
   accent: string;
@@ -21,6 +23,8 @@ export type Appearance = {
   font: FontId;
   motion: MotionId;
   density: DensityId;
+  theme: ThemeId;
+  language: LanguageId;
   sidebarCollapsed: boolean;
 };
 
@@ -31,6 +35,8 @@ export const DEFAULT_APPEARANCE: Appearance = {
   font: "plex",
   motion: "full",
   density: "comfortable",
+  theme: "light",
+  language: "en",
   sidebarCollapsed: false,
 };
 
@@ -73,6 +79,17 @@ export const MOTIONS: { id: MotionId; name: string; hint: string }[] = [
 export const DENSITIES: { id: DensityId; name: string; hint: string }[] = [
   { id: "comfortable", name: "Comfortable", hint: "Default spacing" },
   { id: "compact", name: "Compact", hint: "Fit more rows on screen" },
+];
+
+export const THEMES: { id: ThemeId; name: string; hint: string }[] = [
+  { id: "light", name: "Light", hint: "White panels (default)" },
+  { id: "dark", name: "Dark", hint: "Easier on the eyes at night" },
+  { id: "system", name: "Match my computer", hint: "Follows your OS setting" },
+];
+
+export const LANGUAGES: { id: LanguageId; name: string; hint: string }[] = [
+  { id: "en", name: "English", hint: "Menus and buttons in English" },
+  { id: "th", name: "ไทย", hint: "เมนูและปุ่มหลักเป็นภาษาไทย" },
 ];
 
 // ---- colour helpers ---------------------------------------------------------
@@ -127,6 +144,8 @@ function sanitize(raw: unknown): Partial<Appearance> {
   if (FONTS.some((s) => s.id === r.font)) out.font = r.font as FontId;
   if (MOTIONS.some((s) => s.id === r.motion)) out.motion = r.motion as MotionId;
   if (DENSITIES.some((s) => s.id === r.density)) out.density = r.density as DensityId;
+  if (THEMES.some((s) => s.id === r.theme)) out.theme = r.theme as ThemeId;
+  if (LANGUAGES.some((s) => s.id === r.language)) out.language = r.language as LanguageId;
   if (typeof r.sidebarCollapsed === "boolean") out.sidebarCollapsed = r.sidebarCollapsed;
   return out;
 }
@@ -162,6 +181,10 @@ function applyToDocument(a: Appearance) {
   root.dataset.font = a.font;
   root.dataset.motion = a.motion;
   root.dataset.density = a.density;
+  const dark = a.theme === "dark" || (a.theme === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+  root.dataset.theme = dark ? "dark" : "light";
+  root.style.colorScheme = dark ? "dark" : "light";
+  root.lang = a.language;
 }
 
 type Ctx = {
@@ -203,6 +226,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     applyToDocument(appearance);
+    if (appearance.theme !== "system" || !window.matchMedia) return;
+    // Follow the OS when it switches between light and dark.
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyToDocument(appearance);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
   }, [appearance]);
 
   const persist = useCallback((next: Appearance) => {
