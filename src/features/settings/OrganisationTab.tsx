@@ -63,7 +63,7 @@ export function OrganisationTab() {
     if (!name) return;
     let id = slug(name);
     while (cur.units.some((u) => u.id === id)) id += "-2";
-    edit((o) => ({ ...o, units: [...o.units, { id, name, group, sites: o.sites.filter((s) => s.active).map((s) => s.code), opdShare: 0.55, active: true }] }));
+    edit((o) => ({ ...o, units: [...o.units, { id, name, group, sites: o.sites.filter((s) => s.active).map((s) => s.code), active: true }] }));
   }
   async function removeUnit(u: OrgUnit) {
     const ok = await confirmDialog({
@@ -231,7 +231,7 @@ export function OrganisationTab() {
                 ) : (
                   <div className="divide-y divide-slate-100">
                     {list.map((u) => (
-                      <div key={u.id} className={clsx("grid items-center gap-2 px-5 py-2.5 lg:grid-cols-[1.3fr_120px_1.4fr_1fr_90px_auto_auto]", !u.active && "opacity-60")}>
+                      <div key={u.id} className={clsx("grid items-center gap-2 px-5 py-2.5 lg:grid-cols-[1.3fr_120px_1.6fr_1.2fr_auto_auto]", !u.active && "opacity-60")}>
                         <input
                           value={u.name}
                           readOnly={ro}
@@ -277,19 +277,6 @@ export function OrganisationTab() {
                           className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[12.5px] outline-none placeholder:text-slate-400 focus:border-blue-400"
                           aria-label="Lead"
                         />
-                        <label className="flex items-center gap-1 text-[12px] text-slate-500" title="Share of revenue that is OPD; the rest is IPD (used to split new plans)">
-                          OPD
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={Math.round((u.opdShare ?? 0.55) * 100)}
-                            readOnly={ro}
-                            onChange={(e) => setUnit(u.id, { opdShare: Math.max(0, Math.min(100, Number(e.target.value))) / 100 })}
-                            className="h-8 w-14 rounded-md border border-slate-200 bg-white px-1.5 text-right text-[12.5px] tabular-nums outline-none focus:border-blue-400"
-                          />
-                          %
-                        </label>
                         <Toggle on={u.active} disabled={ro} onChange={(v) => setUnit(u.id, { active: v })} />
                         {!ro ? (
                           <button type="button" onClick={() => void removeUnit(u)} className="grid h-8 w-8 place-items-center rounded-md text-slate-300 hover:bg-rose-50 hover:text-rose-600" aria-label={`Remove ${u.name}`}>

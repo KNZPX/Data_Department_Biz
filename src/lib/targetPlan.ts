@@ -70,7 +70,7 @@ export const MB = 1_000_000;
 /** The organisation a blank plan was built on (kept with the plan so it reopens the same). */
 export type BlankStructure = {
   sites: { code: string; name: string; color?: string }[];
-  units: { name: string; group: string; sites: string[]; opdShare?: number }[];
+  units: { name: string; group: string; sites: string[] }[];
 };
 
 // ---- small helpers -----------------------------------------------------------
@@ -357,10 +357,26 @@ function rollUpBase(plan: Plan, id: string | null, field: Amount = "base26") {
   }
 }
 
+/**
+ * After a unit below changed, the units above are plain sums again: drop any
+ * actual / prior-year figure typed on them, so the clear button doesn't bring
+ * back a number that no longer adds up.
+ */
+function clearTypedAbove(plan: Plan, id: string | null, field: Amount) {
+  while (id) {
+    const n = plan.nodes[id];
+    plan.nodes[id] =
+      field === "prior25" ? { ...n, priorTyped: undefined, dataPrior25: undefined } : { ...n, actual: undefined, dataBase26: undefined };
+    id = n.parentId;
+  }
+}
+
 function rescaleBase(plan: Plan, id: string, newValue: number, field: Amount = "base26") {
   const n = plan.nodes[id];
   const kids = childrenOf(plan, id);
-  plan.nodes[id] = { ...n, [field]: newValue };
+  // A figure typed lower down is replaced by its share of the new total.
+  const untyped = field === "prior25" ? { priorTyped: undefined, dataPrior25: undefined } : { actual: undefined, dataBase26: undefined };
+  plan.nodes[id] = { ...n, ...untyped, [field]: newValue };
   if (!kids.length) return;
   const old = sum(kids.map((k) => k[field]));
   const weights = old > 0 ? kids.map((k) => k[field]) : kids.map((k) => k.base26 || k.target || 1);
@@ -380,6 +396,7 @@ export function setPrior(input: Plan, id: string, priorTHB: number | null): Plan
     dataPrior25: priorTHB === null ? undefined : dataPrior,
   };
   rollUpBase(plan, n.parentId, "prior25");
+  clearTypedAbove(plan, n.parentId, "prior25");
   return plan;
 }
 
@@ -428,16 +445,18 @@ export function setActual(input: Plan, id: string, actualTHB: number | null): Pl
   rescaleBase(plan, id, base);
   plan.nodes[id] = { ...plan.nodes[id], actual: actualTHB === null ? undefined : Math.max(0, actualTHB), dataBase26: actualTHB === null ? undefined : dataBase };
   rollUpBase(plan, n.parentId);
+  clearTypedAbove(plan, n.parentId, "base26");
   return plan;
 }
 
-/** Type the base year's full year for a CoE / sub-unit directly (clears a typed actual). */
+/** Type the base year's full year for a unit (CoE / sub / OPD-IPD / segment) directly (clears a typed actual). */
 export function setBase(input: Plan, id: string, baseTHB: number): Plan {
   const plan = clonePlan(input);
   const n = plan.nodes[id];
   rescaleBase(plan, id, Math.max(0, baseTHB));
   plan.nodes[id] = { ...plan.nodes[id], actual: undefined, dataBase26: Math.max(0, baseTHB) };
   rollUpBase(plan, n.parentId);
+  clearTypedAbove(plan, n.parentId, "base26");
   return plan;
 }
 
