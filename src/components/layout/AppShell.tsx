@@ -32,6 +32,7 @@ import { LoginGate, useAccess, useAuth } from "@/components/auth/LoginGate";
 import { pageForPath } from "@/lib/access";
 import { useTheme } from "@/context/ThemeContext";
 import { PresenceStack, usePresence } from "@/components/layout/Presence";
+import { ConfirmHost, Toaster } from "@/components/feedback";
 
 type NavItem = { href: string; label: string; hint: string; icon: LucideIcon };
 type NavGroup = { title: string; items: NavItem[] };
@@ -679,6 +680,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       </div>
 
       <TokenModal isOpen={tokenOpen} onClose={() => setTokenOpen(false)} onSuccess={() => refreshAuth()} />
+      <Toaster />
+      <ConfirmHost />
     </div>
   );
 }
