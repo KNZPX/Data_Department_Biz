@@ -16,7 +16,7 @@ Who this is for: the Data Business Analysis team, several people editing shared 
 | 7 | "Portal content" in Settings was saved only in one browser and never shown anywhere | Replaced with **Team announcement**, stored in the database. Admins publish it, everyone sees it at the top of every page, and each person can hide it until it changes | ✅ |
 | 8 | Report workspace choices were per browser, so they were lost on another computer | Saved to the person's account (`user_preferences`) and follow them anywhere | ✅ |
 | 9 | Deleting a license wasn't recorded, so it couldn't be restored even though restore supports it | The deleted row goes into the activity log with who deleted it | ✅ |
-| 10 | RLS is off on `dax_annotations` / `dax_dictionary_items`, and `whiteboard_boards` has an open-to-all policy. The server uses the anon key | Not changed: turning RLS on now would break writes. Move writes to SECURITY DEFINER RPCs first (like `user_prefs_*` and `app_settings_*`) | ⚠️ |
+| 10 | 13 tables (DAX, whiteboard, licenses, scenarios, change log, `app_users`, the legacy `powerbi_token`) were readable and writable with the public anon key | The server now sends the caller's session hash (`x-app-session`); row-level security only admits live sessions (`migrations_2026-10-02_lock_tables_to_sessions.sql`). The legacy token table is closed entirely | ✅ |
 
 ## B. Finding things
 
@@ -38,11 +38,16 @@ Who this is for: the Data Business Analysis team, several people editing shared 
 | 19 | The DAX detail panel was unusable on a phone | Full-screen panel with a back button, and tabs that scroll sideways | ✅ |
 | 20 | Unused page files (`UserManagementPage`, `PortalPage`) and the old diagram engine in the DAX page | Removed (about 2,000 lines) | ✅ |
 
-## D. Later (worth doing next)
+## D. Added in the second round
 
-- ⏳ Live presence on items: show "Nok is editing this measure" while someone has it open (the presence API already exists).
-- ⏳ Comments / @mention on measures and boards, so questions stay next to the data.
-- ⏳ Watch a model or measure and get notified when its formula changes after a .bim import.
-- ⏳ Review status for definitions (draft → reviewed) so the team knows which ones to trust.
-- ⏳ Thai UI option, and dark mode.
-- ⚠️ Item 10 above (database security).
+- ✅ Live presence on a DAX item: avatars show who else has it open, highlighted while they're editing.
+- ✅ Comments with @mentions on every measure and column.
+- ✅ "For you" inbox: mentions, comments and reviews on watched items, formula changes from .bim imports.
+- ✅ Review status (draft → reviewed); a formula change in an import sends it back to draft.
+- ✅ Dark theme (or follow the computer) and a Thai UI option for the shell, Ctrl K, Settings, the DAX dictionary and the Target planner.
+- ✅ Target planner rebuilt: top-down delegation where every level adds up, CoE sub-units, suggestions, undo, by-segment and by-month views.
+
+## E. Still open
+
+- ⏳ Thai for the remaining pages (Reports, Licenses, Whiteboard, People, Activity log, Home).
+- ⏳ Comments on whiteboards and target scenarios (the tables and inbox are ready to reuse).

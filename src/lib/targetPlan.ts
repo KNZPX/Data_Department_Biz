@@ -33,11 +33,14 @@ export interface PlanNode {
   locked: boolean; // set by a person; kept when siblings are rebalanced
   custom?: boolean; // a CoE sub someone added
   months?: number[]; // 12 revenue-phasing weights (sum 1), inherited from the unit
+  actual?: number; // THB actual so far this year, typed by a person (CoE / sub-unit only)
+  dataBase26?: number; // the base26 from the data, kept when an actual overrides it
 }
 
 export interface Plan {
   rootId: string;
   step: number; // THB rounding step
+  actualMonths: number; // how many months of the base year are actual (0–12); the rest is estimate
   nodes: Record<string, PlanNode>;
 }
 
@@ -289,6 +292,87 @@ export function changeStep(input: Plan, step: number): Plan {
   return plan;
 }
 
+// ---- base year: actual months + estimate ----------------------------------------
+
+/** 12 monthly weights for a node (its own, else the nearest parent's, else even). */
+export function monthsOf(plan: Plan, id: string): number[] {
+  let n: PlanNode | undefined = plan.nodes[id];
+  while (n) {
+    if (n.months?.length === 12) return n.months;
+    n = n.parentId ? plan.nodes[n.parentId] : undefined;
+  }
+  return new Array(12).fill(1 / 12);
+}
+
+/** Share of the year covered by the first `n` months, by this node's phasing. */
+export function cumShare(plan: Plan, id: string, n = plan.actualMonths): number {
+  return sum(monthsOf(plan, id).slice(0, Math.max(0, Math.min(12, n))));
+}
+
+/** Actual so far: what someone typed, else the base split by phasing; parents add up their children. */
+export function actualOf(plan: Plan, id: string): number {
+  const n = plan.nodes[id];
+  if (!n) return 0;
+  if (n.actual !== undefined) return n.actual;
+  if ((n.level === "network" || n.level === "site" || n.level === "coe" || n.level === "sub") && n.children.length && n.children.some((c) => hasActualBelow(plan, c)))
+    return sum(n.children.map((c) => actualOf(plan, c)));
+  return n.base26 * cumShare(plan, id);
+}
+function hasActualBelow(plan: Plan, id: string): boolean {
+  const n = plan.nodes[id];
+  if (!n) return false;
+  if (n.actual !== undefined) return true;
+  return n.children.some((c) => hasActualBelow(plan, c));
+}
+
+function rollUpBase(plan: Plan, id: string | null) {
+  while (id) {
+    const n = plan.nodes[id];
+    const b = sum(childrenOf(plan, id).map((k) => k.base26));
+    plan.nodes[id] = { ...n, base26: b };
+    id = n.parentId;
+  }
+}
+
+function rescaleBase(plan: Plan, id: string, newBase: number) {
+  const n = plan.nodes[id];
+  const kids = childrenOf(plan, id);
+  plan.nodes[id] = { ...n, base26: newBase };
+  if (!kids.length) return;
+  const old = sum(kids.map((k) => k.base26));
+  const weights = old > 0 ? kids.map((k) => k.base26) : kids.map((k) => k.target || 1);
+  const W = sum(weights);
+  kids.forEach((k, i) => rescaleBase(plan, k.id, W > 0 ? (newBase * weights[i]) / W : newBase / kids.length));
+}
+
+/**
+ * Type the actual so far for a CoE / sub-unit. Its full-year base becomes
+ * actual ÷ (share of the year those months usually make up), and the bases above
+ * it add up again. `null` goes back to the base from the data. Targets don't move.
+ */
+export function setActual(input: Plan, id: string, actualTHB: number | null): Plan {
+  const plan = clonePlan(input);
+  const n = plan.nodes[id];
+  const dataBase = n.dataBase26 ?? n.base26;
+  let base = dataBase;
+  if (actualTHB !== null) {
+    const share = cumShare(plan, id);
+    base = share > 0 ? Math.max(0, actualTHB) / share : dataBase;
+  }
+  rescaleBase(plan, id, base);
+  plan.nodes[id] = { ...plan.nodes[id], actual: actualTHB === null ? undefined : Math.max(0, actualTHB), dataBase26: actualTHB === null ? undefined : dataBase };
+  rollUpBase(plan, n.parentId);
+  return plan;
+}
+
+/** Change how many months are actual; typed actuals are re-annualised with the new split. */
+export function setActualMonths(input: Plan, months: number): Plan {
+  let plan = clonePlan(input);
+  plan.actualMonths = Math.max(0, Math.min(12, Math.round(months)));
+  for (const n of Object.values(plan.nodes)) if (n.actual !== undefined) plan = setActual(plan, n.id, plan.actualMonths > 0 ? n.actual : null);
+  return plan;
+}
+
 // ---- CoE subs ------------------------------------------------------------------
 
 const SEGMENTS = ["Thai", "Expat", "Fly-in"] as const;
@@ -459,6 +543,8 @@ export function removeSub(input: Plan, subId: string): Plan {
 export interface PlanSnapshot {
   version: 2;
   step: number;
+  actualMonths?: number;
+  actuals?: Record<string, number>; // THB actual so far, per CoE / sub-unit
   targets: Record<string, number>; // THB per node id
   locked: string[];
   subs: { coeId: string; name: string }[];
@@ -468,12 +554,14 @@ export function toSnapshot(plan: Plan): PlanSnapshot {
   const targets: Record<string, number> = {};
   const locked: string[] = [];
   const subs: PlanSnapshot["subs"] = [];
+  const actuals: Record<string, number> = {};
   for (const n of Object.values(plan.nodes)) {
+    if (n.actual !== undefined) actuals[n.id] = Math.round(n.actual);
     targets[n.id] = Math.round(n.target);
     if (n.locked) locked.push(n.id);
     if (n.custom && n.level === "sub") subs.push({ coeId: n.parentId!, name: n.name });
   }
-  return { version: 2, step: plan.step, targets, locked, subs };
+  return { version: 2, step: plan.step, actualMonths: plan.actualMonths, actuals, targets, locked, subs };
 }
 
 /**
@@ -485,6 +573,8 @@ export function fromSnapshot(base: Plan, snap: PlanSnapshot): Plan {
   let plan = clonePlan(base);
   if (snap.step) plan.step = snap.step;
   for (const s of snap.subs || []) if (plan.nodes[s.coeId]) plan = addSub(plan, s.coeId, s.name).plan;
+  if (typeof snap.actualMonths === "number") plan.actualMonths = snap.actualMonths;
+  for (const [id, a] of Object.entries(snap.actuals || {})) if (plan.nodes[id]) plan = setActual(plan, id, a);
   const locked = new Set(snap.locked || []);
   const t = snap.targets || {};
   // Use saved targets as weights, level by level.

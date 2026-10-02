@@ -1,7 +1,7 @@
 // Builds the starting 2027 plan from the baseline data (TARGET_UNITS) and the
 // agreed "Revise 2027 (V2)" numbers: network 7,550 MB, sites 5,140 / 2,035 / 375 MB,
 // and each CoE/SBU's MB where it was set. Everything below is split by base.
-import { HOSPITAL_PROFILES, TARGET_SITES, TARGET_UNITS, VERIFIED_BASE_CASE } from "../data/targetScenarioData";
+import { HOSPITAL_PROFILES, TARGET_META, TARGET_SITES, TARGET_UNITS, VERIFIED_BASE_CASE } from "../data/targetScenarioData";
 import { MB, allocate, buildSettingBranch, type Plan, type PlanNode } from "./targetPlan";
 
 // Share of a unit's revenue that is OPD (the rest IPD), by specialty.
@@ -44,7 +44,9 @@ function cfgTarget(cfg: Cfg | undefined, base: number): number | null {
 
 export function buildBasePlan(): Plan {
   const nodes: Record<string, PlanNode> = {};
-  const plan: Plan = { rootId: "PKT", step: DEFAULT_STEP, nodes };
+  // Months of the base year that are actual: everything before the data's as-of month.
+  const asOf = new Date(TARGET_META.as_of_date);
+  const plan: Plan = { rootId: "PKT", step: DEFAULT_STEP, actualMonths: Number.isNaN(asOf.getTime()) ? 8 : asOf.getMonth(), nodes };
   const snap = (VERIFIED_BASE_CASE?.snap || {}) as { siteCfg?: Record<string, Cfg>; rev?: { unit?: Record<string, Cfg> } };
 
   nodes.PKT = {
