@@ -4,13 +4,14 @@
 // for the year (EBO), and the objectives and key results that get it there,
 // with the initiatives behind them. Saves automatically; the team sees changes.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, CircleDot, Download, Flag, LayoutGrid, Loader2, Plus, Search, Target, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleDot, Download, Flag, LayoutGrid, Loader2, Plus, Search, Target, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, toast } from "@/components/feedback";
 import { useOrgStructure } from "@/lib/useOrgStructure";
 import { useT } from "@/lib/i18n";
 import {
+  HORIZONS,
   STATUS,
   emptyPlan,
   krProgress,
@@ -20,6 +21,7 @@ import {
   okrId,
   planProgress,
   type Ebo,
+  type Horizon,
   type Initiative,
   type KeyResult,
   type Objective,
@@ -198,6 +200,7 @@ export function OkrPage() {
         ebos.push({
           unit: u.name,
           group: u.group,
+          horizon: e.horizon || "H1",
           outcome: e.outcome,
           measure: e.measure,
           u: e.unit,
@@ -243,6 +246,7 @@ export function OkrPage() {
             columns: [
               { header: "CoE / SBU", key: "unit", width: 26 },
               { header: "Group", key: "group", width: 14 },
+              { header: "Horizon", key: "horizon", width: 10 },
               { header: "Outcome", key: "outcome", width: 40 },
               { header: "Measure", key: "measure", width: 26 },
               { header: "Unit", key: "u", width: 10 },
@@ -593,6 +597,15 @@ function UnitPlan({
   update: (f: (d: OkrPlanData) => OkrPlanData) => void;
 }) {
   const ro = !canEdit;
+  // Horizon groups start collapsed.
+  const [openH, setOpenH] = useState<Set<Horizon>>(() => new Set());
+  const toggleH = (h: Horizon) =>
+    setOpenH((prev) => {
+      const n = new Set(prev);
+      if (n.has(h)) n.delete(h);
+      else n.add(h);
+      return n;
+    });
   const setEbo = (id: string, p: Partial<Ebo>) =>
     update((d) => ({
       ...d,
@@ -631,120 +644,161 @@ function UnitPlan({
         </div>
       </div>
 
-      {/* EBO */}
+      {/* EBO, grouped by horizon */}
       <section>
-        <div className="mb-2 flex items-center justify-between">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
             <Target className="h-4 w-4 text-blue-600" /> EBO — expected business outcomes
           </h3>
-          {!ro && (
+          <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() =>
-                update((d) => ({
-                  ...d,
-                  ebos: [
-                    ...d.ebos,
-                    {
-                      id: newId("ebo"),
-                      outcome: "",
-                      measure: "",
-                      unit: "",
-                      baseline: null,
-                      target: null,
-                      actual: null,
-                      owner: "",
-                    },
-                  ],
-                }))
-              }
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-blue-600 hover:bg-blue-50"
+              onClick={() => setOpenH(new Set(HORIZONS.map((h) => h.id)))}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-slate-600 hover:bg-slate-100"
             >
-              <Plus className="h-3.5 w-3.5" /> Add outcome
+              <ChevronsUpDown className="h-3.5 w-3.5" /> Expand all
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => setOpenH(new Set())}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <ChevronsDownUp className="h-3.5 w-3.5" /> Collapse all
+            </button>
+          </div>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-200/80">
-          <table className="w-full min-w-[820px] border-separate border-spacing-0 text-[13px]">
-            <thead className="bg-slate-50 text-[11.5px] text-slate-500">
-              <tr>
-                <th className="px-2 py-2 text-left font-medium">Outcome</th>
-                <th className="px-2 py-2 text-left font-medium">Measure</th>
-                <th className="w-20 px-2 py-2 text-left font-medium">Unit</th>
-                <th className="w-28 px-2 py-2 text-right font-medium">{year - 1} baseline</th>
-                <th className="w-28 px-2 py-2 text-right font-medium">{year} target</th>
-                <th className="w-28 px-2 py-2 text-right font-medium">Actual</th>
-                <th className="w-32 px-2 py-2 text-left font-medium">Owner</th>
-                <th className="w-9" />
-              </tr>
-            </thead>
-            <tbody>
-              {data.ebos.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-3 py-5 text-center text-[12.5px] text-slate-400">
-                    No outcomes yet — e.g. &ldquo;Grow trauma revenue&rdquo;, measure &ldquo;Net revenue&rdquo;, unit &ldquo;MB&rdquo;.
-                  </td>
-                </tr>
-              )}
-              {data.ebos.map((e) => (
-                <tr key={e.id} className="group border-t border-slate-100">
-                  <td className="border-t border-slate-100 px-1 py-1">
-                    <input
-                      readOnly={ro}
-                      value={e.outcome}
-                      onChange={(x) => setEbo(e.id, { outcome: x.target.value })}
-                      placeholder="What the unit will achieve"
-                      className={clsx(cell, "font-medium")}
-                    />
-                  </td>
-                  <td className="border-t border-slate-100 px-1 py-1">
-                    <input
-                      readOnly={ro}
-                      value={e.measure}
-                      onChange={(x) => setEbo(e.id, { measure: x.target.value })}
-                      placeholder="How it's measured"
-                      className={cell}
-                    />
-                  </td>
-                  <td className="border-t border-slate-100 px-1 py-1">
-                    <input readOnly={ro} value={e.unit} onChange={(x) => setEbo(e.id, { unit: x.target.value })} placeholder="MB, %, cases" className={cell} />
-                  </td>
-                  {(["baseline", "target", "actual"] as const).map((k) => (
-                    <td key={k} className="border-t border-slate-100 px-1 py-1">
-                      <input
-                        readOnly={ro}
-                        inputMode="decimal"
-                        value={showNum(e[k])}
-                        onChange={(x) => setEbo(e.id, { [k]: num(x.target.value) })}
-                        placeholder="–"
-                        className={clsx(cell, "text-right tabular-nums")}
-                      />
-                    </td>
-                  ))}
-                  <td className="border-t border-slate-100 px-1 py-1">
-                    <input readOnly={ro} value={e.owner} onChange={(x) => setEbo(e.id, { owner: x.target.value })} placeholder="Owner" className={cell} />
-                  </td>
-                  <td className="border-t border-slate-100 px-1 py-1">
+        <div className="space-y-2">
+          {HORIZONS.map((h) => {
+            const list = data.ebos.filter((e) => (e.horizon || "H1") === h.id);
+            const open = openH.has(h.id);
+            const withTarget = list.filter((e) => e.target !== null).length;
+            return (
+              <div key={h.id} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white">
+                <button
+                  type="button"
+                  onClick={() => toggleH(h.id)}
+                  aria-expanded={open}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50"
+                >
+                  <ChevronRight className={clsx("h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200", open && "rotate-90")} />
+                  <span className={clsx("rounded-md px-1.5 py-0.5 text-[12px] font-bold ring-1 ring-inset", h.tone)}>{h.id}</span>
+                  <span className="min-w-0">
+                    <span className="block text-[13.5px] font-semibold text-slate-900">{h.label}</span>
+                    <span className="block truncate text-[12px] text-slate-500">{h.hint}</span>
+                  </span>
+                  <span className="ml-auto shrink-0 text-[12px] text-slate-500">
+                    {list.length} {list.length === 1 ? "outcome" : "outcomes"}
+                    {list.length > 0 && <span className="text-slate-400"> · {withTarget} with a target</span>}
+                  </span>
+                </button>
+                <div className={clsx("grid transition-[grid-template-rows] duration-300 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="overflow-x-auto border-t border-slate-100">
+                      <table className="w-full min-w-[960px] border-separate border-spacing-0 text-[13px]">
+                        <thead className="bg-slate-50 text-[11.5px] text-slate-500">
+                          <tr>
+                            <th className="min-w-[220px] px-2 py-2 text-left font-medium">Outcome</th>
+                            <th className="min-w-[150px] px-2 py-2 text-left font-medium">Measure</th>
+                            <th className="w-20 px-2 py-2 text-left font-medium">Unit</th>
+                            <th className="w-28 px-2 py-2 text-right font-medium">{year - 1} baseline</th>
+                            <th className="w-28 px-2 py-2 text-right font-medium">{year} target</th>
+                            <th className="w-28 px-2 py-2 text-right font-medium">Actual</th>
+                            <th className="w-32 px-2 py-2 text-left font-medium">Owner</th>
+                            <th className="w-16 px-2 py-2 text-left font-medium">Horizon</th>
+                            <th className="w-9" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {list.length === 0 && (
+                            <tr>
+                              <td colSpan={9} className="px-3 py-4 text-center text-[12.5px] text-slate-400">
+                                No {h.id} outcomes yet{h.id === "H1" ? <> — e.g. &ldquo;Grow trauma revenue&rdquo;, measure &ldquo;Net revenue&rdquo;, unit &ldquo;MB&rdquo;.</> : "."}
+                              </td>
+                            </tr>
+                          )}
+                          {list.map((e) => (
+                            <tr key={e.id} className="group">
+                              <td className="border-t border-slate-100 px-1 py-1">
+                                <input readOnly={ro} value={e.outcome} onChange={(x) => setEbo(e.id, { outcome: x.target.value })} placeholder="What the unit will achieve" className={clsx(cell, "font-medium")} />
+                              </td>
+                              <td className="border-t border-slate-100 px-1 py-1">
+                                <input readOnly={ro} value={e.measure} onChange={(x) => setEbo(e.id, { measure: x.target.value })} placeholder="How it's measured" className={cell} />
+                              </td>
+                              <td className="border-t border-slate-100 px-1 py-1">
+                                <input readOnly={ro} value={e.unit} onChange={(x) => setEbo(e.id, { unit: x.target.value })} placeholder="MB, %, cases" className={cell} />
+                              </td>
+                              {(["baseline", "target", "actual"] as const).map((k) => (
+                                <td key={k} className="border-t border-slate-100 px-1 py-1">
+                                  <input
+                                    readOnly={ro}
+                                    inputMode="decimal"
+                                    value={showNum(e[k])}
+                                    onChange={(x) => setEbo(e.id, { [k]: num(x.target.value) })}
+                                    placeholder="–"
+                                    className={clsx(cell, "text-right tabular-nums")}
+                                  />
+                                </td>
+                              ))}
+                              <td className="border-t border-slate-100 px-1 py-1">
+                                <input readOnly={ro} value={e.owner} onChange={(x) => setEbo(e.id, { owner: x.target.value })} placeholder="Owner" className={cell} />
+                              </td>
+                              <td className="border-t border-slate-100 px-1 py-1">
+                                <select
+                                  disabled={ro}
+                                  value={e.horizon || "H1"}
+                                  onChange={(x) => {
+                                    const to = x.target.value as Horizon;
+                                    setEbo(e.id, { horizon: to });
+                                    setOpenH((prev) => new Set(prev).add(to));
+                                  }}
+                                  className="h-8 w-full rounded-md border border-transparent bg-transparent px-1 text-[12.5px] text-slate-700 outline-none hover:border-slate-200 focus:border-blue-400"
+                                  aria-label="Horizon"
+                                >
+                                  {HORIZONS.map((o) => (
+                                    <option key={o.id} value={o.id}>
+                                      {o.id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="border-t border-slate-100 px-1 py-1">
+                                {!ro && (
+                                  <button
+                                    type="button"
+                                    onClick={() => update((d) => ({ ...d, ebos: d.ebos.filter((x) => x.id !== e.id) }))}
+                                    className="grid h-7 w-7 place-items-center rounded-md text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"
+                                    aria-label="Remove outcome"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                     {!ro && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          update((d) => ({
-                            ...d,
-                            ebos: d.ebos.filter((x) => x.id !== e.id),
-                          }))
-                        }
-                        className="grid h-7 w-7 place-items-center rounded-md text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"
-                        aria-label="Remove outcome"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="border-t border-slate-100 px-2 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            update((d) => ({
+                              ...d,
+                              ebos: [...d.ebos, { id: newId("ebo"), horizon: h.id, outcome: "", measure: "", unit: "", baseline: null, target: null, actual: null, owner: "" }],
+                            }))
+                          }
+                          className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-blue-600 hover:bg-blue-50"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add {h.id} outcome
+                        </button>
+                      </div>
                     )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { ResizeHandle } from "@/components/ResizeHandle";
+import { usePersonalPref } from "@/lib/usePersonalPref";
 import { useEffect, useState, useMemo, useRef } from "react";
 import {
   ArrowRight,
@@ -530,6 +532,8 @@ export function DaxManagementPage() {
 
   // Floating Sidebar state
   const [floatSidebarOpen, setFloatSidebarOpen] = useState(true);
+  const [savedPanes, savePanes] = usePersonalPref<{ rail: number; detail: number }>("daxPanes", "dax_pane_widths");
+  const [paneDrag, setPaneDrag] = useState<{ rail?: number; detail?: number } | null>(null);
 
   // Semantic Model Selection Screen Gate (True when model chosen, false to show landing selector)
   const [modelChosen, setModelChosen] = useState<boolean>(false);
@@ -715,12 +719,12 @@ export function DaxManagementPage() {
   const [fullDaxPasteInput, setFullDaxPasteInput] = useState("");
   const [autoSplitDetected, setAutoSplitDetected] = useState(false);
   const [customDaxTab, setCustomDaxTab] = useState<"edit" | "preview">("edit");
-  // Every newly selected item opens with its formula in read-only preview.
+  // Model items open with their formula in read-only preview; team-written ones open ready to edit.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setFormulaEditing(false);
+    setFormulaEditing(Boolean(selectedItem?.isCustom));
     setCopyMenuOpen(false);
-  }, [selectedItem?.id]);
+  }, [selectedItem?.id, selectedItem?.isCustom]);
 
   // Auto-detect and parse full DAX paste (everything before first '=' is name, after is expression)
   function handleFullDaxPaste(rawText: string) {
@@ -1496,6 +1500,16 @@ export function DaxManagementPage() {
   const selMeta = sel ? typeMeta(sel) : null;
   const canEdit = can("dax.edit");
   const isFormulaItem = Boolean(sel && (sel.type === "Measure" || sel.isCustom || sel.expression));
+  // Pane widths (tables rail and details), dragged by the edges and remembered for this person.
+  const DEFAULT_PANES = { rail: 224, detail: 580 };
+  const railW = paneDrag?.rail ?? savedPanes?.rail ?? DEFAULT_PANES.rail;
+  const detailW = paneDrag?.detail ?? savedPanes?.detail ?? DEFAULT_PANES.detail;
+  const commitPane = (k: "rail" | "detail", w: number) => {
+    setPaneDrag(null);
+    savePanes({ rail: railW, detail: detailW, [k]: w });
+  };
+  // Team-written measures: every field is editable and the formula comes first.
+  const teamEdit = Boolean(sel?.isCustom && canEdit);
   const tableCounts = (meta.tableCounts as Record<string, number> | undefined) || {};
 
   return (
@@ -1746,7 +1760,22 @@ export function DaxManagementPage() {
       {/* ---------- Body ---------- */}
       <div className="flex min-h-0 flex-1">
         {/* Tables rail */}
-        <aside className={clsx("hidden shrink-0 flex-col border-r border-slate-200/80 transition-[width] duration-300 lg:flex", floatSidebarOpen ? "w-56" : "w-11")}>
+        <aside
+          className={clsx("relative hidden shrink-0 flex-col border-r border-slate-200/80 lg:flex", !paneDrag && "transition-[width] duration-300", !floatSidebarOpen && "w-11")}
+          style={floatSidebarOpen ? { width: railW } : undefined}
+        >
+          {floatSidebarOpen && (
+            <ResizeHandle
+              edge="right"
+              width={railW}
+              min={160}
+              max={420}
+              label="Resize tables"
+              onResize={(w) => setPaneDrag({ rail: w })}
+              onCommit={(w) => commitPane("rail", w)}
+              onReset={() => commitPane("rail", DEFAULT_PANES.rail)}
+            />
+          )}
           <div className="flex h-10 items-center justify-between px-2">
             {floatSidebarOpen && <span className="pl-1 text-[11.5px] font-medium uppercase tracking-[0.06em] text-slate-400">Tables</span>}
             <button
@@ -1984,11 +2013,23 @@ export function DaxManagementPage() {
             <section
               className={clsx(
                 "flex min-w-0 flex-col bg-white",
-                "fixed inset-0 z-40 lg:static lg:z-auto lg:w-[min(48%,620px)] lg:shrink-0",
+                "fixed inset-0 z-40 lg:relative lg:inset-auto lg:z-auto lg:w-[var(--detail-w)] lg:max-w-[calc(100%-320px)] lg:shrink-0",
                 detailOpenMobile ? "flex" : "hidden lg:flex"
               )}
+              style={{ "--detail-w": `${detailW}px` } as React.CSSProperties}
               aria-label="Details"
             >
+              <ResizeHandle
+                edge="left"
+                width={detailW}
+                min={360}
+                max={1100}
+                label="Resize details"
+                fitParent={(cw) => cw - 320}
+                onResize={(w) => setPaneDrag({ detail: w })}
+                onCommit={(w) => commitPane("detail", w)}
+                onReset={() => commitPane("detail", DEFAULT_PANES.detail)}
+              />
               {!sel || !selMeta ? (
                 <div className="grid h-full place-items-center p-8 text-center text-[13px] text-slate-400">{t("Pick something on the left to see what it means.")}</div>
               ) : (
@@ -2079,6 +2120,7 @@ export function DaxManagementPage() {
                         <ReviewAndWatch collab={collab.data} canReview={canEdit} onReview={(st) => void collabActions.review(st)} onWatch={(on) => void collabActions.watch(on)} />
                         <PresenceChips peers={peers} />
                       </div>
+                      {!teamEdit && (
                       <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px]">
                         <div className="flex gap-1.5">
                           <dt className="text-slate-400">Table</dt>
@@ -2099,13 +2141,14 @@ export function DaxManagementPage() {
                           </div>
                         )}
                       </dl>
+                      )}
                     </div>
 
-                    <div className="space-y-6 px-5 py-5">
+                    <div className="flex flex-col gap-6 px-5 py-5">
                       {/* Team measure identity (editable only for team-written items) */}
-                      {sel.isCustom && canEdit && (
-                        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_140px]">
-                          <label className="block space-y-1">
+                      {teamEdit && (
+                        <div className="order-[-3] grid gap-3 sm:grid-cols-[1fr_150px]">
+                          <label className="block space-y-1 sm:col-span-2">
                             <span className="text-[12px] font-medium text-slate-600">Name</span>
                             <input
                               value={sideboxForm.name}
@@ -2151,9 +2194,9 @@ export function DaxManagementPage() {
                         )}
                       </section>
 
-                      {/* Formula */}
+                      {/* Formula (first for team-written measures) */}
                       {isFormulaItem && (
-                        <section>
+                        <section className={clsx(teamEdit && "order-[-2]")}>
                           <div className="mb-1.5 flex items-center justify-between gap-2">
                             <h3 className="text-[13px] font-semibold text-slate-900">{t("Formula")}</h3>
                             {canEdit &&
@@ -2177,7 +2220,7 @@ export function DaxManagementPage() {
                                 </button>
                               ))}
                           </div>
-                          {formulaEditing ? (
+                          {formulaEditing && canEdit ? (
                             <>
                               {!sel.isCustom && (
                                 <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-snug text-amber-800">
@@ -2239,7 +2282,7 @@ export function DaxManagementPage() {
                       )}
 
                       {/* Calculation + notes */}
-                      <details className="group rounded-lg border border-slate-200" open={Boolean(sel.mathDefinition || sel.notes)}>
+                      <details key={sel.id} className="group rounded-lg border border-slate-200" open={teamEdit || Boolean(sel.mathDefinition || sel.notes)}>
                         <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2.5 text-[13px] font-semibold text-slate-900">
                           How it&rsquo;s calculated &amp; notes
                           <ChevronDown className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
