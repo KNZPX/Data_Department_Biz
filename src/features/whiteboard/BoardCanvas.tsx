@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  AlignCenter,
   AlignCenterHorizontal,
+  AlignLeft,
+  AlignRight,
   AlignEndVertical,
   AlignStartHorizontal,
   AlignStartVertical,
@@ -23,8 +26,11 @@ import {
   Download,
   Ellipsis,
   Frame as FrameIcon,
+  Group,
   Hand,
+  Eraser,
   Hexagon,
+  Highlighter,
   Loader2,
   Lock,
   Map as MapIcon,
@@ -45,6 +51,7 @@ import {
   Triangle,
   Type,
   Undo2,
+  Ungroup,
   Unlock,
   UserPlus,
   Waypoints,
@@ -61,6 +68,8 @@ import {
   boundsOf,
   connectorPath,
   contains,
+  fmtOf,
+  fmtStyle,
   intersects,
   isBox,
   nearestSide,
@@ -74,22 +83,44 @@ import {
   type Rect,
   type ShapeKind,
   type Side,
+  type TextFmt,
 } from "./model";
 import { useBoardRealtime, type Ops } from "./useRealtime";
 import { initialsOf } from "@/components/layout/Presence";
 
-type Tool = "select" | "hand" | "sticky" | "shape" | "text" | "frame" | "connector" | "pen";
+type Tool = "select" | "hand" | "sticky" | "shape" | "text" | "frame" | "connector" | "pen" | "eraser";
 type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 type Interaction =
   | { type: "pan"; sx: number; sy: number; cam: Camera }
-  | { type: "move"; start: { x: number; y: number }; orig: Map<string, BoxEl>; ids: string[]; snapshot: El[]; lastSend: number }
+  // Right button: pans once dragged past a few px, otherwise opens the menu on release.
+  | { type: "rpan"; sx: number; sy: number; cam: Camera; moved: boolean }
+  | {
+      type: "move";
+      start: { x: number; y: number };
+      orig: Map<string, BoxEl>;
+      ids: string[];
+      snapshot: El[];
+      lastSend: number;
+      /** Item to start editing if this turns out to be a click on the already-selected item. */
+      editOnClick?: string;
+      /** Alt+drag: the selection that was copied, restored if the pointer didn't move. */
+      dupOf?: string[];
+    }
   | { type: "marquee"; start: { x: number; y: number }; cur: { x: number; y: number }; additive: string[] }
   | { type: "resize"; id: string; handle: Handle; orig: BoxEl; start: { x: number; y: number }; snapshot: El[] }
-  | { type: "connect"; from: { id?: string; side?: Side; x: number; y: number }; cur: { x: number; y: number } }
+  | {
+      type: "connect";
+      from: { id?: string; side?: Side; x: number; y: number };
+      cur: { x: number; y: number };
+      /** Started on a "+" dot; `down` is where the press began (screen px), to tell a click from a drag. */
+      fromPort?: boolean;
+      down?: { x: number; y: number };
+    }
   | { type: "endpoint"; id: string; end: "from" | "to"; snapshot: El[] }
   | { type: "create"; tool: Tool; start: { x: number; y: number }; cur: { x: number; y: number } }
-  | { type: "draw"; points: [number, number][] };
+  | { type: "draw"; points: [number, number][] }
+  | { type: "erase"; hit: string[] };
 
 const SHAPES: { kind: ShapeKind; icon: LucideIcon; label: string }[] = [
   { kind: "rect", icon: Square, label: "Rectangle" },
@@ -103,7 +134,7 @@ const SHAPES: { kind: ShapeKind; icon: LucideIcon; label: string }[] = [
 ];
 
 type MenuAction =
-  | "edit" | "label" | "duplicate" | "copy" | "connect" | "front" | "back" | "lock" | "delete"
+  | "edit" | "label" | "duplicate" | "copy" | "connect" | "front" | "back" | "lock" | "delete" | "group" | "ungroup"
   | "paste" | "text" | "blocks" | "selectAll" | "fit";
 
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
@@ -116,27 +147,44 @@ const ICON_BTN = "grid h-10 w-10 place-items-center rounded-md text-[#1C1C1E] tr
 const ACTIVE_BTN = "bg-[#E6EAFF] text-[#4262FF] hover:bg-[#E6EAFF]";
 const PEN_COLORS = ["#1A1A1A", "#F24726", "#FAC710", "#8FD14F", "#2D9BF0", "#652CB3", "#808080", "#FFFFFF"];
 const PEN_WIDTHS = [2, 4, 8];
+const HIGHLIGHT = { opacity: 0.35, scale: 5 };
+const STICKY_SIZES = [12, 14, 18, 24, 32, 48, 64];
 const SHORTCUTS: [string, string][] = [
   ["Select", "V"],
-  ["Hand / pan", "H or hold Space"],
+  ["Hand / pan", "H, hold Space, or right-drag"],
   ["Sticky note", "N"],
   ["Shape", "S"],
   ["Rectangle / Oval", "R / O"],
   ["Text", "T"],
   ["Connection line", "L"],
-  ["Pen", "P"],
+  ["Pen / Eraser", "P / E"],
   ["Frame", "F"],
   ["More blocks", "B"],
-  ["Edit selected", "Enter or type"],
-  ["Duplicate", "Ctrl+D"],
+  ["Edit selected", "Enter, type, or click again"],
+  ["Next sticky (while typing)", "Tab / Shift+Tab"],
+  ["Duplicate", "Ctrl+D or Alt+drag"],
   ["Copy / Paste", "Ctrl+C / Ctrl+V"],
+  ["Group / Ungroup", "Ctrl+G / Ctrl+Shift+G"],
+  ["Lock / Unlock", "Ctrl+Shift+L"],
+  ["Bring to front / back", "PgUp / PgDn"],
   ["Undo / Redo", "Ctrl+Z / Ctrl+Shift+Z"],
   ["Zoom in / out", "Ctrl + / Ctrl −"],
-  ["Zoom to fit", "Shift+1"],
+  ["Zoom to fit / selection", "Shift+1 / Shift+2"],
+  ["Zoom to 100%", "Shift+0"],
   ["Nudge", "Arrows (Shift = 10px)"],
 ];
 const MIN_ZOOM = 0.08;
 const MAX_ZOOM = 4;
+
+function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = dx * dx + dy * dy;
+  const t = len ? clamp(((px - ax) * dx + (py - ay) * dy) / len, 0, 1) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+const OPPOSITE: Record<Side, Side> = { top: "bottom", right: "left", bottom: "top", left: "right" };
 
 function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
@@ -248,6 +296,11 @@ export function BoardCanvas({
   const [stickyColor, setStickyColor] = useState(STICKY_COLORS[0]);
   const [penColor, setPenColor] = useState(INK);
   const [penWidth, setPenWidth] = useState(PEN_WIDTHS[0]);
+  const [penMode, setPenMode] = useState<"pen" | "highlighter">("pen");
+  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
+  const [hoverLine, setHoverLine] = useState<string | null>(null);
+  const [framesOpen, setFramesOpen] = useState(false);
+  const [zoomMenu, setZoomMenu] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -280,6 +333,10 @@ export function BoardCanvas({
   const past = useRef<El[][]>([]);
   const future = useRef<El[][]>([]);
   const clipboard = useRef<El[]>([]);
+  /** Text put on the system clipboard by our last copy; null if that write failed. */
+  const copiedText = useRef<string | null>(null);
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const lastRightDown = useRef(-1e9);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interRef = useRef<Interaction | null>(null);
   // Magnet target while dragging a connector or endpoint.
@@ -531,24 +588,143 @@ export function BoardCanvas({
     setSelection([]);
   }
 
-  function duplicate(els: El[], offset = 24) {
-    const map = new Map<string, string>();
-    for (const e of els) map.set(e.id, uid(e.kind === "connector" ? "cx" : "el"));
+  /** Copies of `els` moved by (dx, dy) with fresh ids. Lines come along only when
+   * both their ends are copied too; groups inside the copy get a new group id. */
+  function cloneSet(els: El[], dx: number, dy: number): El[] {
+    const ids = new Map<string, string>();
+    const groups = new Map<string, string>();
+    for (const e of els) if (isBox(e)) ids.set(e.id, uid());
+    const keep = (ep: ConnectorEl["from"]) => !ep.id || ids.has(ep.id);
+    for (const e of els) if (e.kind === "connector" && keep(e.from) && keep(e.to)) ids.set(e.id, uid("cx"));
     let z = maxZ();
-    const clones: El[] = els.map((e) => {
+    const out: El[] = [];
+    for (const e of els) {
+      const id = ids.get(e.id);
+      if (!id) continue;
       if (e.kind === "connector") {
-        return {
+        out.push({
           ...e,
-          id: map.get(e.id)!,
+          id,
           z: ++z,
-          from: { ...e.from, id: e.from.id && map.get(e.from.id), x: e.from.x + offset, y: e.from.y + offset },
-          to: { ...e.to, id: e.to.id && map.get(e.to.id), x: e.to.x + offset, y: e.to.y + offset },
-        };
+          from: { ...e.from, id: e.from.id && ids.get(e.from.id), x: e.from.x + dx, y: e.from.y + dy },
+          to: { ...e.to, id: e.to.id && ids.get(e.to.id), x: e.to.x + dx, y: e.to.y + dy },
+        });
+        continue;
       }
-      return { ...e, id: map.get(e.id)!, x: e.x + offset, y: e.y + offset, z: e.kind === "frame" ? e.z : ++z };
-    });
+      let groupId = e.groupId;
+      if (groupId) {
+        if (!groups.has(groupId)) groups.set(groupId, uid("grp"));
+        groupId = groups.get(groupId);
+      }
+      out.push({ ...e, id, x: e.x + dx, y: e.y + dy, z: e.kind === "frame" ? e.z : ++z, groupId });
+    }
+    return out;
+  }
+
+  function duplicate(els: El[], offset = 24) {
+    const clones = cloneSet(els, offset, offset);
+    if (!clones.length) return;
     commit([...elRef.current, ...clones]);
     setSelection(clones.map((c) => c.id));
+  }
+
+  /** `ids` plus every other member of the groups they belong to. */
+  function withGroups(ids: string[]): string[] {
+    const gids = new Set<string>();
+    for (const el of elRef.current) if (ids.includes(el.id) && isBox(el) && el.groupId) gids.add(el.groupId);
+    if (!gids.size) return ids;
+    const out = new Set(ids);
+    for (const el of elRef.current) if (isBox(el) && el.groupId && gids.has(el.groupId)) out.add(el.id);
+    return Array.from(out);
+  }
+
+  function selectedEls() {
+    const sel = selRef.current;
+    return elRef.current.filter((x) => sel.includes(x.id));
+  }
+
+  function groupSelection() {
+    const boxes = selectedEls().filter(isBox);
+    if (boxes.length < 2) return;
+    const gid = uid("grp");
+    const ids = new Set(boxes.map((b) => b.id));
+    commit(elRef.current.map((el) => (ids.has(el.id) && isBox(el) ? { ...el, groupId: gid } : el)));
+    flash("Grouped");
+  }
+
+  function ungroupSelection() {
+    const ids = new Set(selRef.current);
+    if (!selectedEls().some((el) => isBox(el) && el.groupId)) return;
+    commit(elRef.current.map((el) => (ids.has(el.id) && isBox(el) && el.groupId ? { ...el, groupId: undefined } : el)));
+    flash("Ungrouped");
+  }
+
+  function toggleLock() {
+    const chosen = selectedEls();
+    if (!chosen.length) return;
+    const lock = !chosen.every((x) => x.locked);
+    update(selRef.current, (el) => ({ ...el, locked: lock }));
+  }
+
+  function bringFront() {
+    let z = maxZ();
+    update(selRef.current, (el) => (el.kind === "frame" ? el : { ...el, z: ++z }));
+  }
+
+  function sendBack() {
+    let z = minZ();
+    update(selRef.current, (el) => (el.kind === "frame" ? { ...el, z: --z } : { ...el, z: Math.max(1, minZ() + 1) }));
+  }
+
+  function zoomToSelection() {
+    const chosen = selectedEls();
+    fitTo(chosen.length ? chosen : elRef.current);
+  }
+
+  function zoomTo(z: number) {
+    zoomAt(z / camRef.current.zoom);
+  }
+
+  /** An empty copy of `src` at (x, y): same kind, size and colours, no text. */
+  function blankCopy(src: BoxEl, x: number, y: number): BoxEl {
+    const twin = { ...src, id: uid(), z: maxZ() + 1, x, y, groupId: undefined, locked: undefined } as BoxEl;
+    if (twin.kind === "sticky" || twin.kind === "shape" || twin.kind === "text") twin.text = "";
+    if (twin.kind === "card") {
+      twin.title = "";
+      twin.body = "";
+    }
+    return twin;
+  }
+
+  function newConnector(from: ConnectorEl["from"], to: ConnectorEl["to"]): ConnectorEl {
+    return { id: uid("cx"), kind: "connector", z: maxZ() + 1, from, to, route: "curve", stroke: INK, width: 2, arrowEnd: true, arrowStart: false };
+  }
+
+  /** Miro's "+" on a side: add the next item on that side and start typing in it.
+   * Stickies get a plain neighbour; shapes and cards get a connected one. */
+  function quickCreate(srcId: string, side: Side) {
+    const src = elRef.current.find((x) => x.id === srcId);
+    if (!src || !isBox(src) || src.kind === "draw" || src.kind === "frame") return;
+    const sticky = src.kind === "sticky";
+    const gap = sticky ? 24 : 96;
+    const [ux, uy] = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] }[side];
+    let x = src.x + ux * (src.w + gap);
+    let y = src.y + uy * (src.h + gap);
+    const others = elRef.current.filter((e): e is BoxEl => isBox(e) && e.kind !== "frame" && e.kind !== "draw");
+    // Step sideways past anything already in that spot.
+    for (let i = 0; i < 12 && others.some((o) => intersects(o, { x: x + 1, y: y + 1, w: src.w - 2, h: src.h - 2 })); i++) {
+      if (ux) y += src.h + gap;
+      else x += src.w + gap;
+    }
+    const twin = blankCopy(src, x, y);
+    const add: El[] = [twin];
+    if (!sticky) {
+      const back = OPPOSITE[side];
+      add.push(newConnector({ id: src.id, side, ...anchor(src, side) }, { id: twin.id, side: back, ...anchor(twin, back) }));
+    }
+    commit([...elRef.current, ...add]);
+    setSelection([twin.id]);
+    setEditingId(twin.id);
   }
 
   // ------------------------------------------------------------------ keyboard
@@ -571,11 +747,20 @@ export function BoardCanvas({
         e.preventDefault();
         redo();
       } else if (mod && k === "c") {
-        clipboard.current = elRef.current.filter((x) => selRef.current.includes(x.id));
-        setHasClip(clipboard.current.length > 0);
-        if (clipboard.current.length) flash(`Copied ${clipboard.current.length}`);
-      } else if (mod && k === "v") {
-        if (clipboard.current.length) duplicate(clipboard.current, 40);
+        if (selRef.current.length) copySelected();
+      } else if (mod && k === "g") {
+        e.preventDefault();
+        if (e.shiftKey) ungroupSelection();
+        else groupSelection();
+      } else if (mod && e.shiftKey && k === "l") {
+        e.preventDefault();
+        toggleLock();
+      } else if (k === "pageup" && selRef.current.length) {
+        e.preventDefault();
+        bringFront();
+      } else if (k === "pagedown" && selRef.current.length) {
+        e.preventDefault();
+        sendBack();
       } else if (mod && k === "d") {
         e.preventDefault();
         duplicate(elRef.current.filter((x) => selRef.current.includes(x.id)));
@@ -596,8 +781,14 @@ export function BoardCanvas({
         setMenu(null);
         setLibraryOpen(false);
         setHelpOpen(false);
-      } else if (e.shiftKey && (k === "1" || k === "!")) {
+        setFramesOpen(false);
+        setZoomMenu(false);
+      } else if (e.shiftKey && !mod && e.code === "Digit1") {
         fitTo(elRef.current);
+      } else if (e.shiftKey && !mod && e.code === "Digit2") {
+        zoomToSelection();
+      } else if (e.shiftKey && !mod && e.code === "Digit0") {
+        zoomTo(1);
       } else if (mod && (k === "=" || k === "+")) {
         e.preventDefault();
         zoomAt(1.2);
@@ -630,13 +821,15 @@ export function BoardCanvas({
         }
       } else if (!mod) {
         if (k === "b") setLibraryOpen((v) => !v);
-        const map: Record<string, Tool> = { v: "select", h: "hand", n: "sticky", s: "shape", r: "shape", t: "text", f: "frame", l: "connector", p: "pen" };
+        const map: Record<string, Tool> = { v: "select", h: "hand", n: "sticky", s: "shape", r: "shape", t: "text", f: "frame", l: "connector", p: "pen", e: "eraser" };
         if (map[k]) {
           setTool(map[k]);
+          if (map[k] !== "select" && map[k] !== "hand") setSelection([]);
           if (k === "r") setShapeKind("rect");
         }
         if (k === "o") {
           setTool("shape");
+          setSelection([]);
           setShapeKind("ellipse");
         }
       }
@@ -644,14 +837,31 @@ export function BoardCanvas({
     function onKeyUp(e: KeyboardEvent) {
       if (e.code === "Space") setSpaceDown(false);
     }
+    // Paste: our own items when they're what was last copied, otherwise text from other apps.
+    function onPaste(e: ClipboardEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (readOnly) return;
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      const ours = clipboard.current.length > 0 && (!text || copiedText.current === null || text === copiedText.current);
+      if (ours) {
+        e.preventDefault();
+        duplicate(clipboard.current, 40);
+      } else if (text.trim()) {
+        e.preventDefault();
+        pasteText(text);
+      }
+    }
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("paste", onPaste);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("paste", onPaste);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commit, fitTo, zoomAt, update]);
+  }, [commit, fitTo, zoomAt, update, readOnly]);
 
   useEffect(() => {
     rt.sendCursor(null, selection);
@@ -705,10 +915,18 @@ export function BoardCanvas({
     setShapeMenu(false);
     setMenu(null);
     setHelpOpen(false);
-    if (e.button === 2) return;
+    setFramesOpen(false);
+    setZoomMenu(false);
     rootRef.current?.setPointerCapture(e.pointerId);
     const p = toWorld(e.clientX, e.clientY);
 
+    // Right button (or Ctrl+click on a Mac): drag pans, a plain click opens the menu on release.
+    const macCtrlClick = e.button === 0 && e.ctrlKey && /Mac/.test(navigator.platform);
+    if (e.button === 2 || macCtrlClick) {
+      lastRightDown.current = e.timeStamp;
+      setInteraction({ type: "rpan", sx: e.clientX, sy: e.clientY, cam: camRef.current, moved: false });
+      return;
+    }
     if (e.button === 1 || spaceDown || tool === "hand") {
       setInteraction({ type: "pan", sx: e.clientX, sy: e.clientY, cam: camRef.current });
       return;
@@ -718,7 +936,7 @@ export function BoardCanvas({
     if (port) {
       const el = byId.get(port.dataset.owner!) as BoxEl;
       const side = port.dataset.port as Side;
-      setInteraction({ type: "connect", from: { id: el.id, side, ...anchor(el, side) }, cur: p });
+      setInteraction({ type: "connect", from: { id: el.id, side, ...anchor(el, side) }, cur: p, fromPort: true, down: { x: e.clientX, y: e.clientY } });
       return;
     }
     const handle = target.closest("[data-handle]") as HTMLElement | null;
@@ -739,6 +957,10 @@ export function BoardCanvas({
       setInteraction({ type: "draw", points: [[p.x, p.y]] });
       return;
     }
+    if (tool === "eraser") {
+      setInteraction({ type: "erase", hit: inkAt(p) });
+      return;
+    }
     if (tool === "connector") {
       const hit = hitBoxAt(e.clientX, e.clientY);
       setInteraction({
@@ -749,6 +971,7 @@ export function BoardCanvas({
       return;
     }
     if (tool === "sticky" || tool === "shape" || tool === "text" || tool === "frame") {
+      setGhost(null);
       setInteraction({ type: "create", tool, start: p, cur: p });
       return;
     }
@@ -758,12 +981,21 @@ export function BoardCanvas({
     const lineHost = target.closest("[data-line]") as HTMLElement | null;
     const hitId = boxHost?.dataset.box || lineHost?.dataset.line || null;
     if (hitId) {
+      // Clicking any member of a group picks up the whole group.
+      const unit = withGroups([hitId]);
       let ids = selection;
       if (e.shiftKey) {
-        ids = selection.includes(hitId) ? selection.filter((i) => i !== hitId) : [...selection, hitId];
+        ids = selection.includes(hitId) ? selection.filter((i) => !unit.includes(i)) : Array.from(new Set([...selection, ...unit]));
       } else if (!selection.includes(hitId)) {
-        ids = [hitId];
+        ids = unit;
       }
+      // Miro: clicking the item that's already selected starts typing in it.
+      const hitEl = byId.get(hitId);
+      const editOnClick =
+        !readOnly && !e.shiftKey && !e.altKey && selection.length === 1 && selection[0] === hitId && hitEl && !hitEl.locked &&
+        (hitEl.kind === "sticky" || hitEl.kind === "shape" || hitEl.kind === "text" || hitEl.kind === "card")
+          ? hitId
+          : undefined;
       setSelection(ids);
       const movable = ids.map((i) => byId.get(i)).filter((x): x is BoxEl => Boolean(x && isBox(x) && !x.locked));
       if (!movable.length) return;
@@ -772,22 +1004,70 @@ export function BoardCanvas({
       for (const f of movable.filter((m) => m.kind === "frame")) {
         for (const el of elRef.current) if (isBox(el) && el.kind !== "frame" && !el.locked && contains(f, el)) carry.set(el.id, el);
       }
-      setInteraction({ type: "move", start: p, orig: carry, ids: Array.from(carry.keys()), snapshot: elRef.current, lastSend: 0 });
+      if (e.altKey && !readOnly) {
+        // Alt+drag: leave the originals and drag copies (lines between them come too).
+        const before = elRef.current;
+        const inSet = new Set(carry.keys());
+        const lines = before.filter((c) => c.kind === "connector" && c.from.id && c.to.id && inSet.has(c.from.id) && inSet.has(c.to.id));
+        const clones = cloneSet([...carry.values(), ...lines], 0, 0);
+        const boxClones = clones.filter(isBox);
+        const next = [...before, ...clones];
+        elRef.current = next;
+        setElements(next);
+        setSelection(clones.map((c) => c.id));
+        setInteraction({ type: "move", start: p, orig: new Map(boxClones.map((c) => [c.id, c])), ids: boxClones.map((c) => c.id), snapshot: before, lastSend: 0, dupOf: ids });
+        return;
+      }
+      setInteraction({ type: "move", start: p, orig: carry, ids: Array.from(carry.keys()), snapshot: elRef.current, lastSend: 0, editOnClick });
       return;
     }
     setInteraction({ type: "marquee", start: p, cur: p, additive: e.shiftKey ? selection : [] });
     if (!e.shiftKey) setSelection([]);
   }
 
+  /** Ink strokes passing within a few screen px of `p`. */
+  function inkAt(p: { x: number; y: number }): string[] {
+    const tol = 8 / camRef.current.zoom;
+    const out: string[] = [];
+    for (const el of elRef.current) {
+      if (el.kind !== "draw" || el.locked) continue;
+      const r = tol + el.width / 2;
+      if (p.x < el.x - r || p.x > el.x + el.w + r || p.y < el.y - r || p.y > el.y + el.h + r) continue;
+      const pts = el.points;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[Math.min(i + 1, pts.length - 1)];
+        if (distToSegment(p.x - el.x, p.y - el.y, a[0], a[1], b[0], b[1]) <= r) {
+          out.push(el.id);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
   function onPointerMove(e: React.PointerEvent) {
     const p = toWorld(e.clientX, e.clientY);
+    lastPointer.current = p;
     rt.sendCursor(p);
     const it = interRef.current;
-    if (!it) return;
+    if (!it) {
+      if (tool === "sticky") setGhost(p);
+      else if (ghost) setGhost(null);
+      return;
+    }
     switch (it.type) {
       case "pan":
         setCamera({ ...it.cam, x: it.cam.x + e.clientX - it.sx, y: it.cam.y + e.clientY - it.sy });
         break;
+      case "rpan": {
+        const dx = e.clientX - it.sx;
+        const dy = e.clientY - it.sy;
+        if (!it.moved && Math.hypot(dx, dy) < 4) break;
+        it.moved = true;
+        setCamera({ ...it.cam, x: it.cam.x + dx, y: it.cam.y + dy });
+        break;
+      }
       case "move": {
         let dx = p.x - it.start.x;
         let dy = p.y - it.start.y;
@@ -873,12 +1153,24 @@ export function BoardCanvas({
       case "marquee":
         setInteraction({ ...it, cur: p });
         break;
-      case "create":
-        setInteraction({ ...it, cur: p });
+      case "create": {
+        let cur = p;
+        if (e.shiftKey) {
+          // Shift keeps shapes and frames square.
+          const d = Math.max(Math.abs(p.x - it.start.x), Math.abs(p.y - it.start.y));
+          cur = { x: it.start.x + (p.x < it.start.x ? -d : d), y: it.start.y + (p.y < it.start.y ? -d : d) };
+        }
+        setInteraction({ ...it, cur });
         break;
+      }
       case "draw":
         setInteraction({ type: "draw", points: [...it.points, [p.x, p.y]] });
         break;
+      case "erase": {
+        const add = inkAt(p).filter((id) => !it.hit.includes(id));
+        if (add.length) setInteraction({ type: "erase", hit: [...it.hit, ...add] });
+        break;
+      }
     }
   }
 
@@ -893,9 +1185,20 @@ export function BoardCanvas({
     if (!it) return;
     const p = toWorld(e.clientX, e.clientY);
 
-    if (it.type === "move") {
-      const movedAny = Math.abs(p.x - it.start.x) > 0.5 || Math.abs(p.y - it.start.y) > 0.5;
-      if (movedAny) commit(elRef.current, { from: it.snapshot });
+    if (it.type === "rpan") {
+      if (!it.moved) openMenuAt(e.clientX, e.clientY);
+    } else if (it.type === "move") {
+      // Under ~3 screen px counts as a click, not a drag.
+      const movedAny = Math.hypot(p.x - it.start.x, p.y - it.start.y) * camRef.current.zoom >= 3;
+      if (movedAny) {
+        commit(elRef.current, { from: it.snapshot });
+      } else {
+        const back = it.dupOf ? it.snapshot : elRef.current.map((el) => it.orig.get(el.id) ?? el);
+        elRef.current = back;
+        setElements(back);
+        if (it.dupOf) setSelection(it.dupOf);
+        else if (it.editOnClick) setEditingId(it.editOnClick);
+      }
     } else if (it.type === "resize") {
       commit(elRef.current, { from: it.snapshot });
     } else if (it.type === "endpoint") {
@@ -922,10 +1225,15 @@ export function BoardCanvas({
             return el.kind === "frame" ? contains(r, el) : intersects(r, el);
           })
           .map((el) => el.id);
-        setSelection(Array.from(new Set([...it.additive, ...hits])));
+        setSelection(withGroups(Array.from(new Set([...it.additive, ...hits]))));
       }
     } else if (it.type === "connect") {
       const src = it.from.id ? (byId.get(it.from.id) as BoxEl | undefined) : undefined;
+      if (it.fromPort && it.down && Math.hypot(e.clientX - it.down.x, e.clientY - it.down.y) < 5) {
+        // A click (not a drag) on a "+" dot adds the next item on that side.
+        if (it.from.id && it.from.side) quickCreate(it.from.id, it.from.side);
+        return;
+      }
       const dist = Math.hypot(p.x - it.from.x, p.y - it.from.y);
       if (dist < 12 && !magnet) return;
       const additions: El[] = [];
@@ -934,12 +1242,7 @@ export function BoardCanvas({
         toEp = { id: magnet.id, side: magnet.side, x: magnet.x, y: magnet.y };
       } else if (src && tool !== "connector") {
         // Miro-style: dragging a port into empty space creates a connected twin.
-        const twin = { ...src, id: uid(), z: maxZ() + 1, x: p.x - src.w / 2, y: p.y - src.h / 2 } as BoxEl;
-        if (twin.kind === "sticky" || twin.kind === "shape" || twin.kind === "text") (twin as { text: string }).text = "";
-        if (twin.kind === "card") {
-          twin.title = "";
-          twin.body = "";
-        }
+        const twin = blankCopy(src, p.x - src.w / 2, p.y - src.h / 2);
         additions.push(twin);
         toEp = { id: twin.id, x: p.x, y: p.y };
         setTimeout(() => {
@@ -947,18 +1250,7 @@ export function BoardCanvas({
           setEditingId(twin.id);
         }, 0);
       }
-      const cx: ConnectorEl = {
-        id: uid("cx"),
-        kind: "connector",
-        z: maxZ() + 1,
-        from: it.from,
-        to: toEp,
-        route: "curve",
-        stroke: INK,
-        width: 2,
-        arrowEnd: true,
-        arrowStart: false,
-      };
+      const cx = newConnector(it.from, toEp);
       commit([...elRef.current, ...additions, cx]);
       if (!additions.length) setSelection([cx.id]);
     } else if (it.type === "create") {
@@ -982,6 +1274,7 @@ export function BoardCanvas({
       const ys = it.points.map((q) => q[1]);
       const x = Math.min(...xs);
       const y = Math.min(...ys);
+      const marker = penMode === "highlighter";
       const el: El = {
         id: uid("ink"),
         kind: "draw",
@@ -992,9 +1285,15 @@ export function BoardCanvas({
         z: maxZ() + 1,
         points: it.points.map(([px, py]) => [Math.round((px - x) * 10) / 10, Math.round((py - y) * 10) / 10]),
         stroke: penColor,
-        width: penWidth,
+        width: marker ? penWidth * HIGHLIGHT.scale : penWidth,
+        opacity: marker ? HIGHLIGHT.opacity : undefined,
       };
       commit([...elRef.current, el]);
+    } else if (it.type === "erase") {
+      if (it.hit.length) {
+        const gone = new Set(it.hit);
+        commit(elRef.current.filter((x) => !gone.has(x.id)));
+      }
     }
   }
 
@@ -1018,19 +1317,21 @@ export function BoardCanvas({
       case "connect":
         setTool("connector");
         break;
-      case "front": {
-        let z = maxZ();
-        update(sel, (el) => (el.kind === "frame" ? el : { ...el, z: ++z }));
+      case "front":
+        bringFront();
         break;
-      }
       case "back":
-        update(sel, (el) => (el.kind === "frame" ? el : { ...el, z: Math.max(1, minZ() + 1) }));
+        sendBack();
         break;
-      case "lock": {
-        const lock = !chosen.every((x) => x.locked);
-        update(sel, (el) => ({ ...el, locked: lock }));
+      case "lock":
+        toggleLock();
         break;
-      }
+      case "group":
+        groupSelection();
+        break;
+      case "ungroup":
+        ungroupSelection();
+        break;
       case "delete":
         deleteSelection();
         break;
@@ -1053,9 +1354,33 @@ export function BoardCanvas({
   }
 
   function copySelected() {
-    clipboard.current = elRef.current.filter((x) => selRef.current.includes(x.id));
-    setHasClip(clipboard.current.length > 0);
-    flash(`Copied ${clipboard.current.length}`);
+    const chosen = selectedEls();
+    clipboard.current = chosen;
+    setHasClip(chosen.length > 0);
+    if (!chosen.length) return;
+    // Mirror the text to the system clipboard so it pastes into other apps too.
+    const text = chosen.map(textOf).filter(Boolean).join("\n") || `${chosen.length} whiteboard item${chosen.length > 1 ? "s" : ""}`;
+    copiedText.current = text;
+    navigator.clipboard?.writeText(text).catch(() => {
+      copiedText.current = null;
+    });
+    flash(`Copied ${chosen.length}`);
+  }
+
+  /** Text pasted from another app becomes a text item where the mouse last was. */
+  function pasteText(raw: string) {
+    const text = raw.replace(/\r\n?/g, "\n").trim();
+    const at = lastPointer.current || viewCenter();
+    const lines = text.split("\n");
+    const fontSize = 18;
+    const w = clamp(Math.max(...lines.map((l) => l.length)) * fontSize * 0.56 + 8, 80, 640);
+    const perLine = Math.max(1, Math.floor(w / (fontSize * 0.56)));
+    const rows = lines.reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0);
+    const h = Math.max(32, rows * fontSize * 1.3 + 8);
+    const el: BoxEl = { id: uid(), kind: "text", x: at.x - w / 2, y: at.y - h / 2, w, h, z: maxZ() + 1, text, color: INK, fontSize };
+    commit([...elRef.current, el]);
+    setSelection([el.id]);
+    setTool("select");
   }
 
   function saveLabel(id: string, label: string) {
@@ -1077,15 +1402,21 @@ export function BoardCanvas({
     setTool("select");
   }
 
+  function openMenuAt(clientX: number, clientY: number) {
+    if (hostAt(clientX, clientY, "[data-ui]")) return;
+    const host = hostAt(clientX, clientY, "[data-box], [data-line]");
+    const id = host?.dataset.box || host?.dataset.line;
+    if (id && !selRef.current.includes(id)) setSelection(withGroups([id]));
+    const r = rootRef.current!.getBoundingClientRect();
+    setMenu({ x: clientX - r.left, y: clientY - r.top, world: toWorld(clientX, clientY), onElement: Boolean(id) });
+  }
+
   function onContextMenu(e: React.MouseEvent) {
     e.preventDefault();
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-ui]")) return;
-    const host = (target.closest("[data-box]") || target.closest("[data-line]")) as HTMLElement | null;
-    const id = host?.dataset.box || host?.dataset.line;
-    if (id && !selRef.current.includes(id)) setSelection([id]);
-    const r = rootRef.current!.getBoundingClientRect();
-    setMenu({ x: e.clientX - r.left, y: e.clientY - r.top, world: toWorld(e.clientX, e.clientY), onElement: Boolean(id) });
+    // Mouse right-clicks are handled on pointer release (so right-drag can pan);
+    // this only opens the menu for the keyboard's menu key.
+    if (e.timeStamp - lastRightDown.current < 1500) return;
+    openMenuAt(e.clientX, e.clientY);
   }
 
   function pasteAt(world: { x: number; y: number }) {
@@ -1150,6 +1481,14 @@ export function BoardCanvas({
   const selected = selection.map((id) => byId.get(id)).filter((x): x is El => Boolean(x));
   const selBounds = selected.length ? boundsOf(selected, byId) : null;
   const single = selected.length === 1 ? selected[0] : null;
+  const erasing = new Set(interaction?.type === "erase" ? interaction.hit : []);
+  const grouping = (() => {
+    const boxes = selected.filter(isBox);
+    const gids = new Set(boxes.map((b) => b.groupId));
+    const grouped = boxes.some((b) => b.groupId);
+    const oneGroup = boxes.length > 1 && gids.size === 1 && grouped;
+    return { grouped, canGroup: boxes.length > 1 && !oneGroup };
+  })();
   const labelEdit = (() => {
     const cx = labelEditId ? byId.get(labelEditId) : undefined;
     if (!cx || cx.kind !== "connector") return null;
@@ -1190,19 +1529,24 @@ export function BoardCanvas({
       onPointerLeave: () => setHoverId((h) => (h === el.id ? null : h)),
       style: { left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z } as React.CSSProperties,
     };
+    const fmt = fmtStyle(fmtOf(el));
     let inner: React.ReactNode = null;
     if (el.kind === "sticky") {
       inner = (
         <div
-          className="flex h-full w-full items-center justify-center p-4 text-center whitespace-pre-wrap break-words leading-snug"
+          className="flex h-full w-full items-center p-4 leading-snug"
           style={{
             background: el.color,
             color: readableOn(el.color),
-            fontSize: stickyFont(el.text),
+            fontSize: el.fontSize ?? stickyFont(el.text),
             boxShadow: "0 1px 2px rgba(0,0,0,.08), 0 10px 14px -10px rgba(0,0,0,.30)",
           }}
         >
-          {!editing && el.text}
+          {!editing && (
+            <div className="max-h-full w-full overflow-hidden whitespace-pre-wrap break-words" style={{ ...fmt, textAlign: fmt.textAlign || "center" }}>
+              {el.text}
+            </div>
+          )}
         </div>
       );
     } else if (el.kind === "shape") {
@@ -1213,10 +1557,12 @@ export function BoardCanvas({
           </svg>
           {!editing && (
             <div
-              className="absolute inset-0 grid place-items-center px-4 text-center leading-snug whitespace-pre-wrap break-words"
+              className="absolute inset-0 flex items-center px-4 leading-snug"
               style={{ color: el.textColor, fontSize: el.fontSize, paddingTop: el.shape === "cylinder" ? 16 : undefined }}
             >
-              {el.text}
+              <div className="w-full whitespace-pre-wrap break-words" style={{ ...fmt, textAlign: fmt.textAlign || "center" }}>
+                {el.text}
+              </div>
             </div>
           )}
         </>
@@ -1225,7 +1571,7 @@ export function BoardCanvas({
       inner = !editing ? (
         <div
           className="whitespace-pre-wrap break-words leading-tight"
-          style={{ color: el.color, fontSize: el.fontSize, fontWeight: el.bold ? 600 : 400 }}
+          style={{ color: el.color, fontSize: el.fontSize, ...fmt }}
         >
           {el.text || <span className="text-slate-400">Text</span>}
         </div>
@@ -1305,8 +1651,14 @@ export function BoardCanvas({
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) (e.target as HTMLTextAreaElement).blur();
               e.stopPropagation();
+              if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) (e.target as HTMLTextAreaElement).blur();
+              else if (e.key === "Tab" && el.kind === "sticky") {
+                // Tab / Shift+Tab: save this sticky and start the next one to the right / below.
+                e.preventDefault();
+                (e.target as HTMLTextAreaElement).blur();
+                quickCreate(el.id, e.shiftKey ? "bottom" : "right");
+              }
             }}
             className={clsx(
               "resize-none bg-transparent outline-none caret-[#4262FF]",
@@ -1314,7 +1666,9 @@ export function BoardCanvas({
             )}
             style={{
               outline: "none",
-              fontSize: el.kind === "sticky" ? stickyFont(textOf(el)) : el.kind === "shape" || el.kind === "text" ? el.fontSize : undefined,
+              ...fmt,
+              textAlign: fmt.textAlign || (el.kind === "text" ? "left" : "center"),
+              fontSize: el.kind === "sticky" ? (el.fontSize ?? stickyFont(textOf(el))) : el.kind === "shape" || el.kind === "text" ? el.fontSize : undefined,
               color: el.kind === "text" ? el.color : el.kind === "shape" ? el.textColor : el.kind === "sticky" ? readableOn(el.color) : INK,
             }}
           />
@@ -1333,7 +1687,15 @@ export function BoardCanvas({
 
   // ------------------------------------------------------------------ render
   const cursor =
-    interaction?.type === "pan" ? "grabbing" : spaceDown || tool === "hand" ? "grab" : tool === "select" ? "default" : "crosshair";
+    interaction?.type === "pan" || (interaction?.type === "rpan" && interaction.moved)
+      ? "grabbing"
+      : spaceDown || tool === "hand"
+        ? "grab"
+        : tool === "select"
+          ? "default"
+          : tool === "sticky"
+            ? "none"
+            : "crosshair";
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl bg-[#F2F2F2] text-[#1C1C1E] select-none">
@@ -1349,7 +1711,10 @@ export function BoardCanvas({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={() => rt.sendCursor(null)}
+        onPointerLeave={() => {
+          rt.sendCursor(null);
+          setGhost(null);
+        }}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
         onDragOver={(e) => {
@@ -1419,6 +1784,7 @@ export function BoardCanvas({
                   fill="none"
                   stroke={d.stroke}
                   strokeWidth={d.width}
+                  strokeOpacity={(d.opacity ?? 1) * (erasing.has(d.id) ? 0.2 : 1)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   style={{ pointerEvents: "stroke" }}
@@ -1431,7 +1797,19 @@ export function BoardCanvas({
               const sel = selection.includes(c.id);
               return (
                 <g key={c.id}>
-                  <path d={pth.d} data-line={c.id} fill="none" stroke="transparent" strokeWidth={14 / camera.zoom} style={{ pointerEvents: "stroke", cursor: "pointer" }} />
+                  {hoverLine === c.id && !sel && !interaction && (
+                    <path d={pth.d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.35} strokeWidth={c.width + 6 / camera.zoom} strokeLinecap="round" style={{ pointerEvents: "none" }} />
+                  )}
+                  <path
+                    d={pth.d}
+                    data-line={c.id}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={14 / camera.zoom}
+                    style={{ pointerEvents: "stroke", cursor: "pointer" }}
+                    onPointerEnter={() => setHoverLine(c.id)}
+                    onPointerLeave={() => setHoverLine((h) => (h === c.id ? null : h))}
+                  />
                   <path
                     d={pth.d}
                     fill="none"
@@ -1464,12 +1842,18 @@ export function BoardCanvas({
               />
             )}
             {interaction?.type === "draw" && (
-              <polyline points={interaction.points.map((q) => q.join(",")).join(" ")} fill="none" stroke={penColor} strokeWidth={penWidth} strokeLinecap="round" strokeLinejoin="round" />
+              <polyline points={interaction.points.map((q) => q.join(",")).join(" ")} fill="none" stroke={penColor} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
             )}
           </svg>
 
           <div className="absolute left-0 top-0" style={{ zIndex: 2 }}>
             {boxes.map(renderBox)}
+            {ghost && tool === "sticky" && !interaction && (
+              <div
+                className="pointer-events-none absolute rounded-[2px] opacity-60"
+                style={{ left: ghost.x - 90, top: ghost.y - 90, width: 180, height: 180, background: stickyColor, zIndex: 1e6, boxShadow: "0 10px 14px -10px rgba(0,0,0,.30)" }}
+              />
+            )}
           </div>
         </div>
 
@@ -1602,7 +1986,7 @@ export function BoardCanvas({
                   data-port={side}
                   data-owner={el.id}
                   onPointerEnter={() => setHoverId(el.id)}
-                  title="Drag to connect, or drag into empty space to add a connected copy"
+                  title="Click to add the next item here · drag to connect"
                   className="group pointer-events-auto absolute grid h-6 w-6 cursor-crosshair place-items-center"
                   style={{ left: s.x + d[0] - 12, top: s.y + d[1] - 12 }}
                 >
@@ -1688,6 +2072,44 @@ export function BoardCanvas({
         <button type="button" onClick={exportJson} className={clsx(ICON_BTN, "h-9 w-9")} title="Export board (.json)" aria-label="Export board">
           <Download className="h-[18px] w-[18px]" />
         </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setFramesOpen((v) => !v)}
+            aria-pressed={framesOpen}
+            className={clsx(ICON_BTN, "h-9 w-auto gap-1 px-2", framesOpen && ACTIVE_BTN)}
+            title="Frames"
+            aria-label="Frames"
+          >
+            <span className="flex items-center gap-1">
+              <FrameIcon className="h-[18px] w-[18px]" />
+              <span className="text-[13px] tabular-nums">{frames.length}</span>
+            </span>
+          </button>
+          {framesOpen && (
+            <div data-scrollable className={clsx("absolute left-0 top-11 max-h-[60vh] w-64 overflow-y-auto p-1.5", POPOVER)}>
+              <p className="px-2 pb-1 pt-1 text-[12px] font-semibold text-[#656B81]">Frames</p>
+              {frames.length === 0 && <p className="px-2 pb-2 text-[13px] text-[#656B81]">No frames yet. Press F and drag on the board to add one.</p>}
+              {[...frames]
+                .sort((a, b) => a.y - b.y || a.x - b.x)
+                .map((f, i) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      setFramesOpen(false);
+                      setSelection([f.id]);
+                      fitTo([f]);
+                    }}
+                    className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] hover:bg-[#F1F2F5]"
+                  >
+                    <span className="w-5 text-right text-[12px] tabular-nums text-[#9A9DAA]">{i + 1}</span>
+                    <span className="truncate">{f.title || "Frame"}</span>
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Top-right: collaborators + share */}
@@ -1745,19 +2167,21 @@ export function BoardCanvas({
               ["frame", FrameIcon, "Frame", "F"],
             ] as [Tool, LucideIcon, string, string][]
           ).map(([t, Icon, label, key]) => {
-            const flyout = (t === "sticky" && tool === "sticky") || (t === "shape" && shapeMenu) || (t === "pen" && tool === "pen");
+            const flyout = (t === "sticky" && tool === "sticky") || (t === "shape" && shapeMenu) || (t === "pen" && (tool === "pen" || tool === "eraser"));
+            const active = tool === t || (t === "pen" && tool === "eraser");
             return (
               <div key={t} className="group relative">
                 <button
                   type="button"
                   aria-label={`${label} (${key})`}
-                  aria-pressed={tool === t}
+                  aria-pressed={active}
                   onClick={() => {
                     setTool(t);
+                    if (t !== "select" && t !== "hand") setSelection([]);
                     setLibraryOpen(false);
                     setShapeMenu(t === "shape" ? !shapeMenu || tool !== "shape" : false);
                   }}
-                  className={clsx(ICON_BTN, tool === t && ACTIVE_BTN)}
+                  className={clsx(ICON_BTN, active && ACTIVE_BTN)}
                 >
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
                 </button>
@@ -1808,7 +2232,36 @@ export function BoardCanvas({
                 )}
                 {t === "pen" && flyout && (
                   <div className={clsx("absolute left-[52px] top-0 w-[184px] p-3", POPOVER)}>
-                    <p className="mb-2 text-[12px] font-semibold text-[#656B81]">Pen</p>
+                    <div className="mb-3 grid grid-cols-3 gap-1">
+                      {(
+                        [
+                          ["pen", Pen, "Pen"],
+                          ["highlighter", Highlighter, "Highlighter"],
+                          ["eraser", Eraser, "Eraser (E)"],
+                        ] as const
+                      ).map(([m, Icon, label]) => {
+                        const on = m === "eraser" ? tool === "eraser" : tool === "pen" && penMode === m;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            title={label}
+                            aria-label={label}
+                            aria-pressed={on}
+                            onClick={() => {
+                              if (m === "eraser") setTool("eraser");
+                              else {
+                                setPenMode(m);
+                                setTool("pen");
+                              }
+                            }}
+                            className={clsx("grid h-9 place-items-center rounded-md", on ? ACTIVE_BTN : "text-[#1C1C1E] hover:bg-[#F1F2F5]")}
+                          >
+                            <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                          </button>
+                        );
+                      })}
+                    </div>
                     <div className="grid grid-cols-4 gap-2">
                       {PEN_COLORS.map((c) => (
                         <button
@@ -1830,7 +2283,14 @@ export function BoardCanvas({
                           className={clsx("grid h-9 flex-1 place-items-center rounded-md", penWidth === w ? ACTIVE_BTN : "hover:bg-[#F1F2F5]")}
                           aria-label={`Thickness ${w}`}
                         >
-                          <span className="w-8 rounded-full" style={{ height: w, background: penColor === "#FFFFFF" ? "#C3C6D4" : penColor }} />
+                          <span
+                            className="w-8 rounded-full"
+                            style={{
+                              height: penMode === "highlighter" ? Math.min(14, w * 2.5) : w,
+                              background: penColor === "#FFFFFF" ? "#C3C6D4" : penColor,
+                              opacity: penMode === "highlighter" ? HIGHLIGHT.opacity + 0.2 : 1,
+                            }}
+                          />
                         </button>
                       ))}
                     </div>
@@ -1979,10 +2439,12 @@ export function BoardCanvas({
                 ...(single && single.kind === "connector" && !single.locked ? [["label", single.label ? "Edit line text" : "Add text to line", "Enter"]] : []),
                 ["duplicate", "Duplicate", "Ctrl+D"],
                 ["copy", "Copy", "Ctrl+C"],
+                ...(grouping.canGroup ? [["group", "Group", "Ctrl+G"]] : []),
+                ...(grouping.grouped ? [["ungroup", "Ungroup", "Ctrl+Shift+G"]] : []),
                 ["connect", "Connect from here", "L"],
-                ["front", "Bring to front", ""],
-                ["back", "Send to back", ""],
-                ["lock", selected.every((x) => x.locked) ? "Unlock" : "Lock", ""],
+                ["front", "Bring to front", "PgUp"],
+                ["back", "Send to back", "PgDn"],
+                ["lock", selected.every((x) => x.locked) ? "Unlock" : "Lock", "Ctrl+Shift+L"],
                 ["delete", "Delete", "Del"],
               ] as [MenuAction, string, string][])
             : ([
@@ -2032,14 +2494,11 @@ export function BoardCanvas({
           containerH={view.h}
           selected={selected}
           onUpdate={(fn) => update(selection, fn)}
-          onFront={() => {
-            let z = maxZ();
-            update(selection, (el) => (el.kind === "frame" ? el : { ...el, z: ++z }));
-          }}
-          onBack={() => {
-            let z = minZ();
-            update(selection, (el) => (el.kind === "frame" ? { ...el, z: --z } : { ...el, z: Math.max(1, minZ() + 1) }));
-          }}
+          onFront={bringFront}
+          onBack={sendBack}
+          grouping={grouping}
+          onGroup={groupSelection}
+          onUngroup={ungroupSelection}
           onDuplicate={() => duplicate(selected)}
           onEdit={
             single && isBox(single) && single.kind !== "draw" && !single.locked
@@ -2090,9 +2549,45 @@ export function BoardCanvas({
           <button type="button" onClick={() => zoomAt(1 / 1.2)} className={clsx(ICON_BTN, "h-8 w-8")} title="Zoom out (Ctrl −)" aria-label="Zoom out">
             <Minus className="h-[18px] w-[18px]" strokeWidth={1.75} />
           </button>
-          <button type="button" onClick={() => setCamera((c) => ({ ...c, zoom: 1 }))} className="h-8 w-12 rounded-md text-center text-[13px] tabular-nums text-[#1C1C1E] hover:bg-[#F1F2F5]" title="Reset to 100%">
-            {Math.round(camera.zoom * 100)}%
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setZoomMenu((v) => !v)}
+              aria-pressed={zoomMenu}
+              className={clsx("h-8 w-12 rounded-md text-center text-[13px] tabular-nums text-[#1C1C1E] hover:bg-[#F1F2F5]", zoomMenu && "bg-[#E6EAFF] text-[#4262FF]")}
+              title="Zoom options"
+            >
+              {Math.round(camera.zoom * 100)}%
+            </button>
+            {zoomMenu && (
+              <div className={clsx("absolute bottom-11 left-1/2 w-52 -translate-x-1/2 p-1.5 text-[14px]", POPOVER)}>
+                {(
+                  [
+                    ["Zoom in", "Ctrl +", () => zoomAt(1.2)],
+                    ["Zoom out", "Ctrl −", () => zoomAt(1 / 1.2)],
+                    ["Zoom to fit", "Shift+1", () => fitTo(elements)],
+                    ["Zoom to selection", "Shift+2", () => fitTo(selected.length ? selected : elements)],
+                    ["50%", "", () => zoomAt(0.5 / camera.zoom)],
+                    ["100%", "Shift+0", () => zoomAt(1 / camera.zoom)],
+                    ["200%", "", () => zoomAt(2 / camera.zoom)],
+                  ] as [string, string, () => void][]
+                ).map(([label, hint, fn]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      setZoomMenu(false);
+                      fn();
+                    }}
+                    className={clsx("flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left hover:bg-[#F1F2F5]", label === "50%" && "mt-1 border-t border-[#E9EAEF]")}
+                  >
+                    {label}
+                    <span className="text-[12px] text-[#9A9DAA]">{hint}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button type="button" onClick={() => zoomAt(1.2)} className={clsx(ICON_BTN, "h-8 w-8")} title="Zoom in (Ctrl +)" aria-label="Zoom in">
             <Plus className="h-[18px] w-[18px]" strokeWidth={1.75} />
           </button>
@@ -2207,7 +2702,13 @@ function ContextBar({
   onDelete,
   onAlign,
   onEdit,
+  grouping,
+  onGroup,
+  onUngroup,
 }: {
+  grouping: { grouped: boolean; canGroup: boolean };
+  onGroup: () => void;
+  onUngroup: () => void;
   x: number;
   y: number;
   below: number;
@@ -2222,7 +2723,7 @@ function ContextBar({
   onAlign: (m: "left" | "hcenter" | "top" | "right") => void;
   onEdit?: () => void;
 }) {
-  type Pop = "color" | "stroke" | "textColor" | "shape" | "size" | "route" | "align" | "more";
+  type Pop = "color" | "stroke" | "textColor" | "shape" | "size" | "route" | "align" | "more" | "textAlign";
   const [pop, setPop] = useState<Pop | null>(null);
   const kinds = new Set(selected.map((s) => s.kind));
   const only = kinds.size === 1 ? selected[0] : null;
@@ -2257,6 +2758,14 @@ function ContextBar({
     />
   );
   const fontSize = only && (only.kind === "shape" || only.kind === "text") ? only.fontSize : null;
+  const textual = only && (only.kind === "sticky" || only.kind === "shape" || only.kind === "text") ? only : null;
+  const fmt = textual ? fmtOf(textual) : {};
+  const setFmt = (patch: TextFmt) =>
+    onUpdate((el) =>
+      el.kind === "sticky" || el.kind === "shape" || el.kind === "text"
+        ? ({ ...el, fmt: { ...fmtOf(el), ...patch }, ...(el.kind === "text" ? { bold: undefined } : {}) } as El)
+        : el
+    );
 
   return (
     <div
@@ -2269,6 +2778,36 @@ function ContextBar({
       {only?.kind === "sticky" && (
         <Trigger open={pop === "color"} onToggle={() => toggle("color")} popCls={popCls} title="Sticky colour" popover={<ColorGrid square colors={STICKY_COLORS} value={only.color} onPick={(c) => onUpdate((el) => (el.kind === "sticky" ? { ...el, color: c } : el))} />}>
           <span className="block h-5 w-5 rounded-[2px] shadow-[0_1px_2px_rgba(0,0,0,.25)]" style={{ background: only.color }} />
+        </Trigger>
+      )}
+      {only?.kind === "sticky" && (
+        <Trigger
+          open={pop === "size"}
+          onToggle={() => toggle("size")}
+          popCls={popCls}
+          title="Font size"
+          popover={
+            <div className="-m-1.5 flex w-20 flex-col">
+              {[undefined, ...STICKY_SIZES].map((n) => (
+                <button
+                  key={n ?? "auto"}
+                  type="button"
+                  onClick={() => {
+                    onUpdate((el) => (el.kind === "sticky" ? { ...el, fontSize: n } : el));
+                    setPop(null);
+                  }}
+                  className={clsx("rounded-md px-3 py-1 text-left text-[13px] tabular-nums", n === only.fontSize ? "bg-[#E6EAFF] text-[#4262FF]" : "hover:bg-[#F1F2F5]")}
+                >
+                  {n ?? "Auto"}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          <span className="flex items-center gap-1 px-0.5 text-[13px] tabular-nums">
+            {only.fontSize ?? "Auto"}
+            <ChevronDown className="h-3 w-3 text-[#656B81]" />
+          </span>
         </Trigger>
       )}
       {only?.kind === "shape" && (
@@ -2340,11 +2879,6 @@ function ContextBar({
               <ChevronDown className="h-3 w-3 text-[#656B81]" />
             </span>
           </Trigger>
-          {only?.kind === "text" && (
-            <Btn title="Bold" active={only.bold} onClick={() => onUpdate((el) => (el.kind === "text" ? { ...el, bold: !el.bold } : el))}>
-              <span className="text-[15px] font-bold">B</span>
-            </Btn>
-          )}
           <Trigger
             open={pop === "textColor"}
             onToggle={() => toggle("textColor")}
@@ -2362,6 +2896,58 @@ function ContextBar({
               <span className="text-[15px] font-semibold">A</span>
               <span className="mt-0.5 h-[3px] w-4 rounded-full ring-1 ring-black/10" style={{ background: only?.kind === "text" ? only.color : only?.kind === "shape" ? only.textColor : INK }} />
             </span>
+          </Trigger>
+        </>
+      )}
+      {textual && (
+        <>
+          {sep}
+          <Btn title="Bold (whole item)" active={fmt.bold} onClick={() => setFmt({ bold: !fmt.bold })}>
+            <span className="text-[15px] font-bold">B</span>
+          </Btn>
+          <Btn title="Italic" active={fmt.italic} onClick={() => setFmt({ italic: !fmt.italic })}>
+            <span className="font-serif text-[15px] italic">I</span>
+          </Btn>
+          <Btn title="Underline" active={fmt.underline} onClick={() => setFmt({ underline: !fmt.underline })}>
+            <span className="text-[15px] underline">U</span>
+          </Btn>
+          <Btn title="Strikethrough" active={fmt.strike} onClick={() => setFmt({ strike: !fmt.strike })}>
+            <span className="text-[15px] line-through">S</span>
+          </Btn>
+          <Trigger
+            open={pop === "textAlign"}
+            onToggle={() => toggle("textAlign")}
+            popCls={popCls}
+            title="Text alignment"
+            popover={
+              <div className="-m-1.5 flex gap-0.5">
+                {(
+                  [
+                    ["left", AlignLeft],
+                    ["center", AlignCenter],
+                    ["right", AlignRight],
+                  ] as const
+                ).map(([a, Icon]) => (
+                  <Btn
+                    key={a}
+                    title={`Align ${a}`}
+                    active={(fmt.align || (textual.kind === "text" ? "left" : "center")) === a}
+                    onClick={() => {
+                      setFmt({ align: a });
+                      setPop(null);
+                    }}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </Btn>
+                ))}
+              </div>
+            }
+          >
+            {(() => {
+              const a = fmt.align || (textual.kind === "text" ? "left" : "center");
+              const Icon = a === "left" ? AlignLeft : a === "right" ? AlignRight : AlignCenter;
+              return <Icon className="h-4 w-4" />;
+            })()}
           </Trigger>
         </>
       )}
@@ -2497,6 +3083,11 @@ function ContextBar({
         </Trigger>
       )}
       {(only || selected.length > 1) && sep}
+      {(grouping.canGroup || grouping.grouped) && (
+        <Btn title={grouping.canGroup ? "Group (Ctrl+G)" : "Ungroup (Ctrl+Shift+G)"} onClick={grouping.canGroup ? onGroup : onUngroup}>
+          {grouping.canGroup ? <Group className="h-4 w-4" /> : <Ungroup className="h-4 w-4" />}
+        </Btn>
+      )}
       {onEdit && (
         <Btn title={only?.kind === "connector" ? "Add or edit the line's text" : "Edit text (Enter)"} onClick={onEdit}>
           <Pencil className="h-4 w-4" />
