@@ -175,6 +175,10 @@ code, pre, kbd, .font-mono {
   from { transform: scaleX(0); }
   to { transform: none; }
 }
+@keyframes grow-y {
+  from { transform: scaleY(0); }
+  to { transform: none; }
+}
 @keyframes shimmer {
   from { background-position: -400px 0; }
   to { background-position: 400px 0; }
