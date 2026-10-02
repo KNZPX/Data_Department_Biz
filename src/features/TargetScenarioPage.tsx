@@ -42,6 +42,11 @@ import {
   findIssues,
   fromSnapshot,
   growthPct,
+  setMix,
+  mixOf,
+  MIX_MEMBERS,
+  type MixDim,
+  type MixField,
   applyGrowth,
   maxFor,
   monthsOf,
@@ -101,6 +106,14 @@ const STEPS = [
 ];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const SEGMENTS = ["Thai", "Expat", "Fly-in"] as const;
+/** Levels shown in the Plan tree: network → hospital → CoE / SBU (→ sub-unit). */
+function inTree(n: PlanNode) {
+  return n.level !== "setting" && n.level !== "market";
+}
+function hasTreeKids(plan: Plan, n: PlanNode) {
+  return n.children.some((c) => plan.nodes[c] && inTree(plan.nodes[c]));
+}
+
 const DEPTH: Record<PlanNode["level"], number> = { network: 0, site: 1, coe: 2, sub: 3, setting: 4, market: 5 };
 
 function decimalsFor(step: number) {
@@ -620,6 +633,7 @@ export function TargetScenarioPage() {
   // ---- visible rows ------------------------------------------------------------
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // OPD/IPD and segments are their own view, not levels under a CoE.
     const out: { node: PlanNode; depth: number }[] = [];
     const startIds = siteFilter === "ALL" ? [plan.rootId] : [siteFilter];
     if (q) {
@@ -634,11 +648,12 @@ export function TargetScenarioPage() {
             }
           }
         });
-      for (const id of startIds) walk(plan, id, (n, d) => keep.has(n.id) && out.push({ node: n, depth: d }));
+      for (const id of startIds) walk(plan, id, (n, d) => keep.has(n.id) && inTree(n) && out.push({ node: n, depth: d }));
       return out;
     }
     const visit = (id: string, depth: number) => {
       const n = plan.nodes[id];
+      if (!inTree(n)) return;
       out.push({ node: n, depth });
       if (expanded.has(id)) for (const c of n.children) visit(c, depth + 1);
     };
@@ -892,7 +907,7 @@ export function TargetScenarioPage() {
               [
                 ["plan", t("Plan"), Network],
                 ["coe", t("By CoE / SBU"), Layers],
-                ["segments", t("By segment"), Users],
+                ["segments", t("OPD/IPD & segment"), Users],
                 ["months", t("By month"), CalendarRange],
               ] as const
             ).map(([id, label, Icon]) => (
@@ -924,7 +939,7 @@ export function TargetScenarioPage() {
               </label>
               <div className="hidden items-center gap-1 whitespace-nowrap text-[12.5px] text-slate-500 md:flex">
                 {t("Show down to")}
-                {(["site", "coe", "setting", "market"] as const).map((l) => (
+                {(["site", "coe"] as const).map((l) => (
                   <button key={l} type="button" onClick={() => expandTo(l)} className="rounded-md px-2 py-1 font-medium text-slate-600 hover:bg-slate-100">
                     {t(LEVEL_LABEL[l])}
                   </button>
@@ -932,7 +947,7 @@ export function TargetScenarioPage() {
                 <button type="button" onClick={() => setExpanded(new Set(["PKT"]))} className="grid h-7 w-7 place-items-center rounded-md hover:bg-slate-100" title="Collapse all" aria-label="Collapse all">
                   <ChevronsDownUp className="h-4 w-4" />
                 </button>
-                <button type="button" onClick={() => expandTo("market")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-slate-100" title="Expand all" aria-label="Expand all">
+                <button type="button" onClick={() => expandTo("setting")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-slate-100" title="Expand all" aria-label="Expand all">
                   <ChevronsUpDown className="h-4 w-4" />
                 </button>
               </div>
@@ -1039,7 +1054,7 @@ export function TargetScenarioPage() {
                     >
                       <td className="border-b border-slate-100 py-1.5 pl-4 pr-2">
                         <div className="flex items-center gap-1.5" style={{ paddingLeft: depth * 18 }}>
-                          {n.children.length ? (
+                          {hasTreeKids(plan, n) ? (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1127,6 +1142,16 @@ export function TargetScenarioPage() {
                         />
                       </td>
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                        {n.base26 <= 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => growBy(n.id, 0)}
+                            title={`Type the ${B} full year first — growth is measured from it`}
+                            className="block w-full px-2 text-right tabular-nums text-slate-300 hover:text-slate-500"
+                          >
+                            —
+                          </button>
+                        ) : (
                         <NumberCell
                           value={g}
                           decimals={1}
@@ -1142,6 +1167,7 @@ export function TargetScenarioPage() {
                           }
                           onCommit={(pct) => growBy(n.id, pct)}
                         />
+                        )}
                       </td>
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
                         <NumberCell
@@ -1240,7 +1266,25 @@ export function TargetScenarioPage() {
             </table>
           )}
 
-          {tab === "segments" && <SegmentsView plan={plan} siteFilter={siteFilter} />}
+          {tab === "segments" && (
+            <MixView
+              plan={plan}
+              siteFilter={siteFilter}
+              canEdit={canEdit}
+              onMix={(siteId, dim, member, value, field) => {
+                const n = plan.nodes[siteId];
+                const total = mixOf(plan, siteId, dim, field);
+                if (!Object.values(total).some((x) => x > 0)) {
+                  toast.info(`${n.name} has nothing to split yet`, {
+                    body: field === "target" ? "Give the hospital or its CoE / SBU a target first, then split it here." : `Type ${field === "base26" ? B : B - 1} figures for its CoE / SBU in the Plan tab first, then split them here.`,
+                  });
+                  return;
+                }
+                const what = field === "target" ? `${Y} target` : field === "base26" ? `${B} full year` : `${B - 1} actual`;
+                commit(setMix(plan, siteId, dim, member, value, field), { ...emptyReport(n), label: `${n.name}: ${member} ${what} set to ${fmtU(value, plan.step, unit)} ${unitLabel(unit)}` });
+              }}
+            />
+          )}
           {tab === "months" && <MonthsView plan={plan} node={selected} onPick={setSelectedId} />}
           {tab === "coe" && <CoeView plan={plan} siteFilter={siteFilter} />}
         </div>
@@ -1536,76 +1580,126 @@ function RowMenu({
   );
 }
 
-function SegmentsView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) {
+function MixView({
+  plan,
+  siteFilter,
+  canEdit,
+  onMix,
+}: {
+  plan: Plan;
+  siteFilter: string;
+  canEdit: boolean;
+  onMix: (siteId: string, dim: MixDim, member: string, value: number, field: MixField) => void;
+}) {
   const unit = useContext(UnitContext);
+  const div = unitDiv(unit);
+  const dec = unitDecimals(unit, plan.step);
+  const Y = plan.targetYear;
+  const B = Y - 1;
   const sites = siteFilter === "ALL" ? plan.nodes[plan.rootId].children : [siteFilter];
-  type Cell = { t: number; b: number };
-  const empty = (): Record<string, Cell> => Object.fromEntries(SEGMENTS.map((s) => [s, { t: 0, b: 0 }]));
-  const bySite: Record<string, { seg: Record<string, Cell>; opd: Cell; ipd: Cell }> = {};
-  const total = { seg: empty(), opd: { t: 0, b: 0 }, ipd: { t: 0, b: 0 } };
-  for (const s of sites) {
-    bySite[s] = { seg: empty(), opd: { t: 0, b: 0 }, ipd: { t: 0, b: 0 } };
-    walk(plan, s, (n) => {
-      if (n.level === "market") {
-        bySite[s].seg[n.name].t += n.target;
-        bySite[s].seg[n.name].b += n.base26;
-        total.seg[n.name].t += n.target;
-        total.seg[n.name].b += n.base26;
-      }
-      if (n.level === "setting") {
-        const k = n.name === "OPD" ? "opd" : "ipd";
-        bySite[s][k].t += n.target;
-        bySite[s][k].b += n.base26;
-        total[k].t += n.target;
-        total[k].b += n.base26;
-      }
-    });
-  }
-  const cell = (c: Cell) => (
-    <td className="border-b border-slate-100 px-3 py-2.5 text-right">
-      <div className="tabular-nums text-slate-900">{fmtU(c.t, plan.step, unit)}</div>
-      <div className={clsx("text-[11.5px] tabular-nums", c.t >= c.b ? "text-emerald-600" : "text-rose-600")}>{fmtPct(c.b > 0 ? ((c.t - c.b) / c.b) * 100 : 0)}</div>
-    </td>
-  );
-  const rowsData = [...sites.map((s) => ({ id: s, label: plan.nodes[s].name, d: bySite[s] })), ...(sites.length > 1 ? [{ id: "total", label: "Network", d: total }] : [])];
+  const rowIds = [...sites, ...(sites.length > 1 ? [plan.rootId] : [])];
+  const section = (dim: MixDim, title: string, blurb: string) => {
+    const members = MIX_MEMBERS[dim];
+    return (
+      <section className="mb-6">
+        <h3 className="text-[14px] font-semibold text-slate-900">{title}</h3>
+        <p className="mb-2 text-[12.5px] text-slate-500">{blurb}</p>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[13px]">
+            <thead>
+              <tr className="text-[11.5px] text-slate-500">
+                <th rowSpan={2} className="border-b border-slate-200 px-3 py-2 text-left font-medium">
+                  Hospital
+                </th>
+                {members.map((m) => (
+                  <th key={m} colSpan={2} className="border-b border-l border-slate-200 px-3 pt-2 text-center font-semibold text-slate-700">
+                    {m}
+                  </th>
+                ))}
+                <th rowSpan={2} className="border-b border-l border-slate-200 px-3 py-2 text-right font-medium">
+                  {Y} total
+                </th>
+              </tr>
+              <tr className="text-[11px] text-slate-400">
+                {members.map((m) => (
+                  <Fragment key={m}>
+                    <th className="border-b border-l border-slate-200 px-2 pb-1.5 text-right font-medium">{B} full year</th>
+                    <th className="border-b border-slate-200 px-2 pb-1.5 text-right font-medium">{Y} target</th>
+                  </Fragment>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rowIds.map((id) => {
+                const n = plan.nodes[id];
+                const isNet = id === plan.rootId;
+                const t = mixOf(plan, id, dim, "target");
+                const b = mixOf(plan, id, dim, "base26");
+                const tot = n.target;
+                return (
+                  <tr key={id} className={isNet ? "bg-slate-50 font-semibold" : ""}>
+                    <td className="border-b border-slate-100 px-3 py-2">
+                      <span className="flex items-center gap-2">
+                        {!isNet && <span className="h-2.5 w-2.5 rounded-full" style={{ background: siteColor(id) }} />}
+                        {isNet ? "Network" : n.name}
+                      </span>
+                    </td>
+                    {members.map((m) => {
+                      const g = b[m] > 0 ? ((t[m] - b[m]) / b[m]) * 100 : null;
+                      const share = tot > 0 ? (t[m] / tot) * 100 : 0;
+                      return (
+                        <Fragment key={m}>
+                          <td className="border-b border-l border-slate-100 px-1.5 py-1.5">
+                            {isNet ? (
+                              <span className="block px-2 text-right tabular-nums text-slate-500">{fmtU(b[m], plan.step, unit)}</span>
+                            ) : (
+                              <NumberCell
+                                value={b[m] / div}
+                                decimals={dec}
+                                muted
+                                disabled={!canEdit}
+                                title={`${n.name} ${m}: ${B} full year — the rest of the hospital's ${B} is shared by the others`}
+                                onCommit={(v) => onMix(id, dim, m, v * div, "base26")}
+                              />
+                            )}
+                          </td>
+                          <td className="border-b border-slate-100 px-1.5 py-1.5">
+                            {isNet ? (
+                              <span className="block px-2 text-right tabular-nums text-slate-900">{fmtU(t[m], plan.step, unit)}</span>
+                            ) : (
+                              <NumberCell
+                                value={t[m] / div}
+                                decimals={dec}
+                                disabled={!canEdit}
+                                title={`${n.name} ${m}: ${Y} target — the hospital total stays; the others share what's left`}
+                                onCommit={(v) => onMix(id, dim, m, v * div, "target")}
+                              />
+                            )}
+                            <span className="block px-2 text-right text-[11px] tabular-nums text-slate-400">
+                              {share.toFixed(0)}%{g !== null && <span className={clsx("ml-1.5", g >= 0 ? "text-emerald-600" : "text-rose-600")}>{fmtPct(g)}</span>}
+                            </span>
+                          </td>
+                        </Fragment>
+                      );
+                    })}
+                    <td className="border-b border-l border-slate-100 px-3 py-2 text-right tabular-nums text-slate-900">{fmtU(tot, plan.step, unit)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  };
   return (
     <div className="p-4">
-      <p className="mb-3 text-[12.5px] text-slate-500">
-        {plan.targetYear} target ({unitLabel(unit)}) and growth vs {plan.targetYear - 1}, added up from every unit&rsquo;s segments. Change them in the Plan tab.
+      <p className="mb-4 max-w-3xl text-[12.5px] text-slate-500">
+        OPD/IPD and segments are two more ways to cut each hospital&rsquo;s total, next to the CoE / SBU split in the Plan tab. Set the totals there, then
+        distribute them here: change one part and the others share what&rsquo;s left, while every CoE / SBU keeps its own total.
       </p>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-[13px]">
-          <thead>
-            <tr className="text-[11.5px] text-slate-500">
-              <th className="border-b border-slate-200 px-3 py-2 text-left font-medium">Hospital</th>
-              {SEGMENTS.map((s) => (
-                <th key={s} className="border-b border-slate-200 px-3 py-2 text-right font-medium">
-                  {s}
-                </th>
-              ))}
-              <th className="border-b border-slate-200 px-3 py-2 text-right font-medium">OPD</th>
-              <th className="border-b border-slate-200 px-3 py-2 text-right font-medium">IPD</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rowsData.map((r) => (
-              <tr key={r.id} className={r.id === "total" ? "bg-slate-50 font-semibold" : ""}>
-                <td className="border-b border-slate-100 px-3 py-2.5">
-                  <span className="flex items-center gap-2">
-                    {r.id !== "total" && <span className="h-2.5 w-2.5 rounded-full" style={{ background: siteColor(r.id) }} />}
-                    {r.label}
-                  </span>
-                </td>
-                {SEGMENTS.map((s) => (
-                  <Fragment key={s}>{cell(r.d.seg[s])}</Fragment>
-                ))}
-                {cell(r.d.opd)}
-                {cell(r.d.ipd)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {section("setting", "OPD / IPD", `Each hospital's ${Y} target and ${B} full year by setting.`)}
+      {section("market", "Segment", `Each hospital's ${Y} target and ${B} full year by patient segment.`)}
     </div>
   );
 }
@@ -1818,8 +1912,10 @@ function NewPlanDialog({
   const [from, setFrom] = useState<"current" | "blank">("blank");
   const [growth, setGrowth] = useState("0");
   const y = parseInt(year, 10);
+  // A blank plan can be for any year; rolling forward only goes ahead of the plan it starts from.
   const minYear = from === "blank" ? 2000 : fromYear;
-  const ok = Number.isFinite(y) && y >= minYear && y <= minYear + 20;
+  const maxYear = from === "blank" ? 2100 : fromYear + 20;
+  const ok = Number.isFinite(y) && Number.isInteger(y) && y >= minYear && y <= maxYear;
   return (
     <div className="fade-enter fixed inset-0 z-[70] grid place-items-center bg-slate-900/35 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form
@@ -1876,7 +1972,7 @@ function NewPlanDialog({
           <span className="ml-3 text-[12px] text-slate-500">{t("Every unit starts with this growth; adjust afterwards.")}</span>
         </label>
         )}
-        {!ok && <p className="mt-2 text-[12.5px] text-rose-600">{`Pick a year from ${minYear} to ${minYear + 20}.`}</p>}
+        {!ok && <p className="mt-2 text-[12.5px] text-rose-600">{`Pick a year from ${minYear} to ${maxYear}.`}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-slate-200 px-4 text-[13.5px] font-medium text-slate-700 hover:bg-slate-50">
             {t("Cancel")}
