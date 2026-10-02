@@ -180,14 +180,14 @@ export function legacyToTargets(base: Plan, snapshot: unknown): Record<string, n
 }
 
 /** The organisation in the shape a blank plan keeps with itself. */
-export function blankFromOrg(org: { sites: { code: string; name: string; color?: string; active?: boolean }[]; units: { name: string; group: string; sites: string[]; opdShare?: number; active?: boolean }[] }): BlankStructure {
+export function blankFromOrg(org: { sites: { code: string; name: string; color?: string; active?: boolean }[]; units: { name: string; group: string; sites: string[]; active?: boolean }[] }): BlankStructure {
   const sites = org.sites.filter((s) => s.active !== false).map((s) => ({ code: s.code, name: s.name, color: s.color }));
   const codes = new Set(sites.map((s) => s.code));
   return {
     sites,
     units: org.units
       .filter((u) => u.active !== false)
-      .map((u) => ({ name: u.name, group: u.group, sites: u.sites.filter((c) => codes.has(c)), opdShare: u.opdShare }))
+      .map((u) => ({ name: u.name, group: u.group, sites: u.sites.filter((c) => codes.has(c)) }))
       .filter((u) => u.sites.length),
   };
 }
@@ -209,7 +209,8 @@ export function buildBlankPlan(structure: BlankStructure, targetYear: number): P
       const id = `${s.code}||${u.name}`;
       nodes[id] = { id, parentId: s.code, level: "coe", name: u.name, site: s.code, group: u.group, children: [], ...zero };
       nodes[s.code].children.push(id);
-      buildSettingBranch(plan, id, { opd: u.opdShare ?? 0.55, market: SEGMENT_MIX[s.code] || { Thai: 0.5, Expat: 0.25, "Fly-in": 0.25 } });
+      // Every number starts at zero; OPD/IPD and segments are typed on the Target page.
+      buildSettingBranch(plan, id, { opd: 0.5, market: SEGMENT_MIX[s.code] || { Thai: 0.5, Expat: 0.25, "Fly-in": 0.25 } });
     }
   }
   return plan;

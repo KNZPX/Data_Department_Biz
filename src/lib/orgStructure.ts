@@ -14,7 +14,6 @@ export type OrgUnit = {
   sites: string[]; // site codes this unit runs in
   lead?: string;
   description?: string;
-  opdShare?: number; // 0–1, OPD part of revenue (rest IPD) for new plans
   active: boolean;
 };
 export type OrgStructure = { sites: OrgSite[]; units: OrgUnit[] };
@@ -26,21 +25,6 @@ export const slug = (s: string) =>
     .replace(/[^a-z0-9ก-๙]+/g, "-")
     .replace(/^-|-$/g, "") || "unit";
 
-const OPD: Record<string, number> = {
-  "CoE Trauma": 0.45,
-  "CoE Cardiovascular": 0.4,
-  "CoE Neurology": 0.5,
-  "CoE Orthopedic": 0.45,
-  "CoE Cancer": 0.35,
-  "SBU Women's Health": 0.6,
-  "SBU Child": 0.8,
-  "Outreach Clinic & BTL": 0.95,
-  "SBU PPSI": 0.55,
-  "SBU Wellness": 0.9,
-  "SBU Urology": 0.7,
-  "Elective Surgery": 0.3,
-  "Usual Business": 0.65,
-};
 
 /** The structure in the original planning file, used until an admin saves their own. */
 export function defaultOrgStructure(): OrgStructure {
@@ -53,7 +37,7 @@ export function defaultOrgStructure(): OrgStructure {
   }));
   const byName = new Map<string, OrgUnit>();
   for (const u of TARGET_UNITS) {
-    const cur = byName.get(u.coe) || { id: slug(u.coe), name: u.coe, group: u.group, sites: [], opdShare: OPD[u.coe] ?? 0.55, active: true };
+    const cur = byName.get(u.coe) || { id: slug(u.coe), name: u.coe, group: u.group, sites: [], active: true };
     if (!cur.sites.includes(u.site)) cur.sites.push(u.site);
     byName.set(u.coe, cur);
   }
@@ -77,7 +61,6 @@ export function normalizeOrg(raw: unknown): OrgStructure {
       sites: (Array.isArray(u.sites) ? u.sites : []).filter((c) => codes.has(c)),
       lead: u.lead ? String(u.lead) : undefined,
       description: u.description ? String(u.description) : undefined,
-      opdShare: typeof u.opdShare === "number" && u.opdShare >= 0 && u.opdShare <= 1 ? u.opdShare : 0.55,
       active: u.active !== false,
     }));
   return { sites, units };

@@ -1015,7 +1015,7 @@ export function TargetScenarioPage() {
                         </div>
                       </td>
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                        {n.level === "coe" || n.level === "sub" ? (
+                        {n.level !== "network" && n.level !== "site" ? (
                           <NumberCell
                             value={n.prior25 / div}
                             decimals={dec}
@@ -1032,7 +1032,7 @@ export function TargetScenarioPage() {
                       </td>
                       {plan.actualMonths > 0 && (
                         <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                          {n.level === "coe" || n.level === "sub" ? (
+                          {n.level !== "network" && n.level !== "site" ? (
                             <NumberCell
                               value={actualOf(plan, n.id) / div}
                               decimals={dec}
@@ -1049,7 +1049,7 @@ export function TargetScenarioPage() {
                         </td>
                       )}
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
-                        {n.level === "coe" || n.level === "sub" ? (
+                        {n.level !== "network" && n.level !== "site" ? (
                           <NumberCell
                             value={n.base26 / div}
                             decimals={dec}
