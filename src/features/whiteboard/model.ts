@@ -4,7 +4,26 @@
 // store legacy nodes with `type` + `connections`; they're converted on load.
 
 export type Side = "top" | "right" | "bottom" | "left";
-export type ShapeKind = "rect" | "round" | "ellipse" | "diamond" | "triangle" | "hexagon" | "cylinder" | "parallelogram";
+export type ShapeKind =
+  | "rect"
+  | "round"
+  | "ellipse"
+  | "diamond"
+  | "triangle"
+  | "hexagon"
+  | "cylinder"
+  | "parallelogram"
+  | "pill"
+  | "pentagon"
+  | "octagon"
+  | "star"
+  | "heart"
+  | "cloud"
+  | "callout"
+  | "arrow"
+  | "chevron"
+  | "document"
+  | "plus";
 
 type Base = {
   id: string;
