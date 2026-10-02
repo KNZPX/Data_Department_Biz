@@ -7,6 +7,7 @@ import {
   saveCustomDaxItem,
   deleteCustomDaxItem,
   getSupabaseClient,
+  getDaxEditState,
 } from "@/lib/db";
 import { getDaxModels, getDaxRows, invalidateDaxCache, type DaxModelRow, type DaxRow } from "@/lib/daxStore";
 import { getCurrentUser } from "@/lib/session";
@@ -33,7 +34,12 @@ type DictItem = {
   createdBy?: string;
   sampleValues: unknown[] | null;
   matchReason?: string;
+  /** When the team's text (or a custom formula) last changed, and by whom. */
+  updatedAt: string | null;
+  updatedBy: string | null;
 };
+
+const sameTime = (a?: string | null, b?: string | null) => (a ? new Date(a).getTime() : 0) === (b ? new Date(b).getTime() : 0);
 
 async function resolveDatasetId(code: string): Promise<string> {
   const models = await getDaxModels().catch(() => [] as DaxModelRow[]);
@@ -50,7 +56,10 @@ export async function GET(request: NextRequest) {
     const q = (searchParams.get("q") || "").trim();
     const searchMode = (searchParams.get("searchMode") || "partial").toLowerCase();
     const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || "150", 10);
+    const limit = Math.min(500, parseInt(searchParams.get("limit") || "150", 10));
+    // "missing" = no business definition yet, "documented" = has one.
+    const doc = (searchParams.get("doc") || "all").toLowerCase();
+    const onlyId = searchParams.get("id");
 
     // Single source of truth: Supabase (kept current by .bim imports)
     const [rows, modelRows, annotationsMap] = await Promise.all([
@@ -92,8 +101,16 @@ export async function GET(request: NextRequest) {
         isCustom: Boolean(r.is_custom),
         displayFolder: r.display_folder,
         sampleValues: (r.sample_values as unknown[] | null) || null,
+        updatedAt: r.is_custom ? r.updated_at : saved?.updatedAt || null,
+        updatedBy: r.is_custom ? null : saved?.updatedBy || null,
       };
     };
+
+    // A single item by id, for shared links.
+    if (onlyId) {
+      const row = rows.find((r) => r.id === onlyId);
+      return NextResponse.json({ items: row ? [toItem(row)] : [] });
+    }
 
     const measures = inScope.filter((r) => !r.is_custom && r.item_type === "Measure").map(toItem);
     const columns = inScope.filter((r) => !r.is_custom && r.item_type !== "Measure").map(toItem);
@@ -123,10 +140,11 @@ export async function GET(request: NextRequest) {
       allItems = [...measures, ...customItems, ...columns];
     }
 
-    // Filter by table
-    if (table && table !== "all") {
-      allItems = allItems.filter((i) => i.tableName.toLowerCase() === table);
-    }
+    const hasDefinition = (i: DictItem) => Boolean(i.businessDefinition.trim());
+    // Documentation coverage for the current type scope (before the doc/table filters).
+    const coverage = { documented: allItems.filter(hasDefinition).length, total: allItems.length };
+    if (doc === "missing") allItems = allItems.filter((i) => !hasDefinition(i));
+    else if (doc === "documented") allItems = allItems.filter(hasDefinition);
 
     // Filter by search query with relevance ranking (Name matches prioritized over formula/descriptions)
     if (q) {
@@ -196,18 +214,30 @@ export async function GET(request: NextRequest) {
       allItems = scoredItems.map((s) => s.item);
     }
 
+    // Per-table counts for the current type/doc/search (ignoring the table filter itself).
+    const tableCounts: Record<string, number> = {};
+    for (const i of allItems) tableCounts[i.tableName] = (tableCounts[i.tableName] || 0) + 1;
+
+    // Filter by table
+    if (table && table !== "all") {
+      allItems = allItems.filter((i) => i.tableName.toLowerCase() === table);
+    }
+
     const total = allItems.length;
     const startIndex = (page - 1) * limit;
     const paginated = allItems.slice(startIndex, startIndex + limit);
 
     // Live counts per model straight from the dictionary
+    const documented = (r: DaxRow) => Boolean((r.business_definition || annotationsMap[r.id]?.businessDefinition || "").trim());
     const modelsMeta = modelRows.map((m) => {
       const own = rows.filter((r) => r.model_code === m.code && !r.is_custom);
+      const ownMeasures = own.filter((r) => r.item_type === "Measure");
       return {
         code: m.code,
         name: m.name,
         id: m.dataset_id || m.code,
-        totalMeasures: own.filter((r) => r.item_type === "Measure").length,
+        totalMeasures: ownMeasures.length,
+        documentedMeasures: ownMeasures.filter(documented).length,
         totalColumns: own.filter((r) => r.item_type !== "Measure").length,
         totalTables: m.table_count || new Set(own.map((r) => r.table_name)).size,
         totalRelationships: m.relationship_count || 0,
@@ -230,6 +260,8 @@ export async function GET(request: NextRequest) {
         totalCustom: customItems.length,
         totalTables: tablesSet.size,
         tables: Array.from(tablesSet).sort(),
+        tableCounts,
+        coverage,
         activeModelCode: activeModel.code,
         activeModelName: activeModel.name,
         activeModelId: activeModel.id,
@@ -255,30 +287,50 @@ export async function POST(request: NextRequest) {
 
     // 1. Save Math / Business Definitions
     if (action === "save_annotation") {
-      const { id, mathDefinition, businessDefinition, notes } = body;
+      const { id, mathDefinition, businessDefinition, notes, modelCode, tableName, objectName, objectType, baseUpdatedAt, force } = body;
       if (!id) return NextResponse.json({ error: "Item id is required" }, { status: 400 });
 
-      await saveDaxAnnotation({
+      // Someone else saved this item after the caller loaded it: don't overwrite silently.
+      if (!force) {
+        const state = await getDaxEditState(id);
+        if (state.annotation && !sameTime(state.annotation.updatedAt, baseUpdatedAt)) {
+          return NextResponse.json({ error: "conflict", conflict: state.annotation }, { status: 409 });
+        }
+      }
+
+      const updatedAt = await saveDaxAnnotation({
         id,
         mathDefinition,
         businessDefinition,
         notes,
+        modelCode,
+        tableName,
+        objectName,
+        objectType,
         changedBy: actor,
       });
 
       invalidateDaxCache();
-      return NextResponse.json({ success: true, message: "Definition saved successfully" });
+      return NextResponse.json({ success: true, updatedAt, updatedBy: actor, message: "Definition saved successfully" });
     }
 
     // 2. Save Custom DAX Measure
     if (action === "save_custom") {
-      const { id, datasetId, tableName, name, expression, formatString, dataType, mathDefinition, businessDefinition, notes } = body;
+      const { id, datasetId, tableName, name, expression, formatString, dataType, mathDefinition, businessDefinition, notes, baseUpdatedAt, force } = body;
       if (!name || !expression) {
         return NextResponse.json({ error: "Name and Expression are required" }, { status: 400 });
       }
 
+      // Editing an existing team measure that someone else changed meanwhile.
+      if (id && !force) {
+        const state = await getDaxEditState(id);
+        if (state.row?.isCustom && !sameTime(state.row.updatedAt, baseUpdatedAt)) {
+          return NextResponse.json({ error: "conflict", conflict: { updatedAt: state.row.updatedAt, updatedBy: null, name: state.row.name, expression: state.row.expression } }, { status: 409 });
+        }
+      }
+
       const customId = id || `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      await saveCustomDaxItem({
+      const updatedAt = await saveCustomDaxItem({
         id: customId,
         datasetId: datasetId || "PKT-D01",
         tableName: tableName || "Custom Measures",
@@ -294,7 +346,7 @@ export async function POST(request: NextRequest) {
       });
 
       invalidateDaxCache();
-      return NextResponse.json({ success: true, id: customId, message: "Custom DAX measure created" });
+      return NextResponse.json({ success: true, id: customId, updatedAt, updatedBy: actor, message: "Custom DAX measure saved" });
     }
 
     // 3. Delete Custom DAX Measure

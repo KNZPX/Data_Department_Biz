@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { confirmDialog } from "@/components/feedback";
 import { Button, Field, Input, Modal, Panel, Select, Textarea } from "@/components/ui";
 import {
   COMMON_HOSPITALS,
@@ -553,7 +554,13 @@ export function LicenseFormModal({
                 variant="ghost"
                 className="text-rose-600 hover:bg-rose-50"
                 onClick={async () => {
-                  if (confirm("Are you sure you want to delete this license entitlement record?")) {
+                  const ok = await confirmDialog({
+                    title: "Delete this license record?",
+                    body: "It's removed for everyone. The activity log keeps a copy an admin can restore.",
+                    confirmLabel: "Delete",
+                    danger: true,
+                  });
+                  if (ok) {
                     await onDelete(editing.id);
                     onClose();
                   }

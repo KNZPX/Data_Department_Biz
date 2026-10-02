@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import {
   Bell,
@@ -32,6 +32,9 @@ import { LoginGate, useAccess, useAuth } from "@/components/auth/LoginGate";
 import { pageForPath } from "@/lib/access";
 import { useTheme } from "@/context/ThemeContext";
 import { PresenceStack, usePresence } from "@/components/layout/Presence";
+import { ConfirmHost, Toaster } from "@/components/feedback";
+import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
+import { CommandPalette } from "@/components/layout/CommandPalette";
 
 type NavItem = { href: string; label: string; hint: string; icon: LucideIcon };
 type NavGroup = { title: string; items: NavItem[] };
@@ -64,7 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/users", label: "People & access", hint: "Accounts, guests and what each person can open", icon: ShieldCheck },
       { href: "/changelog", label: "Activity log", hint: "Audit trail across the portal", icon: History },
-      { href: "/settings", label: "Settings", hint: "Your appearance, portal content and connections", icon: Settings },
+      { href: "/settings", label: "Settings", hint: "Your appearance, team announcement and connections", icon: Settings },
     ],
   },
 ];
@@ -97,7 +100,6 @@ function PageFrame({ children }: { children: React.ReactNode }) {
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { user, logout, refreshAuth, isGuest } = useAuth();
   const { canPage } = useAccess();
   const { appearance, setAppearance, loadFor } = useTheme();
@@ -115,9 +117,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   const [tokenOpen, setTokenOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const [pill, setPill] = useState<{ top: number; height: number } | null>(null);
@@ -164,13 +165,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     };
   }, [pathname, collapsed, navSig]);
 
-  // ⌘K / Ctrl+K focuses search
+  // ⌘K / Ctrl+K opens the command palette
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        if (appearance.sidebarCollapsed) setAppearance({ sidebarCollapsed: false });
-        setTimeout(() => searchRef.current?.focus(), 0);
+        setPaletteOpen((v) => !v);
       }
       if (e.key === "Escape") {
         setUserDropdownOpen(false);
@@ -179,7 +179,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [appearance.sidebarCollapsed, setAppearance]);
+  }, []);
 
   useEffect(() => {
     void fetchLogs();
@@ -238,14 +238,6 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const activeNavItem = ALL_NAV.find((item) => isActive(pathname, item.href)) || ALL_NAV[0];
   const activeGroup = NAV_GROUPS.find((g) => g.items.includes(activeNavItem));
 
-  function submitSearch() {
-    const q = searchQuery.trim();
-    if (!q) return;
-    // DAX-looking queries go to the dictionary, everything else to the report catalog.
-    const looksDax = /^[_%\[]|\(|\bcalculate\b|measure|dax/i.test(q) || pathname.startsWith("/dax");
-    router.push(looksDax ? `/dax?model=ALL&q=${encodeURIComponent(q)}` : `/reports?q=${encodeURIComponent(q)}`);
-  }
-
   const narrow = collapsed && !mobileOpen;
 
   const sidebar = (
@@ -292,42 +284,32 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      {/* Search */}
-      <div className={clsx("shrink-0 pb-3", narrow ? "px-3" : "px-3")}>
+      {/* Search → command palette */}
+      <div className="shrink-0 px-3 pb-3">
         {narrow ? (
           <button
             type="button"
-            onClick={() => {
-              setAppearance({ sidebarCollapsed: false });
-              setTimeout(() => searchRef.current?.focus(), 50);
-            }}
+            onClick={() => setPaletteOpen(true)}
             title="Search (Ctrl K)"
+            aria-label="Search"
             className="grid h-9 w-full place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
           >
             <Search className="h-[18px] w-[18px]" />
           </button>
         ) : (
-          <label className="group relative flex items-center">
-            <Search className="pointer-events-none absolute left-3 h-4 w-4 text-slate-400 transition-colors group-focus-within:text-blue-600" />
-            <input
-              ref={searchRef}
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  submitSearch();
-                  setMobileOpen(false);
-                }
-              }}
-              placeholder="Search…"
-              aria-label="Search reports or measures"
-              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-12 text-[13px] text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
-            />
-            <kbd className="pointer-events-none absolute right-2 rounded border border-slate-200 bg-white px-1.5 py-px font-sans text-[10px] text-slate-400">
-              Ctrl K
-            </kbd>
-          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setMobileOpen(false);
+              setPaletteOpen(true);
+            }}
+            aria-label="Search pages, measures and reports"
+            className="group flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-2 text-left text-[13px] text-slate-400 transition hover:border-slate-300 hover:bg-white"
+          >
+            <Search className="h-4 w-4 transition-colors group-hover:text-blue-600" />
+            <span className="flex-1">Search…</span>
+            <kbd className="rounded border border-slate-200 bg-white px-1.5 py-px font-sans text-[10px] text-slate-400">Ctrl K</kbd>
+          </button>
         )}
       </div>
 
@@ -661,6 +643,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        {user && <AnnouncementBanner />}
+
         <PageFrame key={pathname}>
           {allowedHere ? (
             children
@@ -679,6 +663,15 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       </div>
 
       <TokenModal isOpen={tokenOpen} onClose={() => setTokenOpen(false)} onSuccess={() => refreshAuth()} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        pages={visibleGroups.flatMap((g) => g.items)}
+        canDax={canPage("dax")}
+        canReports={canPage("reports")}
+      />
+      <Toaster />
+      <ConfirmHost />
     </div>
   );
 }

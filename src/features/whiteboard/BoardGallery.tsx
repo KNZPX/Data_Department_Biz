@@ -22,6 +22,7 @@ import {
 import { clsx } from "clsx";
 import { TEMPLATES, boundsOf, connectorPath, isBox, type El, type Template } from "./model";
 import { useAuth } from "@/components/auth/LoginGate";
+import { confirmDialog, promptDialog } from "@/components/feedback";
 
 export type GalleryBoard = {
   id: string;
@@ -135,7 +136,7 @@ function BoardActions({
   onRename: (id: string, name: string) => void;
   onMove: (id: string, folder: { id: string; name: string }) => void;
   onDelete: (id: string) => void;
-  askFolder: () => { id: string; name: string } | null;
+  askFolder: () => Promise<{ id: string; name: string } | null>;
 }) {
   const item = "flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left hover:bg-slate-100";
   return (
@@ -143,10 +144,10 @@ function BoardActions({
       <button
         type="button"
         className={item}
-        onClick={() => {
+        onClick={async () => {
           onClose();
-          const n = window.prompt("Rename board", board.name);
-          if (n?.trim()) onRename(board.id, n.trim());
+          const n = await promptDialog({ title: "Rename board", label: "Board name", defaultValue: board.name, confirmLabel: "Rename" });
+          if (n && n !== board.name) onRename(board.id, n);
         }}
       >
         <Pencil className="h-4 w-4 text-slate-400" /> Rename
@@ -154,9 +155,9 @@ function BoardActions({
       <button
         type="button"
         className={item}
-        onClick={() => {
+        onClick={async () => {
           onClose();
-          const f = askFolder();
+          const f = await askFolder();
           if (f) onMove(board.id, f);
         }}
       >
@@ -165,9 +166,15 @@ function BoardActions({
       <button
         type="button"
         className={clsx(item, "mt-1 border-t border-slate-100 text-rose-600 hover:bg-rose-50")}
-        onClick={() => {
+        onClick={async () => {
           onClose();
-          if (window.confirm(`Delete "${board.name}" for everyone? This can't be undone.`)) onDelete(board.id);
+          const ok = await confirmDialog({
+            title: `Delete “${board.name}”?`,
+            body: "It's deleted for everyone on the team. This can't be undone.",
+            confirmLabel: "Delete board",
+            danger: true,
+          });
+          if (ok) onDelete(board.id);
         }}
       >
         <Trash2 className="h-4 w-4" /> Delete
@@ -251,11 +258,17 @@ export function BoardGallery({
   const activeFolder = folders.find((f) => f.id === folder);
   const target = activeFolder ? { id: activeFolder.id, name: activeFolder.name } : { id: "folder_general", name: "General Workflows" };
 
-  function askFolder(): { id: string; name: string } | null {
-    const name = window.prompt("Folder name", activeFolder?.name || "General Workflows");
-    if (!name?.trim()) return null;
-    const existing = folders.find((f) => f.name.toLowerCase() === name.trim().toLowerCase());
-    return existing ? { id: existing.id, name: existing.name } : { id: `folder_${name.trim().toLowerCase().replace(/[^a-z0-9ก-๙]+/g, "_")}`, name: name.trim() };
+  async function askFolder(): Promise<{ id: string; name: string } | null> {
+    const name = await promptDialog({
+      title: "Move to folder",
+      body: folders.length ? `Existing folders: ${folders.map((f) => f.name).join(", ")}. Type a new name to create one.` : undefined,
+      label: "Folder name",
+      defaultValue: activeFolder?.name || "General Workflows",
+      confirmLabel: "Move",
+    });
+    if (!name) return null;
+    const existing = folders.find((f) => f.name.toLowerCase() === name.toLowerCase());
+    return existing ? { id: existing.id, name: existing.name } : { id: `folder_${name.toLowerCase().replace(/[^a-z0-9ก-๙]+/g, "_")}`, name };
   }
 
   const actions = (b: GalleryBoard) =>

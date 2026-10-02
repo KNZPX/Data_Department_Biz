@@ -42,7 +42,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "Missing id parameter" }, { status: 400 });
     }
-    await deleteDbLicense(id);
+    await deleteDbLicense(id, _g.user.name || _g.user.email);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(

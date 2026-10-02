@@ -550,12 +550,29 @@ export async function saveDbLicense(license: PowerBiLicense): Promise<PowerBiLic
   return record;
 }
 
-export async function deleteDbLicense(id: string): Promise<boolean> {
+export async function deleteDbLicense(id: string, deletedBy = "Unknown"): Promise<boolean> {
   const provider = getDbProvider();
   if (provider === "supabase") {
     const supabase = getSupabaseClient();
+    // Keep the row in the activity log so it can be restored from there.
+    const { data: before } = await supabase.from("powerbi_licenses").select("*").eq("id", id).maybeSingle();
     const { error } = await supabase.from("powerbi_licenses").delete().eq("id", id);
     if (error) throw error;
+    if (before) {
+      await insertDbChangeLogs([
+        {
+          id: crypto.randomUUID(),
+          entity_table: "powerbi_licenses",
+          entity_id: id,
+          action: "delete",
+          summary: `Deleted license for ${before.display_name || before.name_th || before.ad_account || id}`,
+          changed_by: deletedBy,
+          changed_at: new Date().toISOString(),
+          before,
+          after: null,
+        },
+      ]).catch((e) => console.error("Couldn't log license delete", e));
+    }
     return true;
   }
 
@@ -718,7 +735,34 @@ export type DaxAnnotation = {
   businessDefinition?: string;
   notes?: string;
   updatedAt?: string;
+  updatedBy?: string;
 };
+
+/** What's stored now for one dictionary item — used to spot edits made by someone else meanwhile. */
+export async function getDaxEditState(id: string): Promise<{
+  annotation: { updatedAt: string | null; updatedBy: string | null; businessDefinition: string; mathDefinition: string; notes: string } | null;
+  row: { updatedAt: string | null; isCustom: boolean; name: string; expression: string | null } | null;
+}> {
+  const supabase = getSupabaseClient();
+  const [a, r] = await Promise.all([
+    supabase.from("dax_annotations").select("updated_at, changed_by, business_definition, math_definition, notes").eq("id", id).maybeSingle(),
+    supabase.from("dax_dictionary_items").select("updated_at, is_custom, name, expression").eq("id", id).maybeSingle(),
+  ]);
+  if (a.error) throw a.error;
+  if (r.error) throw r.error;
+  return {
+    annotation: a.data
+      ? {
+          updatedAt: a.data.updated_at,
+          updatedBy: a.data.changed_by,
+          businessDefinition: a.data.business_definition || "",
+          mathDefinition: a.data.math_definition || "",
+          notes: a.data.notes || "",
+        }
+      : null,
+    row: r.data ? { updatedAt: r.data.updated_at, isCustom: Boolean(r.data.is_custom), name: r.data.name, expression: r.data.expression } : null,
+  };
+}
 
 export async function saveDaxAnnotation(item: DaxAnnotation & {
   changedBy?: string;
@@ -726,26 +770,28 @@ export async function saveDaxAnnotation(item: DaxAnnotation & {
   tableName?: string;
   objectName?: string;
   objectType?: string;
-}): Promise<void> {
+}): Promise<string> {
   const now = new Date().toISOString();
   const provider = getDbProvider();
 
   let beforeState: Record<string, unknown> | null = null;
 
   if (provider === "supabase") {
-    try {
-      const supabase = getSupabaseClient();
-      // Fetch previous state for Restore capability
-      const { data: current } = await supabase
-        .from("dax_annotations")
-        .select("*")
-        .eq("id", item.id)
-        .maybeSingle();
+    // Errors are thrown (not just logged) so the caller can tell the person it didn't save.
+    const supabase = getSupabaseClient();
+    // Fetch previous state for Restore capability
+    const { data: current, error: readError } = await supabase
+      .from("dax_annotations")
+      .select("*")
+      .eq("id", item.id)
+      .maybeSingle();
+    if (readError) throw readError;
 
-      beforeState = current || null;
+    beforeState = current || null;
 
+    {
       // 1. Upsert into dax_annotations table
-      await supabase.from("dax_annotations").upsert({
+      const { error: upsertError } = await supabase.from("dax_annotations").upsert({
         id: item.id,
         model_code: item.modelCode || "PKT-D01",
         table_name: item.tableName || "",
@@ -757,9 +803,10 @@ export async function saveDaxAnnotation(item: DaxAnnotation & {
         changed_by: item.changedBy || "Analyst",
         updated_at: now,
       });
+      if (upsertError) throw upsertError;
 
       // 2. Also update dax_dictionary_items if present
-      await supabase
+      const { error: itemError } = await supabase
         .from("dax_dictionary_items")
         .update({
           math_definition: item.mathDefinition || "",
@@ -768,8 +815,7 @@ export async function saveDaxAnnotation(item: DaxAnnotation & {
           updated_at: now,
         })
         .eq("id", item.id);
-    } catch (err) {
-      console.error("Error saving DAX annotation in Supabase:", err);
+      if (itemError) throw itemError;
     }
   }
 
@@ -780,7 +826,7 @@ export async function saveDaxAnnotation(item: DaxAnnotation & {
       entity_table: "dax_annotations",
       entity_id: item.id,
       action: "update",
-      summary: `Updated business/math definitions for DAX item: ${item.id}`,
+      summary: `Updated definitions of [${item.objectName || item.id}]${item.tableName ? ` in ${item.tableName}` : ""}${item.modelCode ? ` (${item.modelCode})` : ""}`,
       changed_by: item.changedBy || "Analyst",
       changed_at: now,
       before: beforeState,
@@ -793,6 +839,7 @@ export async function saveDaxAnnotation(item: DaxAnnotation & {
       },
     },
   ]);
+  return now;
 }
 
 export async function getAllDaxAnnotations(): Promise<Record<string, DaxAnnotation>> {
@@ -810,6 +857,7 @@ export async function getAllDaxAnnotations(): Promise<Record<string, DaxAnnotati
             businessDefinition: row.business_definition || "",
             notes: row.notes || "",
             updatedAt: row.updated_at,
+            updatedBy: row.changed_by || undefined,
           };
         }
         return map;
@@ -854,25 +902,26 @@ export type CustomDaxItem = {
   createdAt?: string;
 };
 
-export async function saveCustomDaxItem(item: CustomDaxItem): Promise<void> {
+export async function saveCustomDaxItem(item: CustomDaxItem): Promise<string> {
   const now = new Date().toISOString();
   const provider = getDbProvider();
 
   let beforeState: Record<string, unknown> | null = null;
 
   if (provider === "supabase") {
-    try {
-      const supabase = getSupabaseClient();
-      const { data: current } = await supabase
-        .from("dax_dictionary_items")
-        .select("*")
-        .eq("id", item.id)
-        .maybeSingle();
+    const supabase = getSupabaseClient();
+    const { data: current, error: readError } = await supabase
+      .from("dax_dictionary_items")
+      .select("*")
+      .eq("id", item.id)
+      .maybeSingle();
+    if (readError) throw readError;
 
-      beforeState = current || null;
+    beforeState = current || null;
 
+    {
       // Upsert into dax_dictionary_items
-      await supabase.from("dax_dictionary_items").upsert({
+      const { error: upsertError } = await supabase.from("dax_dictionary_items").upsert({
         id: item.id,
         model_code: item.datasetId || "PKT-D01",
         table_name: item.tableName,
@@ -887,8 +936,7 @@ export async function saveCustomDaxItem(item: CustomDaxItem): Promise<void> {
         is_custom: true,
         updated_at: now,
       });
-    } catch (err) {
-      console.error("Error saving custom DAX in Supabase:", err);
+      if (upsertError) throw upsertError;
     }
   }
 
@@ -907,6 +955,7 @@ export async function saveCustomDaxItem(item: CustomDaxItem): Promise<void> {
       after: { ...item, createdAt: item.createdAt || now, updatedAt: now },
     },
   ]);
+  return now;
 }
 
 export async function deleteCustomDaxItem(id: string, user: string = "Analyst"): Promise<void> {
