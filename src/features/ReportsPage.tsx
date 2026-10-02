@@ -62,14 +62,8 @@ export function ReportsPage() {
   // Which workspaces this person follows — saved with their account, so it's the same on any computer.
   const [savedWs, saveWs] = usePersonalPref<string[]>("reportWorkspaces", "user_enabled_workspaces");
 
-  // Collapsible Folders in Tree Diagram
-  const [expandedSites, setExpandedSites] = useState<Record<string, boolean>>({
-    BPK: true,
-    BSI: true,
-    PKT: true,
-    DBK: true,
-    Other: true,
-  });
+  // Collapsible Folders in Tree Diagram — every folder starts closed.
+  const [expandedSites, setExpandedSites] = useState<Record<string, boolean>>({});
 
   const items = useMemo(() => (state.status === "ready" ? state.response.data : []), [state]);
 
@@ -156,8 +150,8 @@ export function ReportsPage() {
   }, [allWorkspaceNames, workspaceMap, enabledWorkspaces]);
 
   // Toggle folder expansion
-  function toggleSiteExpand(site: string) {
-    setExpandedSites((prev) => ({ ...prev, [site]: !prev[site] }));
+  function toggleSiteExpand(site: string, open: boolean) {
+    setExpandedSites((prev) => ({ ...prev, [site]: !open }));
   }
 
   // Selected items: when searching, search unlocked across ALL workspaces!
@@ -319,7 +313,8 @@ export function ReportsPage() {
           {/* Folder Sub-diagram Tree Stream */}
           <div className="flex-1 overflow-y-auto mt-3 space-y-3 pr-1 max-h-[580px]">
             {folderTree.map((group) => {
-              const isExpanded = expandedSites[group.site] ?? true;
+              // While filtering, open the folders so the matches show.
+              const isExpanded = expandedSites[group.site] ?? !!workspaceSearch.trim();
               const isSiteSelected = selectedSiteFolder === group.site && !selectedWorkspace;
 
               // Filter sub-workspaces by search
@@ -341,7 +336,7 @@ export function ReportsPage() {
                   <div className="flex items-center justify-between gap-1">
                     <button
                       type="button"
-                      onClick={() => toggleSiteExpand(group.site)}
+                      onClick={() => toggleSiteExpand(group.site, isExpanded)}
                       className="p-1 hover:bg-slate-200/60 rounded-lg text-slate-500 transition"
                     >
                       {isExpanded ? (

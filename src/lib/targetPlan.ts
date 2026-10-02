@@ -302,6 +302,25 @@ export function spreadEvenGrowth(input: Plan, id: string): Plan {
   return plan;
 }
 
+/**
+ * Grow a unit and everything under it by the same % on top of the base-year
+ * full year (e.g. 25 → every unit's target is its 2026 full year × 1.25).
+ * Bottom-up plans add the new figures up to the levels above; top-down plans
+ * treat it like typing the amount, so the level above keeps its total.
+ */
+export function applyGrowth(input: Plan, id: string, pct: number): { plan: Plan; report: ChangeReport } {
+  const factor = Math.max(0, 1 + pct / 100);
+  const node = input.nodes[id];
+  const { plan, report } = setTarget(input, id, node.base26 * factor);
+  const spread = spreadEvenGrowth(plan, id);
+  if (spread.bottomUp || !node.parentId) {
+    for (let p: string | null = node.parentId; p; p = spread.nodes[p].parentId) {
+      spread.nodes[p] = { ...spread.nodes[p], target: sum(childrenOf(spread, p).map((k) => k.target)) };
+    }
+  }
+  return { plan: spread, report: { ...report, to: spread.nodes[id].target } };
+}
+
 /** Change the rounding step and re-round the whole tree without moving the total by more than one step. */
 export function changeStep(input: Plan, step: number): Plan {
   const plan = clonePlan(input);

@@ -42,6 +42,7 @@ import {
   findIssues,
   fromSnapshot,
   growthPct,
+  applyGrowth,
   maxFor,
   monthsOf,
   removeSub,
@@ -319,6 +320,17 @@ export function TargetScenarioPage() {
     const { plan: next, report: r } = setTarget(plan, id, thb);
     commit(next, { ...r, label: label || `${plan.nodes[id].name} set to ${fmtU(r.to, plan.step, unit)} ${unitLabel(unit)}` });
     if (r.clamped) toast.info("Capped at what's left", { body: `The most ${plan.nodes[id].name} can take is ${fmtU(r.to, plan.step, unit)} ${unitLabel(unit)} without going over ${plan.nodes[plan.nodes[id].parentId!].name}.` });
+  }
+  function growBy(id: string, pct: number) {
+    if (!canEdit) return;
+    const n = plan.nodes[id];
+    if (n.base26 <= 0) {
+      toast.info(`${n.name} has no ${B} full year yet`, { body: `Growth is measured from the ${B} full year. Type it in that column (or on the units below), then set the growth %.` });
+      return;
+    }
+    const { plan: next, report: r } = applyGrowth(plan, id, pct);
+    commit(next, { ...r, label: `${n.name}${n.children.length ? " and everything under it" : ""} set to ${fmtPct(pct)} growth on ${B}` });
+    if (r.clamped) toast.info("Capped at what's left", { body: `The most ${n.name} can take is ${fmtU(r.to, plan.step, unit)} ${unitLabel(unit)} without going over ${plan.nodes[n.parentId!].name}.` });
   }
   function toggleLock(id: string) {
     const n = plan.nodes[id];
@@ -1120,8 +1132,15 @@ export function TargetScenarioPage() {
                           decimals={1}
                           suffix="%"
                           tone={g >= 0 ? "pos" : "neg"}
-                          disabled={!canEdit || n.base26 <= 0}
-                          onCommit={(pct) => applyTarget(n.id, n.base26 * (1 + pct / 100), `${n.name} set to ${fmtPct(pct)} growth`)}
+                          disabled={!canEdit}
+                          title={
+                            n.base26 > 0
+                              ? n.children.length
+                                ? `Type a growth % on top of ${B} — every unit under ${n.name} grows by the same %`
+                                : `Type a growth % on top of ${B}`
+                              : `Type the ${B} full year first — growth is measured from it`
+                          }
+                          onCommit={(pct) => growBy(n.id, pct)}
                         />
                       </td>
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
