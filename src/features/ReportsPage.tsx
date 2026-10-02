@@ -32,11 +32,13 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Button, EmptyState, Input, Modal, Panel } from "@/components/ui";
+import { toast } from "@/components/feedback";
 import { DashboardLogModal } from "@/components/powerbi/DashboardLogModal";
 import { TicketLinkButton } from "@/components/powerbi/TicketLinkButton";
 import { usePowerBiItems } from "@/lib/usePowerBiItems";
 import type { PowerBiItem } from "@/lib/powerbiTypes";
 import { siteGroupKeyForWorkspace } from "@/lib/reportCodeSeries";
+import { usePersonalPref } from "@/lib/usePersonalPref";
 
 export function ReportsPage() {
   const { state, refresh } = usePowerBiItems("/api/powerbi/reports");
@@ -57,8 +59,8 @@ export function ReportsPage() {
 
   // Manage Workspaces Modal & Enabled Workspaces
   const [manageModalOpen, setManageModalOpen] = useState(false);
-  const [enabledWorkspaces, setEnabledWorkspaces] = useState<Set<string>>(new Set());
-  const [hasLoadedSavedWs, setHasLoadedSavedWs] = useState(false);
+  // Which workspaces this person follows — saved with their account, so it's the same on any computer.
+  const [savedWs, saveWs] = usePersonalPref<string[]>("reportWorkspaces", "user_enabled_workspaces");
 
   // Collapsible Folders in Tree Diagram
   const [expandedSites, setExpandedSites] = useState<Record<string, boolean>>({
@@ -87,44 +89,22 @@ export function ReportsPage() {
     [workspaceMap]
   );
 
-  // Load / Initialize enabled workspaces
-  useEffect(() => {
-    if (allWorkspaceNames.length === 0) return;
-    const saved = localStorage.getItem("user_enabled_workspaces");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setEnabledWorkspaces(new Set(parsed));
-          setHasLoadedSavedWs(true);
-          return;
-        }
-      } catch {}
-    }
-    // Default to all enabled
-    setEnabledWorkspaces(new Set(allWorkspaceNames));
-    setHasLoadedSavedWs(true);
-  }, [allWorkspaceNames]);
+  // Nothing saved yet → every workspace is on.
+  const enabledWorkspaces = useMemo(() => new Set(Array.isArray(savedWs) ? savedWs : allWorkspaceNames), [savedWs, allWorkspaceNames]);
 
-  // Save enabled workspaces to localStorage
   function toggleWorkspaceEnabled(wsName: string) {
-    setEnabledWorkspaces((prev) => {
-      const next = new Set(prev);
-      if (next.has(wsName)) next.delete(wsName);
-      else next.add(wsName);
-      localStorage.setItem("user_enabled_workspaces", JSON.stringify(Array.from(next)));
-      return next;
-    });
+    const next = new Set(enabledWorkspaces);
+    if (next.has(wsName)) next.delete(wsName);
+    else next.add(wsName);
+    saveWs(Array.from(next));
   }
 
   function handleSelectAllWorkspaces() {
-    setEnabledWorkspaces(new Set(allWorkspaceNames));
-    localStorage.setItem("user_enabled_workspaces", JSON.stringify(allWorkspaceNames));
+    saveWs(allWorkspaceNames);
   }
 
   function handleDeselectAllWorkspaces() {
-    setEnabledWorkspaces(new Set());
-    localStorage.setItem("user_enabled_workspaces", JSON.stringify([]));
+    saveWs([]);
   }
 
   // Group Workspaces into Folder Sub-diagram (Tree Hierarchy by Site Prefix)
@@ -217,6 +197,7 @@ export function ReportsPage() {
     if (!selectedWorkspace && !selectedSiteFolder && folderTree.length > 0) {
       const firstEnabled = folderTree[0]?.workspaces.find((w) => w.enabled);
       if (firstEnabled) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedWorkspace(firstEnabled.fullName);
       }
     }
@@ -242,7 +223,7 @@ export function ReportsPage() {
       a.click();
       a.remove();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Export failed");
+      toast.error("Couldn't export to Excel", { body: err instanceof Error ? err.message : undefined });
     } finally {
       setExporting(false);
     }

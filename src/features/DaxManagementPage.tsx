@@ -37,6 +37,7 @@ import { DaxDiagramBoard } from "@/features/whiteboard/DaxDiagramBoard";
 import { DaxScriptModal } from "@/components/powerbi/DaxScriptModal";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, toast } from "@/components/feedback";
+import { DAX_OPEN_EVENT } from "@/components/layout/CommandPalette";
 import { clsx } from "clsx";
 import { DaxCodeViewer } from "@/components/powerbi/DaxCodeViewer";
 import { formatDax } from "@/lib/daxFormatter";
@@ -565,19 +566,39 @@ export function DaxManagementPage() {
         // Shared link to one measure: open it even if it isn't in the first page of results.
         setModelChosen(true);
         if (!m) setActiveModel("ALL");
-        fetch(`/api/powerbi/dax?id=${encodeURIComponent(it)}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((j) => {
-            const hit = j?.items?.[0];
-            if (hit) {
-              pinnedItemId.current = hit.id;
-              setSelectedItem(hit);
-            } else toast.error("That measure isn't in the dictionary any more");
-          })
-          .catch(() => {});
+        openItemById(it);
       }
     }
   }, []);
+
+  // Ctrl K picked a measure while this page is open.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      setModelChosen(true);
+      openItemById((e as CustomEvent<{ id: string }>).detail.id);
+    };
+    window.addEventListener(DAX_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(DAX_OPEN_EVENT, onOpen);
+  }, []);
+
+  /** Open one item by id, even if it isn't in the loaded list (links, Ctrl K). */
+  function openItemById(id: string) {
+    fetch(`/api/powerbi/dax?id=${encodeURIComponent(id)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const hit: ItemRecord | undefined = j?.items?.[0];
+        if (!hit) return void toast.error("That item isn't in the dictionary any more");
+        setDetailOpenMobile(true);
+        if (dirtyRef.current) {
+          setPendingSelection(hit);
+          setShowUnsavedModal(true);
+          return;
+        }
+        pinnedItemId.current = hit.id;
+        setSelectedItem(hit);
+      })
+      .catch(() => toast.error("Couldn't open that item", { body: "Check your connection and try again." }));
+  }
 
   // View Mode: "split" (list + details) | "table" (wide grid)
   const [viewMode, setViewMode] = useState<"table" | "split">("split");
@@ -889,7 +910,8 @@ export function DaxManagementPage() {
 
   function handleDiscardAndProceed() {
     if (pendingSelection) {
-      pinnedItemId.current = null;
+      // Opened from a link or Ctrl K: keep it showing even if it's outside the current list.
+      pinnedItemId.current = items.some((i) => i.id === pendingSelection.id) ? null : pendingSelection.id;
       setSelectedItem(pendingSelection);
       setPendingSelection(null);
     }

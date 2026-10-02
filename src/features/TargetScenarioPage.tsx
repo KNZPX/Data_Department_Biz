@@ -41,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { confirmDialog, toast } from "@/components/feedback";
 import {
   TARGET_META,
   TARGET_SITES,
@@ -292,19 +293,25 @@ export function TargetScenarioPage() {
         setNewScenarioDesc("");
         showToast(`Saved "${newScenarioName}" to Supabase!`);
       } else {
-        alert(resJson.error || "Failed to save scenario");
+        toast.error("Couldn't save the scenario", { body: resJson.error });
         setSyncStatus("offline");
       }
     } catch (err: any) {
       console.error("Save scenario error:", err);
-      alert("Error saving scenario: " + err.message);
+      toast.error("Couldn't save the scenario", { body: err.message });
       setSyncStatus("offline");
     }
   }
 
   // Delete scenario from Supabase
   async function handleDeleteScenario(id: string, name: string) {
-    if (!confirm(`Are you sure you want to delete scenario "${name}" from Supabase?`)) return;
+    const ok = await confirmDialog({
+      title: `Delete “${name}”?`,
+      body: "The saved scenario is removed for everyone on the team.",
+      confirmLabel: "Delete scenario",
+      danger: true,
+    });
+    if (!ok) return;
 
     try {
       const res = await fetch(`/api/target-scenario?id=${id}`, { method: "DELETE" });
@@ -312,9 +319,12 @@ export function TargetScenarioPage() {
       if (json.success) {
         setScenarios((prev) => prev.filter((s) => s.id !== id));
         showToast(`Deleted "${name}"`);
+      } else {
+        toast.error("Couldn't delete the scenario", { body: json.error });
       }
     } catch (err) {
       console.error("Delete scenario error:", err);
+      toast.error("Couldn't delete the scenario", { body: "Check your connection and try again." });
     }
   }
 

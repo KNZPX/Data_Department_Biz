@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { BoardCanvas } from "./BoardCanvas";
 import { useAccess } from "@/components/auth/LoginGate";
+import { confirmDialog } from "@/components/feedback";
 import { elementsFromDaxDiagram, normalizeElements, type El } from "./model";
 
 type AstNode = Parameters<typeof elementsFromDaxDiagram>[0][number];
@@ -79,7 +80,13 @@ export function DaxDiagramBoard({
 
 
   async function rebuild() {
-    if (!window.confirm("Replace this diagram with a fresh one generated from the current formula? Your layout changes will be lost.")) return;
+    const ok = await confirmDialog({
+      title: "Rebuild this diagram?",
+      body: "It's redrawn from the current formula. Anything you moved or added on this diagram is replaced.",
+      confirmLabel: "Rebuild",
+      danger: true,
+    });
+    if (!ok) return;
     const els = elementsFromDaxDiagram(buildNodes());
     latest.current = els;
     await persist(els);

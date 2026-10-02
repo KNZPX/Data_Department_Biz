@@ -141,6 +141,10 @@ code, pre, kbd, .font-mono {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* For a field that is the whole focus of its dialog (e.g. the Ctrl K box). */
+.no-focus-outline:focus-visible {
+  outline: none;
+}
 
 ::selection {
   background: color-mix(in oklab, var(--accent) 18%, white);

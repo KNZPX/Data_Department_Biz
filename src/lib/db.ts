@@ -550,12 +550,29 @@ export async function saveDbLicense(license: PowerBiLicense): Promise<PowerBiLic
   return record;
 }
 
-export async function deleteDbLicense(id: string): Promise<boolean> {
+export async function deleteDbLicense(id: string, deletedBy = "Unknown"): Promise<boolean> {
   const provider = getDbProvider();
   if (provider === "supabase") {
     const supabase = getSupabaseClient();
+    // Keep the row in the activity log so it can be restored from there.
+    const { data: before } = await supabase.from("powerbi_licenses").select("*").eq("id", id).maybeSingle();
     const { error } = await supabase.from("powerbi_licenses").delete().eq("id", id);
     if (error) throw error;
+    if (before) {
+      await insertDbChangeLogs([
+        {
+          id: crypto.randomUUID(),
+          entity_table: "powerbi_licenses",
+          entity_id: id,
+          action: "delete",
+          summary: `Deleted license for ${before.display_name || before.name_th || before.ad_account || id}`,
+          changed_by: deletedBy,
+          changed_at: new Date().toISOString(),
+          before,
+          after: null,
+        },
+      ]).catch((e) => console.error("Couldn't log license delete", e));
+    }
     return true;
   }
 

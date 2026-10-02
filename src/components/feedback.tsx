@@ -1,9 +1,10 @@
 "use client";
 
-// App-wide toasts and confirm dialogs (instead of the browser's alert/confirm).
+// App-wide toasts and dialogs (instead of the browser's alert/confirm/prompt).
 //   toast("Saved")                     toast.error("Couldn't save", { body })
 //   if (await confirmDialog({ title: "Delete board?", danger: true })) ...
-import { useSyncExternalStore } from "react";
+//   const name = await promptDialog({ title: "Rename board", defaultValue: board.name });
+import { useState, useSyncExternalStore } from "react";
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -84,74 +85,116 @@ export function Toaster() {
   );
 }
 
-// ---- Confirm ---------------------------------------------------------------
+// ---- Confirm / prompt ------------------------------------------------------
 type ConfirmOpts = { title: string; body?: string; confirmLabel?: string; cancelLabel?: string; danger?: boolean };
-type ConfirmState = (ConfirmOpts & { resolve: (ok: boolean) => void }) | null;
-let confirmState: ConfirmState = null;
-const confirmSubs = new Set<() => void>();
-const emitConfirm = () => confirmSubs.forEach((f) => f());
+type PromptOpts = ConfirmOpts & { label?: string; defaultValue?: string; placeholder?: string };
+type DialogState = (PromptOpts & { key: number; input: boolean; resolve: (value: string | null) => void }) | null;
+let dialogState: DialogState = null;
+let dialogKey = 0;
+const dialogSubs = new Set<() => void>();
+const emitDialog = () => dialogSubs.forEach((f) => f());
 
-export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
+function openDialog(opts: PromptOpts, input: boolean): Promise<string | null> {
   return new Promise((resolve) => {
-    confirmState?.resolve(false);
-    confirmState = { ...opts, resolve };
-    emitConfirm();
+    dialogState?.resolve(null);
+    dialogState = { ...opts, input, key: ++dialogKey, resolve };
+    emitDialog();
   });
 }
-function closeConfirm(ok: boolean) {
-  const s = confirmState;
-  confirmState = null;
-  emitConfirm();
-  s?.resolve(ok);
+function closeDialog(value: string | null) {
+  const s = dialogState;
+  dialogState = null;
+  emitDialog();
+  s?.resolve(value);
+}
+
+/** Yes/no question. Resolves true when confirmed. */
+export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
+  return openDialog(opts, false).then((v) => v !== null);
+}
+
+/** Ask for one line of text (a name, a folder). Resolves the trimmed text, or null if cancelled or empty. */
+export function promptDialog(opts: PromptOpts): Promise<string | null> {
+  return openDialog(opts, true).then((v) => (v && v.trim() ? v.trim() : null));
 }
 
 export function ConfirmHost() {
   const s = useSyncExternalStore(
     (f) => {
-      confirmSubs.add(f);
-      return () => confirmSubs.delete(f);
+      dialogSubs.add(f);
+      return () => dialogSubs.delete(f);
     },
-    () => confirmState,
+    () => dialogState,
     () => null
   );
   if (!s) return null;
+  return <Dialog key={s.key} s={s} />;
+}
+
+function Dialog({ s }: { s: NonNullable<DialogState> }) {
+  const [value, setValue] = useState(s.defaultValue || "");
   return (
     <div
       className="fade-enter fixed inset-0 z-[90] grid place-items-center bg-slate-900/35 p-4 backdrop-blur-[2px]"
-      onMouseDown={(e) => e.target === e.currentTarget && closeConfirm(false)}
+      onMouseDown={(e) => e.target === e.currentTarget && closeDialog(null)}
       onKeyDown={(e) => {
-        if (e.key === "Escape") closeConfirm(false);
+        if (e.key === "Escape") closeDialog(null);
       }}
     >
-      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" className="pop-in w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+      <form
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (s.input && !value.trim()) return;
+          closeDialog(s.input ? value : "ok");
+        }}
+        className="pop-in w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl"
+      >
         <div className="flex gap-3">
-          <span className={clsx("grid h-10 w-10 shrink-0 place-items-center rounded-full", s.danger ? "bg-rose-50 text-rose-600" : "bg-blue-50 text-blue-600")}>
-            {s.danger ? <AlertTriangle className="h-5 w-5" /> : <Info className="h-5 w-5" />}
-          </span>
-          <div className="min-w-0">
+          {!s.input && (
+            <span className={clsx("grid h-10 w-10 shrink-0 place-items-center rounded-full", s.danger ? "bg-rose-50 text-rose-600" : "bg-blue-50 text-blue-600")}>
+              {s.danger ? <AlertTriangle className="h-5 w-5" /> : <Info className="h-5 w-5" />}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
             <h3 id="confirm-title" className="text-[15px] font-semibold text-slate-900">
               {s.title}
             </h3>
             {s.body && <p className="mt-1 whitespace-pre-line text-[13.5px] leading-relaxed text-slate-600">{s.body}</p>}
+            {s.input && (
+              <label className="mt-3 block">
+                {s.label && <span className="mb-1 block text-[12.5px] font-medium text-slate-700">{s.label}</span>}
+                <input
+                  autoFocus
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  placeholder={s.placeholder}
+                  className="no-focus-outline h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[14px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+                />
+              </label>
+            )}
           </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={() => closeConfirm(false)} className="h-9 rounded-lg border border-slate-200 px-4 text-[13.5px] font-medium text-slate-700 hover:bg-slate-50">
+          <button type="button" onClick={() => closeDialog(null)} className="h-9 rounded-lg border border-slate-200 px-4 text-[13.5px] font-medium text-slate-700 hover:bg-slate-50">
             {s.cancelLabel || "Cancel"}
           </button>
           <button
-            type="button"
-            autoFocus
-            onClick={() => closeConfirm(true)}
+            type="submit"
+            autoFocus={!s.input}
+            disabled={s.input && !value.trim()}
             className={clsx(
-              "h-9 rounded-lg px-4 text-[13.5px] font-medium text-white transition active:scale-[0.98]",
+              "h-9 rounded-lg px-4 text-[13.5px] font-medium text-white transition active:scale-[0.98] disabled:opacity-50",
               s.danger ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
             )}
           >
-            {s.confirmLabel || "OK"}
+            {s.confirmLabel || (s.input ? "Save" : "OK")}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

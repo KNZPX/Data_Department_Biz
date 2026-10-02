@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, CheckCircle2, Cloud, CloudOff, Database, KeyRound, LayoutDashboard, Loader2, Palette, RotateCcw, Save, ShieldAlert } from "lucide-react";
+import { Check, CheckCircle2, Cloud, CloudOff, Database, KeyRound, Loader2, Megaphone, Palette, RotateCcw, Save, ShieldAlert } from "lucide-react";
 import { clsx } from "clsx";
 import { Input, Textarea } from "@/components/ui";
 import { TokenModal } from "@/components/TokenModal";
-import { useAuth } from "@/components/auth/LoginGate";
+import { useAccess, useAuth } from "@/components/auth/LoginGate";
+import { toast } from "@/components/feedback";
+import { ANNOUNCEMENT_EVENT, type Announcement, type AnnouncementRecord } from "@/components/layout/AnnouncementBanner";
 import {
   ACCENTS,
   DENSITIES,
@@ -20,18 +22,19 @@ import {
   type Appearance,
 } from "@/context/ThemeContext";
 
-type Tab = "appearance" | "portal" | "connection";
+type Tab = "appearance" | "team" | "connection";
 
 const TABS: { id: Tab; label: string; icon: typeof Palette }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "portal", label: "Portal content", icon: LayoutDashboard },
+  { id: "team", label: "Team announcement", icon: Megaphone },
   { id: "connection", label: "Connection", icon: KeyRound },
 ];
 
 export function SettingsPage() {
   const params = useSearchParams();
   const router = useRouter();
-  const initial = (params.get("tab") as Tab) || "appearance";
+  const asked = params.get("tab");
+  const initial = (asked === "portal" ? "team" : asked || "appearance") as Tab;
   const [activeTab, setActiveTab] = useState<Tab>(TABS.some((t) => t.id === initial) ? initial : "appearance");
 
   function pick(t: Tab) {
@@ -45,7 +48,7 @@ export function SettingsPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">Settings</h2>
-            <p className="text-[13.5px] text-slate-500">Your own look, the team&rsquo;s portal content, and connections.</p>
+            <p className="text-[13.5px] text-slate-500">Your own look, the team announcement, and connections.</p>
           </div>
           <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="tablist">
             {TABS.map(({ id, label, icon: Icon }) => (
@@ -69,7 +72,7 @@ export function SettingsPage() {
 
         <div key={activeTab} className="fade-enter">
           {activeTab === "appearance" && <AppearanceTab />}
-          {activeTab === "portal" && <PortalTab />}
+          {activeTab === "team" && <AnnouncementTab />}
           {activeTab === "connection" && <ConnectionTab />}
         </div>
       </div>
@@ -400,91 +403,169 @@ function Card({ icon: Icon, title, hint, action, children }: { icon: typeof Pale
   );
 }
 
-function PortalTab() {
-  const [portalTitle, setPortalTitle] = useState("Biz-Analytic Intelligence Platform");
-  const [portalSubtitle, setPortalSubtitle] = useState(
-    "Centralized enterprise business intelligence portal, executive KPI metrics, certified Power BI semantic models, version audit logs, and governance."
-  );
-  const [portalBannerActive, setPortalBannerActive] = useState(true);
-  const [portalAnnouncement, setPortalAnnouncement] = useState(
-    "Q1 2026 Semantic Models and Enterprise Dashboards are active and synchronized with Supabase Database."
-  );
-  const [savedSuccess, setSavedSuccess] = useState(false);
+function AnnouncementTab() {
+  const { isAdmin } = useAccess();
+  const [loaded, setLoaded] = useState<AnnouncementRecord | null>(null);
+  const [draft, setDraft] = useState<Announcement>({ active: false, message: "", tone: "info", link: "", linkLabel: "" });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("portal_hub_settings");
-    if (!saved) return;
-    try {
-      const data = JSON.parse(saved);
-      /* eslint-disable react-hooks/set-state-in-effect */
-      if (data.portalTitle) setPortalTitle(data.portalTitle);
-      if (data.portalSubtitle) setPortalSubtitle(data.portalSubtitle);
-      if (data.portalBannerActive !== undefined) setPortalBannerActive(data.portalBannerActive);
-      if (data.portalAnnouncement) setPortalAnnouncement(data.portalAnnouncement);
-      /* eslint-enable react-hooks/set-state-in-effect */
-    } catch {}
+    fetch("/api/team-settings?key=announcement", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: AnnouncementRecord | null) => {
+        if (!j) return;
+        setLoaded(j);
+        if (j.value) setDraft({ tone: "info", link: "", linkLabel: "", ...j.value });
+      })
+      .catch(() => {});
   }, []);
 
-  function save() {
-    localStorage.setItem("portal_hub_settings", JSON.stringify({ portalTitle, portalSubtitle, portalBannerActive, portalAnnouncement }));
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+  const norm = (x?: Partial<Announcement> | null) => JSON.stringify([!!x?.active, x?.message || "", x?.tone || "info", x?.link || "", x?.linkLabel || ""]);
+  const changed = norm(draft) !== norm(loaded?.value);
+  const linkOk = !draft.link || /^(https?:\/\/|\/)/.test(draft.link);
+
+  async function save() {
+    if (!linkOk) return toast.error("The link should start with https:// or /");
+    setSaving(true);
+    try {
+      const value: Announcement = { ...draft, message: draft.message.trim(), link: draft.link?.trim(), linkLabel: draft.linkLabel?.trim() };
+      const res = await fetch("/api/team-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "announcement", value }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "The server didn't accept it");
+      setLoaded(json);
+      setDraft(value);
+      window.dispatchEvent(new CustomEvent(ANNOUNCEMENT_EVENT, { detail: json }));
+      toast(value.active ? "Announcement is live" : "Announcement turned off", { body: value.active ? "Everyone sees it at the top of every page." : undefined });
+    } catch (e) {
+      toast.error("Couldn't save the announcement", { body: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSaving(false);
+    }
   }
 
+  const warning = draft.tone === "warning";
   return (
     <Card
-      icon={LayoutDashboard}
-      title="Portal content"
-      hint="Headline, description and the announcement banner."
+      icon={Megaphone}
+      title="Team announcement"
+      hint="One short notice shown to everyone at the top of every page — a data refresh delay, a new model, a deadline."
       action={
-        savedSuccess && (
-          <span className="pop-in inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-medium text-emerald-700">
-            <Check className="h-3.5 w-3.5" /> Saved
+        loaded?.updatedAt && (
+          <span className="text-[12px] text-slate-400">
+            Last changed by {loaded.updatedBy || "an admin"} · {new Date(loaded.updatedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}
           </span>
         )
       }
     >
-      <div className="space-y-4 text-[13px]">
-        <label className="block space-y-1.5">
-          <span className="font-medium text-slate-700">Headline</span>
-          <Input value={portalTitle} onChange={(e) => setPortalTitle(e.target.value)} placeholder="Portal title" />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="font-medium text-slate-700">Description</span>
-          <Textarea rows={2} value={portalSubtitle} onChange={(e) => setPortalSubtitle(e.target.value)} placeholder="Description" />
-        </label>
-        <div className="border-t border-slate-100 pt-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-slate-700">Announcement banner</p>
-              <p className="text-[12px] text-slate-500">A notice across the top of the portal.</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={portalBannerActive}
-              onClick={() => setPortalBannerActive(!portalBannerActive)}
-              className={clsx("relative h-6 w-11 rounded-full transition-colors duration-200", portalBannerActive ? "bg-blue-600" : "bg-slate-300")}
-            >
-              <span className={clsx("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200", portalBannerActive ? "translate-x-[22px]" : "translate-x-0.5")} />
-            </button>
+      {!isAdmin && (
+        <p className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600">
+          <ShieldAlert className="h-4 w-4 text-slate-400" /> Only admins can change the announcement.
+        </p>
+      )}
+      <fieldset disabled={!isAdmin} className="space-y-4 text-[13px] disabled:opacity-70">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium text-slate-700">Show the announcement</p>
+            <p className="text-[12px] text-slate-500">People can hide it; it comes back when the message changes.</p>
           </div>
-          {portalBannerActive && (
-            <div className="mt-3 pop-in">
-              <Input value={portalAnnouncement} onChange={(e) => setPortalAnnouncement(e.target.value)} placeholder="e.g. Q1 2026 models are synced" />
-            </div>
-          )}
-        </div>
-        <div className="flex justify-end pt-2">
           <button
             type="button"
-            onClick={save}
-            className="flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-[13px] font-medium text-white transition hover:bg-blue-700 active:scale-[0.98]"
+            role="switch"
+            aria-checked={draft.active}
+            onClick={() => setDraft({ ...draft, active: !draft.active })}
+            className={clsx("relative h-6 w-11 rounded-full transition-colors duration-200", draft.active ? "bg-blue-600" : "bg-slate-300")}
           >
-            <Save className="h-4 w-4" /> Save
+            <span className={clsx("absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200", draft.active ? "translate-x-[22px]" : "translate-x-0.5")} />
           </button>
         </div>
-      </div>
+
+        <label className="block space-y-1.5">
+          <span className="flex justify-between font-medium text-slate-700">
+            Message <span className="font-normal tabular-nums text-slate-400">{draft.message.length}/240</span>
+          </span>
+          <Textarea
+            rows={2}
+            maxLength={240}
+            value={draft.message}
+            onChange={(e) => setDraft({ ...draft, message: e.target.value })}
+            placeholder="e.g. BPK Finance refresh is late today — numbers update by 11:00."
+          />
+        </label>
+
+        <div>
+          <span className="mb-1.5 block font-medium text-slate-700">Style</span>
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+            {(
+              [
+                ["info", "Info"],
+                ["warning", "Heads-up"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setDraft({ ...draft, tone: id })}
+                className={clsx(
+                  "rounded-md px-3 py-1 text-[12.5px] font-medium transition",
+                  (draft.tone || "info") === id ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+          <label className="block space-y-1.5">
+            <span className="font-medium text-slate-700">
+              Link <span className="font-normal text-slate-400">(optional)</span>
+            </span>
+            <Input value={draft.link || ""} onChange={(e) => setDraft({ ...draft, link: e.target.value })} placeholder="https://… or /dax?model=PKT-D01" />
+            {!linkOk && <span className="text-[12px] text-rose-600">Start with https:// or / (a page in this app).</span>}
+          </label>
+          <label className="block space-y-1.5">
+            <span className="font-medium text-slate-700">Link text</span>
+            <Input value={draft.linkLabel || ""} onChange={(e) => setDraft({ ...draft, linkLabel: e.target.value })} placeholder="Open" />
+          </label>
+        </div>
+
+        {draft.message.trim() && (
+          <div>
+            <span className="mb-1.5 block font-medium text-slate-700">Preview</span>
+            <div
+              className={clsx(
+                "flex items-center gap-2.5 rounded-lg border px-3 py-2",
+                warning ? "border-amber-200 bg-amber-50 text-amber-900" : "border-blue-100 bg-blue-50 text-blue-900",
+                !draft.active && "opacity-50"
+              )}
+            >
+              <Megaphone className={clsx("h-4 w-4 shrink-0", warning ? "text-amber-600" : "text-blue-600")} />
+              <span className="flex-1 font-medium">{draft.message}</span>
+              {draft.link && <span className="text-[12.5px] font-medium">{draft.linkLabel || "Open"} ↗</span>}
+            </div>
+            {!draft.active && <p className="mt-1 text-[12px] text-slate-400">Turned off — nobody sees it until you switch it on.</p>}
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving || !changed || (draft.active && !draft.message.trim())}
+              className="flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-[13px] font-medium text-white transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {draft.active ? "Publish to the team" : "Save"}
+            </button>
+          </div>
+        )}
+      </fieldset>
     </Card>
   );
 }

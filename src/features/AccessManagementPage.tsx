@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { KeyRound, Loader2, Plus, Search, ShieldCheck, Trash2, UserPlus, X } from "lucide-react";
 import { clsx } from "clsx";
 import { Modal } from "@/components/ui";
+import { confirmDialog } from "@/components/feedback";
 import { useAccess, useAuth } from "@/components/auth/LoginGate";
 import { PAGES, defaultPermissions, resolveAccess, type Permissions, type Role } from "@/lib/access";
 import { initialsOf, toneFor } from "@/components/layout/Presence";
@@ -172,7 +173,12 @@ export function AccessManagementPage() {
 
   async function resetPassword(u: UserRow) {
     const pw = randomPassword();
-    if (!window.confirm(`Set a new password for ${u.username}?\n\nNew password: ${pw}\n\nCopy it now — it won't be shown again.`)) return;
+    const ok = await confirmDialog({
+      title: `Set a new password for ${u.username}?`,
+      body: `New password: ${pw}\n\nIt's copied to your clipboard when you confirm. Send it to them privately — it won't be shown again.`,
+      confirmLabel: "Set password",
+    });
+    if (!ok) return;
     try {
       await post({ action: "set_password", username: u.username, password: pw });
       void navigator.clipboard?.writeText(pw);
@@ -183,7 +189,13 @@ export function AccessManagementPage() {
   }
 
   async function remove(u: UserRow) {
-    if (!window.confirm(`Delete ${u.name}? They'll be signed out immediately.`)) return;
+    const ok = await confirmDialog({
+      title: `Remove ${u.name}?`,
+      body: "They're signed out straight away and can't sign in again until someone adds them back.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await post({ action: "delete_user", email: u.email });
       await load();
