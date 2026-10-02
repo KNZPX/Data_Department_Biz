@@ -452,3 +452,65 @@ html[data-motion="reduced"] .lift:hover { transform: none; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d6dae1; border-radius: 9999px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #a9b0bc; border: 2px solid transparent; background-clip: padding-box; }
+
+/* ---- Org-chart style tree (TreeDiagram) ---------------------------------- */
+.org-tree,
+.org-tree ul {
+  display: flex;
+  justify-content: center;
+  padding-top: 18px;
+  position: relative;
+}
+.org-tree { padding-top: 0; }
+.org-tree li {
+  list-style: none;
+  position: relative;
+  padding: 18px 6px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.org-tree > li { padding-top: 0; }
+.org-tree li::before,
+.org-tree li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 18px;
+  border-top: 1.5px solid var(--color-slate-300);
+}
+.org-tree li::after {
+  right: auto;
+  left: 50%;
+  border-left: 1.5px solid var(--color-slate-300);
+}
+.org-tree li:only-child::before,
+.org-tree li:only-child::after { display: none; }
+.org-tree li:only-child { padding-top: 18px; }
+.org-tree > li:only-child { padding-top: 0; }
+.org-tree li:first-child::before,
+.org-tree li:last-child::after { border: 0 none; }
+.org-tree li:last-child::before {
+  border-right: 1.5px solid var(--color-slate-300);
+  border-radius: 0 6px 0 0;
+}
+.org-tree li:first-child::after { border-radius: 6px 0 0 0; }
+.org-tree ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 18px;
+  border-left: 1.5px solid var(--color-slate-300);
+}
+.org-tree li:only-child > button::before {
+  content: "";
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  height: 18px;
+  border-left: 1.5px solid var(--color-slate-300);
+}
+.org-tree > li:only-child > button::before { display: none; }

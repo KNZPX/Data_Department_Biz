@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, CheckCircle2, Cloud, CloudOff, Database, KeyRound, Loader2, Megaphone, Palette, RotateCcw, Save, ShieldAlert } from "lucide-react";
+import { Check, CheckCircle2, Cloud, CloudOff, Database, KeyRound, Building2, Loader2, Megaphone, Palette, ShieldCheck, RotateCcw, Save, ShieldAlert } from "lucide-react";
 import { clsx } from "clsx";
 import { Input, Textarea } from "@/components/ui";
 import { TokenModal } from "@/components/TokenModal";
 import { useAccess, useAuth } from "@/components/auth/LoginGate";
 import { toast } from "@/components/feedback";
 import { useT } from "@/lib/i18n";
+import { OrganisationTab } from "@/features/settings/OrganisationTab";
+import { PagesTab } from "@/features/settings/PagesTab";
 import { ANNOUNCEMENT_EVENT, type Announcement, type AnnouncementRecord } from "@/components/layout/AnnouncementBanner";
 import {
   ACCENTS,
@@ -25,11 +27,13 @@ import {
   type Appearance,
 } from "@/context/ThemeContext";
 
-type Tab = "appearance" | "team" | "connection";
+type Tab = "appearance" | "team" | "organisation" | "pages" | "connection";
 
 const TABS: { id: Tab; label: string; icon: typeof Palette }[] = [
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "team", label: "Team announcement", icon: Megaphone },
+  { id: "organisation", label: "Organisation", icon: Building2 },
+  { id: "pages", label: "Pages & access", icon: ShieldCheck },
   { id: "connection", label: "Connection", icon: KeyRound },
 ];
 
@@ -54,7 +58,7 @@ export function SettingsPage() {
             <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">{t("Settings")}</h2>
             <p className="text-[13.5px] text-slate-500">{t("Your own look, the team announcement, and connections.")}</p>
           </div>
-          <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="tablist">
+          <div className="inline-flex max-w-full overflow-x-auto rounded-lg bg-slate-100 p-0.5 [scrollbar-width:none]" role="tablist">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -63,7 +67,7 @@ export function SettingsPage() {
                 aria-selected={activeTab === id}
                 onClick={() => pick(id)}
                 className={clsx(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-all duration-200",
+                  "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition-all duration-200",
                   activeTab === id ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
                 )}
               >
@@ -77,6 +81,8 @@ export function SettingsPage() {
         <div key={activeTab} className="fade-enter">
           {activeTab === "appearance" && <AppearanceTab />}
           {activeTab === "team" && <AnnouncementTab />}
+          {activeTab === "organisation" && <OrganisationTab />}
+          {activeTab === "pages" && <PagesTab />}
           {activeTab === "connection" && <ConnectionTab />}
         </div>
       </div>

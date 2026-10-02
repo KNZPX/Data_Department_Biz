@@ -212,8 +212,11 @@ export function BoardGallery({
   onMove,
   onDelete,
   canEdit = true,
+  kind = "plan",
 }: {
   canEdit?: boolean;
+  /** "plan" = planning whiteboards; "dax" = formula diagrams made from the DAX dictionary. */
+  kind?: "plan" | "dax";
   boards: GalleryBoard[];
   loading: boolean;
   onOpen: (id: string) => void;
@@ -292,7 +295,15 @@ export function BoardGallery({
   return (
     <div className="h-full overflow-y-auto rounded-xl border border-slate-200/80 bg-white text-slate-900" onClick={() => setMenu(null)}>
       <div className="mx-auto max-w-6xl px-4 pb-12 pt-6 md:px-8">
-        {canEdit && (
+        {kind === "dax" && (
+          <section className="rounded-xl bg-blue-50/60 px-5 py-4 text-[13.5px] text-slate-700">
+            <p className="font-medium text-slate-900">How each measure is calculated</p>
+            <p className="mt-0.5 text-slate-600">
+              One diagram per measure, drawn from its DAX formula. Open a measure in the DAX dictionary and click <span className="font-medium">Diagram</span> to make or update one. Planning boards live in Whiteboard.
+            </p>
+          </section>
+        )}
+        {canEdit && kind === "plan" && (
           <section className="rounded-xl bg-slate-100/80 px-5 pb-5 pt-4">
             <button type="button" onClick={() => setTemplatesOpen((v) => !v)} className="mb-3 flex items-center gap-1.5 text-[16px] text-slate-800">
               Templates for data &amp; analysis
@@ -320,7 +331,7 @@ export function BoardGallery({
         )}
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[24px] font-normal tracking-tight text-slate-900">{activeFolder ? activeFolder.name : "Boards in this team"}</h2>
+          <h2 className="text-[24px] font-normal tracking-tight text-slate-900">{activeFolder ? activeFolder.name : kind === "dax" ? "DAX diagrams" : "Boards in this team"}</h2>
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -331,7 +342,7 @@ export function BoardGallery({
                 className="h-10 w-56 rounded-md border border-slate-300 bg-white pl-9 pr-3 text-[14px] outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
               />
             </div>
-            {canEdit && (
+            {canEdit && kind === "plan" && (
               <button
                 type="button"
                 onClick={() => onCreate(TEMPLATES[0], target)}
@@ -408,7 +419,9 @@ export function BoardGallery({
         {!loading && shown.length === 0 && (
           <div className="fade-enter mt-6 rounded-lg border border-dashed border-slate-300 p-10 text-center">
             <p className="text-[15px] font-medium">{q || owner !== "anyone" ? "No boards match these filters" : "No boards here yet"}</p>
-            <p className="mt-1 text-[14px] text-slate-500">{canEdit ? "Start one from a template above." : "Boards your team creates will show up here."}</p>
+            <p className="mt-1 text-[14px] text-slate-500">
+              {kind === "dax" ? "Open a measure in the DAX dictionary and click Diagram." : canEdit ? "Start one from a template above." : "Boards your team creates will show up here."}
+            </p>
           </div>
         )}
 
