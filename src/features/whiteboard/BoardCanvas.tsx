@@ -10,26 +10,22 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   ArrowLeft,
-  ArrowLeftRight,
   ArrowRight,
   BringToFront,
   ChevronDown,
   ChevronLeft,
-  Circle,
   CircleHelp,
   ClipboardPaste,
   Cloud,
   CloudOff,
   Copy,
   Crosshair,
-  Diamond,
   Download,
   Ellipsis,
   Frame as FrameIcon,
   Group,
   Hand,
   Eraser,
-  Hexagon,
   Highlighter,
   Loader2,
   Lock,
@@ -44,17 +40,14 @@ import {
   Redo2,
   SendToBack,
   Shapes,
-  Square,
   SquarePlus,
   StickyNote,
   Trash2,
-  Triangle,
   Type,
   Undo2,
   Ungroup,
   Unlock,
   UserPlus,
-  Waypoints,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -122,20 +115,59 @@ type Interaction =
   | { type: "draw"; points: [number, number][] }
   | { type: "erase"; hit: string[] };
 
-const SHAPES: { kind: ShapeKind; icon: LucideIcon; label: string }[] = [
-  { kind: "rect", icon: Square, label: "Rectangle" },
-  { kind: "round", icon: Square, label: "Rounded" },
-  { kind: "ellipse", icon: Circle, label: "Ellipse" },
-  { kind: "diamond", icon: Diamond, label: "Decision" },
-  { kind: "triangle", icon: Triangle, label: "Triangle" },
-  { kind: "hexagon", icon: Hexagon, label: "Hexagon" },
-  { kind: "cylinder", icon: Waypoints, label: "Database" },
-  { kind: "parallelogram", icon: ArrowLeftRight, label: "Input / output" },
+const SHAPES: { kind: ShapeKind; label: string }[] = [
+  { kind: "round", label: "Rounded" },
+  { kind: "rect", label: "Rectangle" },
+  { kind: "pill", label: "Pill" },
+  { kind: "ellipse", label: "Ellipse" },
+  { kind: "diamond", label: "Decision" },
+  { kind: "triangle", label: "Triangle" },
+  { kind: "pentagon", label: "Pentagon" },
+  { kind: "hexagon", label: "Hexagon" },
+  { kind: "octagon", label: "Octagon" },
+  { kind: "parallelogram", label: "Input / output" },
+  { kind: "cylinder", label: "Database" },
+  { kind: "document", label: "Document" },
+  { kind: "callout", label: "Speech bubble" },
+  { kind: "cloud", label: "Cloud" },
+  { kind: "star", label: "Star" },
+  { kind: "heart", label: "Heart" },
+  { kind: "arrow", label: "Arrow" },
+  { kind: "chevron", label: "Chevron" },
+  { kind: "plus", label: "Plus" },
 ];
+
+/** Soft pastel fill with a matching outline, one family per shape so a board reads at a glance. */
+const SHAPE_LOOK: Record<ShapeKind, { fill: string; stroke: string }> = (() => {
+  const blue = { fill: "#E8EEFF", stroke: "#4262FF" };
+  const yellow = { fill: "#FFF4CC", stroke: "#E0A200" };
+  const green = { fill: "#DEF7EA", stroke: "#1F9D5C" };
+  const pink = { fill: "#FFE6EE", stroke: "#E0457B" };
+  const violet = { fill: "#F0EAFF", stroke: "#7B5CFF" };
+  const teal = { fill: "#DDF5FA", stroke: "#0E9BB8" };
+  const peach = { fill: "#FFEBDD", stroke: "#F07B2C" };
+  return {
+    round: blue, rect: blue, pill: teal, ellipse: green, diamond: yellow, triangle: peach, pentagon: violet,
+    hexagon: violet, octagon: pink, parallelogram: peach, cylinder: teal, document: blue, callout: green,
+    cloud: teal, star: yellow, heart: pink, arrow: green, chevron: violet, plus: pink,
+  };
+})();
+const SHAPE_TEXT = "#1C1C1E";
+
+/** Starting size: round-ish shapes start square. */
+function shapeSize(kind: ShapeKind) {
+  if (kind === "star" || kind === "heart" || kind === "plus" || kind === "octagon" || kind === "pentagon") return { w: 140, h: 140 };
+  if (kind === "diamond" || kind === "cylinder" || kind === "cloud" || kind === "callout") return { w: 200, h: 130 };
+  if (kind === "pill") return { w: 200, h: 80 };
+  return { w: 200, h: 100 };
+}
+
 
 type MenuAction =
   | "edit" | "label" | "duplicate" | "copy" | "connect" | "front" | "back" | "lock" | "delete" | "group" | "ungroup"
   | "paste" | "text" | "blocks" | "selectAll" | "fit";
+
+const WIRE_DIR: Record<Side, [number, number]> = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };
 
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
@@ -197,33 +229,104 @@ function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
 }
 
+/** A polygon with softly rounded corners (radius clipped to half of each edge). */
+function roundedPoly(pts: [number, number][], r: number) {
+  const n = pts.length;
+  let d = "";
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    const a = pts[(i - 1 + n) % n];
+    const b = pts[(i + 1) % n];
+    const la = Math.hypot(a[0] - p[0], a[1] - p[1]) || 1;
+    const lb = Math.hypot(b[0] - p[0], b[1] - p[1]) || 1;
+    const ra = Math.min(r, la / 2);
+    const rb = Math.min(r, lb / 2);
+    const s0 = [p[0] + ((a[0] - p[0]) * ra) / la, p[1] + ((a[1] - p[1]) * ra) / la];
+    const s1 = [p[0] + ((b[0] - p[0]) * rb) / lb, p[1] + ((b[1] - p[1]) * rb) / lb];
+    d += `${i === 0 ? "M" : "L"}${s0[0]},${s0[1]} Q${p[0]},${p[1]} ${s1[0]},${s1[1]} `;
+  }
+  return d + "Z";
+}
+
 function shapePath(kind: ShapeKind, w: number, h: number): string {
+  const W = w - 1;
+  const H = h - 1;
+  const soft = Math.max(3, Math.min(12, Math.min(w, h) * 0.1));
   switch (kind) {
     case "rect":
-      return `M1,1 H${w - 1} V${h - 1} H1 Z`;
-    case "round": {
-      const r = Math.min(16, w / 4, h / 4);
-      return `M${r},1 H${w - r} Q${w - 1},1 ${w - 1},${r} V${h - r} Q${w - 1},${h - 1} ${w - r},${h - 1} H${r} Q1,${h - 1} 1,${h - r} V${r} Q1,1 ${r},1 Z`;
-    }
+      return roundedPoly([[1, 1], [W, 1], [W, H], [1, H]], 3);
+    case "round":
+      return roundedPoly([[1, 1], [W, 1], [W, H], [1, H]], Math.min(18, w / 4, h / 4));
+    case "pill":
+      return roundedPoly([[1, 1], [W, 1], [W, H], [1, H]], Math.min(w, h) / 2);
     case "ellipse":
       return `M${w / 2},1 A${w / 2 - 1},${h / 2 - 1} 0 1 1 ${w / 2 - 0.01},1 Z`;
     case "diamond":
-      return `M${w / 2},1 L${w - 1},${h / 2} L${w / 2},${h - 1} L1,${h / 2} Z`;
+      return roundedPoly([[w / 2, 1], [W, h / 2], [w / 2, H], [1, h / 2]], soft);
     case "triangle":
-      return `M${w / 2},1 L${w - 1},${h - 1} L1,${h - 1} Z`;
+      return roundedPoly([[w / 2, 1], [W, H], [1, H]], soft);
+    case "pentagon":
+      return roundedPoly([[w / 2, 1], [W, h * 0.38], [w * 0.81, H], [w * 0.19, H], [1, h * 0.38]], soft);
     case "hexagon": {
       const k = Math.min(w * 0.22, h / 2);
-      return `M${k},1 H${w - k} L${w - 1},${h / 2} L${w - k},${h - 1} H${k} L1,${h / 2} Z`;
+      return roundedPoly([[k, 1], [w - k, 1], [W, h / 2], [w - k, H], [k, H], [1, h / 2]], soft);
+    }
+    case "octagon": {
+      const kx = w * 0.29;
+      const ky = h * 0.29;
+      return roundedPoly([[kx, 1], [w - kx, 1], [W, ky], [W, h - ky], [w - kx, H], [kx, H], [1, h - ky], [1, ky]], soft * 0.6);
     }
     case "cylinder": {
       const e = Math.min(18, h / 5);
-      return `M1,${e} A${w / 2 - 1},${e} 0 0 1 ${w - 1},${e} V${h - e} A${w / 2 - 1},${e} 0 0 1 1,${h - e} Z M1,${e} A${w / 2 - 1},${e} 0 0 0 ${w - 1},${e}`;
+      return `M1,${e} A${w / 2 - 1},${e} 0 0 1 ${W},${e} V${h - e} A${w / 2 - 1},${e} 0 0 1 1,${h - e} Z M1,${e} A${w / 2 - 1},${e} 0 0 0 ${W},${e}`;
     }
     case "parallelogram": {
       const k = Math.min(w * 0.18, 40);
-      return `M${k},1 H${w - 1} L${w - k},${h - 1} H1 Z`;
+      return roundedPoly([[k, 1], [W, 1], [w - k, H], [1, H]], soft);
+    }
+    case "document":
+      return `M${soft},1 H${w - soft} Q${W},1 ${W},${soft} V${h * 0.84} C${w * 0.72},${h * 0.68} ${w * 0.5},${h * 1.02} ${w * 0.25},${h * 0.9} C${w * 0.14},${h * 0.85} ${w * 0.06},${h * 0.84} 1,${h * 0.87} V${soft} Q1,1 ${soft},1 Z`;
+    case "callout": {
+      const bh = h * 0.8;
+      const r = Math.min(16, w / 5, bh / 3);
+      return `M${r},1 H${w - r} Q${W},1 ${W},${r} V${bh - r} Q${W},${bh} ${w - r},${bh} H${w * 0.4} Q${w * 0.3},${h * 0.9} ${w * 0.2},${H} Q${w * 0.25},${h * 0.9} ${w * 0.25},${bh} H${r} Q1,${bh} 1,${bh - r} V${r} Q1,1 ${r},1 Z`;
+    }
+    case "cloud":
+      return `M${w * 0.26},${H} C${w * 0.08},${H} 1,${h * 0.78} ${w * 0.04},${h * 0.62} C${w * 0.0},${h * 0.42} ${w * 0.14},${h * 0.3} ${w * 0.27},${h * 0.33} C${w * 0.3},${h * 0.1} ${w * 0.5},${h * 0.0} ${w * 0.62},${h * 0.12} C${w * 0.72},${h * 0.04} ${w * 0.9},${h * 0.14} ${w * 0.88},${h * 0.34} C${w * 1.0},${h * 0.4} ${W},${h * 0.7} ${w * 0.9},${h * 0.85} C${w * 0.86},${h * 0.95} ${w * 0.8},${H} ${w * 0.72},${H} Z`;
+    case "heart":
+      return `M${w / 2},${H} C${w * 0.3},${h * 0.82} 1,${h * 0.6} 1,${h * 0.32} C1,${h * 0.12} ${w * 0.16},1 ${w * 0.3},1 C${w * 0.4},1 ${w * 0.47},${h * 0.07} ${w / 2},${h * 0.18} C${w * 0.53},${h * 0.07} ${w * 0.6},1 ${w * 0.7},1 C${w * 0.84},1 ${W},${h * 0.12} ${W},${h * 0.32} C${W},${h * 0.6} ${w * 0.7},${h * 0.82} ${w / 2},${H} Z`;
+    case "star": {
+      const pts: [number, number][] = [];
+      for (let i = 0; i < 10; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+        const rr = i % 2 === 0 ? 1 : 0.46;
+        pts.push([w / 2 + Math.cos(ang) * rr * (w / 2 - 1), h * 0.53 + Math.sin(ang) * rr * (h * 0.53 - 1)]);
+      }
+      return roundedPoly(pts, soft * 0.5);
+    }
+    case "arrow":
+      return roundedPoly([[1, h * 0.28], [w * 0.62, h * 0.28], [w * 0.62, 1], [W, h / 2], [w * 0.62, H], [w * 0.62, h * 0.72], [1, h * 0.72]], soft * 0.5);
+    case "chevron":
+      return roundedPoly([[1, 1], [w * 0.75, 1], [W, h / 2], [w * 0.75, H], [1, H], [w * 0.25, h / 2]], soft * 0.6);
+    case "plus": {
+      const tx = w * 0.33;
+      const ty = h * 0.33;
+      return roundedPoly(
+        [[tx, 1], [w - tx, 1], [w - tx, ty], [W, ty], [W, h - ty], [w - tx, h - ty], [w - tx, H], [tx, H], [tx, h - ty], [1, h - ty], [1, ty], [tx, ty]],
+        soft * 0.5
+      );
     }
   }
+}
+
+/** Keep the label inside the part of the shape that has room for it. */
+function shapeTextPad(kind: ShapeKind, h: number): React.CSSProperties | undefined {
+  if (kind === "cylinder") return { paddingTop: 16 };
+  if (kind === "triangle") return { paddingTop: h * 0.35 };
+  if (kind === "callout") return { paddingBottom: h * 0.2 };
+  if (kind === "document") return { paddingBottom: h * 0.12 };
+  if (kind === "heart") return { paddingBottom: h * 0.12 };
+  return undefined;
 }
 
 /** Grow a centred textarea to its content so the text sits in the middle, like Miro. */
@@ -523,6 +626,16 @@ export function BoardCanvas({
     for (const [id, n] of now) {
       if (prev?.get(id) === n) continue;
       const svg = n instanceof SVGElement;
+      // A new line draws itself from its start to its end.
+      const wire = prev ? n.querySelector<SVGPathElement>("path[data-wire]") : null;
+      if (wire && !wire.getAttribute("stroke-dasharray")) {
+        const len = wire.getTotalLength();
+        wire.animate([{ strokeDasharray: `${len}`, strokeDashoffset: `${len}` }, { strokeDasharray: `${len}`, strokeDashoffset: "0" }], {
+          duration: Math.min(520, 220 + len * 0.6),
+          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+        });
+        continue;
+      }
       n.animate(svg ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, scale: "0.85" }, { opacity: 1, scale: "1" }], {
         duration: svg ? 220 : 300,
         delay: prev ? 0 : 80 + Math.min(i++, 30) * 16,
@@ -671,8 +784,9 @@ export function BoardCanvas({
       case "sticky":
         return { id: uid(), kind: "sticky", x: at.x - 90, y: at.y - 90, w: 180, h: 180, z, text: "", color: stickyColor };
       case "shape": {
-        const r = size || { x: at.x - 100, y: at.y - 50, w: 200, h: 100 };
-        return { id: uid(), kind: "shape", shape: shapeKind, ...r, z, text: "", fill: "#FFFFFF", stroke: INK, textColor: INK, fontSize: 16 };
+        const d = shapeSize(shapeKind);
+        const r = size || { x: at.x - d.w / 2, y: at.y - d.h / 2, ...d };
+        return { id: uid(), kind: "shape", shape: shapeKind, ...r, z, text: "", ...SHAPE_LOOK[shapeKind], textColor: SHAPE_TEXT, fontSize: 16 };
       }
       case "text":
         return { id: uid(), kind: "text", x: at.x, y: at.y - 16, w: 260, h: 40, z, text: "", color: INK, fontSize: 22 };
@@ -1662,13 +1776,13 @@ export function BoardCanvas({
     } else if (el.kind === "shape") {
       inner = (
         <>
-          <svg className="absolute inset-0 overflow-visible" width={el.w} height={el.h}>
-            <path d={shapePath(el.shape, el.w, el.h)} fill={el.fill} stroke={el.stroke} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+          <svg className="wb-shape absolute inset-0 overflow-visible" width={el.w} height={el.h}>
+            <path d={shapePath(el.shape, el.w, el.h)} fill={el.fill} stroke={el.stroke} strokeWidth={2} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           </svg>
           {!editing && (
             <div
               className="absolute inset-0 flex items-center px-4 leading-snug"
-              style={{ color: el.textColor, fontSize: el.fontSize, paddingTop: el.shape === "cylinder" ? 16 : undefined }}
+              style={{ color: el.textColor, fontSize: el.fontSize, ...shapeTextPad(el.shape, el.h) }}
             >
               <div className="w-full whitespace-pre-wrap break-words" style={{ ...fmt, textAlign: fmt.textAlign || "center" }}>
                 {el.text}
@@ -1923,6 +2037,7 @@ export function BoardCanvas({
                     onPointerLeave={() => setHoverLine((h) => (h === c.id ? null : h))}
                   />
                   <path
+                    data-wire=""
                     d={pth.d}
                     fill="none"
                     stroke={sel ? MIRO_BLUE : c.stroke}
@@ -1944,15 +2059,40 @@ export function BoardCanvas({
                 </g>
               );
             })}
-            {interaction?.type === "connect" && (
-              <path
-                d={`M${interaction.from.x},${interaction.from.y} L${interaction.cur.x},${interaction.cur.y}`}
-                stroke={MIRO_BLUE}
-                strokeWidth={2}
-                fill="none"
-                vectorEffect="non-scaling-stroke"
-              />
-            )}
+            {interaction?.type === "connect" &&
+              (() => {
+                // A soft, bendy wire while dragging: it leaves the box along its side,
+                // marches toward the pointer, and settles solid when it finds a target.
+                const a = interaction.from;
+                const target = snap ? byId.get(snap.id) : undefined;
+                const b = snap && target && isBox(target) ? anchor(target, snap.side) : interaction.cur;
+                const dist = Math.hypot(b.x - a.x, b.y - a.y);
+                const k = Math.max(24, Math.min(150, dist * 0.45));
+                const toward = (p: { x: number; y: number }, q: { x: number; y: number }) => {
+                  const l = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+                  return [(q.x - p.x) / l, (q.y - p.y) / l];
+                };
+                const da = a.side ? WIRE_DIR[a.side] : toward(a, b);
+                const db = snap ? WIRE_DIR[snap.side] : toward(b, a).map((v) => v * 0.6);
+                const d = `M${a.x},${a.y} C${a.x + da[0] * k},${a.y + da[1] * k} ${b.x + db[0] * k},${b.y + db[1] * k} ${b.x},${b.y}`;
+                const z = camera.zoom;
+                return (
+                  <g style={{ pointerEvents: "none" }}>
+                    <path d={d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.14} strokeWidth={10} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke={MIRO_BLUE}
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      vectorEffect="non-scaling-stroke"
+                      className={snap ? undefined : "wb-wire"}
+                    />
+                    <circle cx={a.x} cy={a.y} r={4.5 / z} fill="#fff" stroke={MIRO_BLUE} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                    <circle key={snap ? `${snap.id}${snap.side}` : "free"} cx={b.x} cy={b.y} r={(snap ? 7 : 5.5) / z} fill={MIRO_BLUE} className={snap ? "wb-wire-snap" : "wb-wire-dot"} />
+                  </g>
+                );
+              })()}
             {interaction?.type === "draw" && (
               <polyline points={interaction.points.map((q) => q.join(",")).join(" ")} fill="none" stroke={penColor} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
             )}
@@ -2318,7 +2458,7 @@ export function BoardCanvas({
                   </div>
                 )}
                 {t === "shape" && flyout && (
-                  <div className={clsx("absolute left-[52px] top-0 w-[200px] p-3", POPOVER)}>
+                  <div className={clsx("absolute left-[52px] top-0 w-[232px] p-3", POPOVER)}>
                     <p className="mb-2 text-[12px] font-semibold text-[#656B81]">Shapes</p>
                     <div className="grid grid-cols-4 gap-1">
                       {SHAPES.map((sh) => (
@@ -2332,10 +2472,10 @@ export function BoardCanvas({
                             setTool("shape");
                             setShapeMenu(false);
                           }}
-                          className={clsx("grid h-10 w-10 place-items-center rounded-md", shapeKind === sh.kind ? ACTIVE_BTN : "text-[#1C1C1E] hover:bg-[#F1F2F5]")}
+                          className={clsx("wb-btn grid h-10 w-10 place-items-center rounded-lg", shapeKind === sh.kind ? "bg-[#E6EAFF] ring-1 ring-[#4262FF]/40" : "hover:bg-[#F1F2F5]")}
                         >
-                          <svg width="24" height="18" viewBox="0 0 110 80">
-                            <path d={shapePath(sh.kind, 110, 80)} fill="none" stroke="currentColor" strokeWidth={7} />
+                          <svg width="26" height="20" viewBox="-4 -4 118 88" className="overflow-visible transition-transform duration-200 hover:scale-110">
+                            <path d={shapePath(sh.kind, 110, 80)} fill={SHAPE_LOOK[sh.kind].fill} stroke={SHAPE_LOOK[sh.kind].stroke} strokeWidth={6} strokeLinejoin="round" />
                           </svg>
                         </button>
                       ))}
@@ -2522,9 +2662,8 @@ export function BoardCanvas({
                     aria-label={`Add ${sh.label}`}
                     onClick={() => {
                       const z = maxZ() + 1;
-                      const w = sh.kind === "diamond" ? 180 : 200;
-                      const h = sh.kind === "diamond" || sh.kind === "cylinder" ? 120 : 100;
-                      const el: BoxEl = { id: uid(), kind: "shape", shape: sh.kind, x: menu.world.x - w / 2, y: menu.world.y - h / 2, w, h, z, text: "", fill: "#FFFFFF", stroke: INK, textColor: INK, fontSize: 16 };
+                      const { w, h } = shapeSize(sh.kind);
+                      const el: BoxEl = { id: uid(), kind: "shape", shape: sh.kind, x: menu.world.x - w / 2, y: menu.world.y - h / 2, w, h, z, text: "", ...SHAPE_LOOK[sh.kind], textColor: SHAPE_TEXT, fontSize: 16 };
                       setMenu(null);
                       commit([...elRef.current, el]);
                       setSelection([el.id]);
