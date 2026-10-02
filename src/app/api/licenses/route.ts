@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as LicenseInput;
     const normalized = normalizeLicense(body);
-    const saved = await saveDbLicense(normalized);
+    const saved = await saveDbLicense(normalized, _g.user.name || _g.user.email);
     return NextResponse.json({ license: saved });
   } catch (error) {
     return NextResponse.json(

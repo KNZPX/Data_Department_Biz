@@ -448,7 +448,7 @@ export async function getDbLicenses(): Promise<PowerBiLicense[]> {
   }));
 }
 
-export async function saveDbLicense(license: PowerBiLicense): Promise<PowerBiLicense> {
+export async function saveDbLicense(license: PowerBiLicense, savedBy = "Unknown"): Promise<PowerBiLicense> {
   const provider = getDbProvider();
   const now = new Date().toISOString();
   const record = {
@@ -459,8 +459,23 @@ export async function saveDbLicense(license: PowerBiLicense): Promise<PowerBiLic
 
   if (provider === "supabase") {
     const supabase = getSupabaseClient();
+    const { data: before } = license.id ? await supabase.from("powerbi_licenses").select("*").eq("id", license.id).maybeSingle() : { data: null };
     const { data, error } = await supabase.from("powerbi_licenses").upsert(record).select("*").single();
     if (error) throw error;
+    const who = (data as Record<string, unknown>).display_name || (data as Record<string, unknown>).name_th || (data as Record<string, unknown>).ad_account || license.id;
+    await insertDbChangeLogs([
+      {
+        id: crypto.randomUUID(),
+        entity_table: "powerbi_licenses",
+        entity_id: String((data as Record<string, unknown>).id),
+        action: before ? "update" : "create",
+        summary: `${before ? "Updated" : "Added"} license for ${who}`,
+        changed_by: savedBy,
+        changed_at: now,
+        before: before || null,
+        after: data,
+      },
+    ]).catch(() => {});
     return data as PowerBiLicense;
   }
 
@@ -1082,6 +1097,25 @@ export async function getAllCustomDaxItems(): Promise<CustomDaxItem[]> {
 // =============================================================================
 // 7. RESTORE / ROLLBACK SYSTEM AUDIT EVENTS
 // =============================================================================
+/** Throw when a Supabase call fails, so restore never reports success after an error. */
+async function must<T extends { error: unknown }>(q: PromiseLike<T>): Promise<T> {
+  const r = await q;
+  if (r.error) throw r.error instanceof Error ? r.error : new Error((r.error as { message?: string }).message || "Database error");
+  return r;
+}
+
+/** Which audit entries can be put back automatically. */
+export function isRestorable(log: { entity_table: string; action: string; before?: unknown; is_restored?: boolean }) {
+  if (log.is_restored || log.action === "restore") return false;
+  const t = log.entity_table;
+  if (t === "custom_dax_items" || t === "dax_dictionary_items") return log.action === "create" || ((log.action === "delete" || log.action === "update") && !!log.before);
+  if (t === "dax_annotations") return !!log.before;
+  if (t === "powerbi_licenses") return log.action === "create" || ((log.action === "delete" || log.action === "update") && !!log.before);
+  if (t === "whiteboard_boards") return log.action === "delete" && !!log.before;
+  if (t === "target_scenarios") return log.action === "delete" || log.action === "create" || (log.action === "update" && !!log.before);
+  return false;
+}
+
 export async function restoreChangeLog(
   logId: string,
   restoredBy: string = "Admin"
@@ -1130,9 +1164,7 @@ export async function restoreChangeLog(
       }
     } else if (action === "create") {
       // Rollback creation by deleting the item
-      if (supabase) {
-        await supabase.from("dax_dictionary_items").delete().eq("id", entity_id);
-      }
+      if (supabase) await must(supabase.from("dax_dictionary_items").delete().eq("id", entity_id));
     } else if (action === "update" && beforeObj) {
       // Rollback update by restoring previous definitions
       if (supabase) {
@@ -1165,15 +1197,20 @@ export async function restoreChangeLog(
         .eq("id", entity_id);
     }
   } else if (entity_table === "powerbi_licenses") {
-    if (action === "delete" && beforeObj) {
-      if (supabase) {
-        await supabase.from("powerbi_licenses").upsert(beforeObj);
-      }
-    } else if (action === "update" && beforeObj) {
-      if (supabase) {
-        await supabase.from("powerbi_licenses").upsert(beforeObj);
-      }
+    if ((action === "delete" || action === "update") && beforeObj) {
+      if (supabase) await must(supabase.from("powerbi_licenses").upsert(beforeObj));
+    } else if (action === "create") {
+      if (supabase) await must(supabase.from("powerbi_licenses").delete().eq("id", entity_id));
     }
+  } else if (entity_table === "whiteboard_boards") {
+    if (action === "delete" && beforeObj && supabase) await must(supabase.from("whiteboard_boards").upsert({ ...beforeObj, updated_at: now }));
+  } else if (entity_table === "target_scenarios") {
+    if (!supabase) throw new Error("Restore needs the cloud database.");
+    if (action === "delete") await must(supabase.from("target_scenarios").update({ is_deleted: false, deleted_at: null, updated_at: now }).eq("id", entity_id));
+    else if (action === "update" && beforeObj) await must(supabase.from("target_scenarios").update({ name: beforeObj.name, snapshot: beforeObj.snapshot, updated_at: now }).eq("id", entity_id));
+    else if (action === "create") await must(supabase.from("target_scenarios").update({ is_deleted: true, deleted_at: now }).eq("id", entity_id));
+  } else {
+    throw new Error(`Changes to ${entity_table} can't be restored automatically.`);
   }
 
   // 3. Mark the log as restored
@@ -1329,12 +1366,27 @@ export async function saveDbWhiteboardBoard(board: {
   });
 }
 
-export async function deleteDbWhiteboardBoard(boardId: string): Promise<void> {
+export async function deleteDbWhiteboardBoard(boardId: string, deletedBy = "Unknown"): Promise<void> {
   const provider = getDbProvider();
   if (provider === "supabase") {
     const supabase = getSupabaseClient();
+    const { data: before } = await supabase.from("whiteboard_boards").select("*").eq("id", boardId).maybeSingle();
     const { error } = await supabase.from("whiteboard_boards").delete().eq("id", boardId);
     if (error) throw error;
+    if (before)
+      await insertDbChangeLogs([
+        {
+          id: crypto.randomUUID(),
+          entity_table: "whiteboard_boards",
+          entity_id: boardId,
+          action: "delete",
+          summary: `Deleted board “${before.name}”`,
+          changed_by: deletedBy,
+          changed_at: new Date().toISOString(),
+          before,
+          after: null,
+        },
+      ]).catch(() => {});
     return;
   }
 
@@ -1433,6 +1485,25 @@ export async function saveDbTargetScenario(scenario: {
     updated_at: now,
   };
 
+  // Keep the previous version in the activity log so it can be restored.
+  if (getDbProvider() === "supabase") {
+    const supabase = getSupabaseClient();
+    const { data: prev } = scenario.id ? await supabase.from("target_scenarios").select("id, name, snapshot").eq("id", scenario.id).maybeSingle() : { data: null };
+    await insertDbChangeLogs([
+      {
+        id: crypto.randomUUID(),
+        entity_table: "target_scenarios",
+        entity_id: id,
+        action: prev ? "update" : "create",
+        summary: `${prev ? "Saved" : "Created"} target scenario “${scenario.name}”`,
+        changed_by: scenario.created_by || "Unknown",
+        changed_at: now,
+        before: prev || null,
+        after: { id, name: scenario.name },
+      },
+    ]).catch(() => {});
+  }
+
   const provider = getDbProvider();
   if (provider === "supabase") {
     try {
@@ -1492,11 +1563,16 @@ export async function saveDbTargetScenario(scenario: {
   return record;
 }
 
-export async function deleteDbTargetScenario(scenarioId: string): Promise<void> {
+export async function deleteDbTargetScenario(scenarioId: string, deletedBy = "Unknown"): Promise<void> {
   const provider = getDbProvider();
   if (provider === "supabase") {
     try {
       const supabase = getSupabaseClient();
+      const { data: before } = await supabase.from("target_scenarios").select("id, name").eq("id", scenarioId).maybeSingle();
+      if (before)
+        await insertDbChangeLogs([
+          { id: crypto.randomUUID(), entity_table: "target_scenarios", entity_id: scenarioId, action: "delete", summary: `Deleted target scenario “${before.name}”`, changed_by: deletedBy, changed_at: new Date().toISOString(), before, after: null },
+        ]).catch(() => {});
       const { error } = await supabase
         .from("target_scenarios")
         .update({ is_deleted: true, deleted_at: new Date().toISOString() })

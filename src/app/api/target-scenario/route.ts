@@ -134,7 +134,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    await deleteDbTargetScenario(id);
+    await deleteDbTargetScenario(id, _g.user.name || _g.user.email);
 
     return NextResponse.json({
       success: true,
