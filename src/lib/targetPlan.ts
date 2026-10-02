@@ -770,3 +770,100 @@ export function fromSnapshot(base: Plan, snap: PlanSnapshot): Plan {
   apply(root.id);
   return plan;
 }
+
+// ---- hospital mix: OPD/IPD and segments ------------------------------------------
+//
+// OPD/IPD and the segments are not levels under a CoE: they are two other ways
+// of cutting the same hospital total, side by side with the CoE / SBU split.
+// Inside, every unit keeps OPD/IPD × segment cells, and the three cuts stay
+// consistent: changing a hospital's OPD/IPD or segment mix re-fits the cells
+// (iterative proportional fitting) so every CoE / SBU keeps its own total.
+
+export type MixDim = "setting" | "market";
+export type MixField = "target" | "base26" | "prior25";
+export const MIX_MEMBERS: Record<MixDim, readonly string[]> = { setting: ["OPD", "IPD"], market: SEGMENTS };
+
+type Cell = { leaf: string; unit: string; setting: string; market: string; v: number };
+
+function mixCells(plan: Plan, siteId: string, field: MixField): Cell[] {
+  const out: Cell[] = [];
+  walk(plan, siteId, (n) => {
+    if (n.level !== "market" || !n.parentId) return;
+    const setting = plan.nodes[n.parentId];
+    out.push({ leaf: n.id, unit: setting.parentId!, setting: setting.name, market: n.name, v: n[field] });
+  });
+  return out;
+}
+
+/** A hospital's (or the network's) total for each OPD/IPD or segment member. */
+export function mixOf(plan: Plan, id: string, dim: MixDim, field: MixField): Record<string, number> {
+  const out: Record<string, number> = Object.fromEntries(MIX_MEMBERS[dim].map((m) => [m, 0]));
+  walk(plan, id, (n) => {
+    if (n.level === dim) out[n.name] = (out[n.name] || 0) + n[field];
+  });
+  return out;
+}
+
+/**
+ * Set one OPD/IPD or segment member of a hospital. The hospital total stays;
+ * the other members share what's left (in their current proportions), and the
+ * cells under every CoE / SBU are re-fitted so each unit keeps its total.
+ */
+export function setMix(input: Plan, siteId: string, dim: MixDim, member: string, value: number, field: MixField = "target"): Plan {
+  const plan = clonePlan(input);
+  const cells = mixCells(plan, siteId, field);
+  const total = sum(cells.map((c) => c.v));
+  if (total <= 0 || !cells.length) return plan;
+  const key = (c: Cell) => (dim === "setting" ? c.setting : c.market);
+  const other: MixDim = dim === "setting" ? "market" : "setting";
+  const okey = (c: Cell) => (other === "setting" ? c.setting : c.market);
+
+  // Wanted margins on this dimension.
+  const cur = Object.fromEntries(MIX_MEMBERS[dim].map((m) => [m, sum(cells.filter((c) => key(c) === m).map((c) => c.v))]));
+  const want: Record<string, number> = {};
+  const v = Math.max(0, Math.min(total, value));
+  want[member] = v;
+  const rest = MIX_MEMBERS[dim].filter((m) => m !== member);
+  const restCur = sum(rest.map((m) => cur[m]));
+  for (const m of rest) want[m] = restCur > 0 ? ((total - v) * cur[m]) / restCur : (total - v) / rest.length;
+
+  // Margins that must not move: the other dimension and every unit.
+  const keepOther = Object.fromEntries(MIX_MEMBERS[other].map((m) => [m, sum(cells.filter((c) => okey(c) === m).map((c) => c.v))]));
+  const units = [...new Set(cells.map((c) => c.unit))];
+  const keepUnit = Object.fromEntries(units.map((u) => [u, sum(cells.filter((c) => c.unit === u).map((c) => c.v))]));
+
+  // Seed empty cells a little so mass can move into them, then fit.
+  for (const c of cells) if (c.v <= 0 && keepUnit[c.unit] > 0) c.v = keepUnit[c.unit] * 1e-6;
+  const fit = (groups: Record<string, number>, by: (c: Cell) => string) => {
+    for (const [g, target] of Object.entries(groups)) {
+      const members = cells.filter((c) => by(c) === g);
+      const s = sum(members.map((c) => c.v));
+      if (s > 0) for (const c of members) c.v *= target / s;
+      else if (target > 0) for (const c of members) c.v = target / members.length;
+    }
+  };
+  for (let i = 0; i < 200; i++) {
+    fit(want, key);
+    fit(keepOther, okey);
+    fit(keepUnit, (c) => c.unit);
+  }
+
+  // Write the cells back; OPD/IPD rows are the sum of their segments.
+  const touched = new Set<string>();
+  for (const c of cells) {
+    const n = plan.nodes[c.leaf];
+    plan.nodes[c.leaf] =
+      field === "target"
+        ? { ...n, target: c.v, locked: false }
+        : field === "prior25"
+          ? { ...n, prior25: c.v, priorTyped: undefined, dataPrior25: undefined }
+          : { ...n, base26: c.v, actual: undefined, dataBase26: undefined };
+    touched.add(n.parentId!);
+  }
+  for (const sid of touched) {
+    const s = plan.nodes[sid];
+    const t = sum(childrenOf(plan, sid).map((k) => k[field]));
+    plan.nodes[sid] = field === "target" ? { ...s, target: t, locked: false } : { ...s, [field]: t };
+  }
+  return plan;
+}

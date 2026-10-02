@@ -163,6 +163,7 @@ const TH: Record<string, string> = {
   "Phuket network": "เครือข่ายภูเก็ต",
   Plan: "แผน",
   "By segment": "ตาม segment",
+  "OPD/IPD & segment": "OPD/IPD และ segment",
   "By month": "รายเดือน",
   "Find a unit…": "ค้นหาหน่วย…",
   "Show down to": "แสดงถึงระดับ",
