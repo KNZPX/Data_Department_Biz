@@ -166,6 +166,8 @@ const TH: Record<string, string> = {
   "By month": "รายเดือน",
   "Find a unit…": "ค้นหาหน่วย…",
   "Show down to": "แสดงถึงระดับ",
+  "Full page": "เต็มหน้าจอ",
+  "Exit full page": "ออกจากเต็มหน้าจอ",
   Unit: "หน่วย",
   "2025 actual": "จริง 2025",
   "2026 base": "ฐาน 2026",

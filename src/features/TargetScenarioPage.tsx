@@ -9,6 +9,8 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Maximize2,
+  Minimize2,
   Download,
   FolderOpen,
   Layers,
@@ -199,6 +201,18 @@ export function TargetScenarioPage() {
   const div = unitDiv(unit);
   const dec = unitDecimals(unit, plan.step);
   const [tab, setTab] = useState<Tab>("plan");
+  const [fullPage, setFullPage] = useState(false);
+  // Esc leaves full page (unless it's closing a cell edit or a dialog).
+  useEffect(() => {
+    if (!fullPage) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.key !== "Escape" || e.defaultPrevented || el?.closest("input, textarea, select, [role=dialog], [role=alertdialog]")) return;
+      setFullPage(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullPage]);
   const [siteFilter, setSiteFilter] = useState<string>("ALL");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["PKT", ...blankFromOrg(defaultOrgStructure()).sites.map((s) => s.code)]));
@@ -852,7 +866,14 @@ export function TargetScenarioPage() {
       </div>
 
       {/* Body */}
-      <div className="flex min-h-[560px] flex-1 flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgb(16_24_40/0.04)] lg:min-h-0">
+      <div
+        className={clsx(
+          "flex flex-col overflow-hidden border-slate-200/80 bg-white",
+          fullPage
+            ? "pop-in fixed inset-0 z-[60] rounded-none border-0"
+            : "min-h-[560px] flex-1 rounded-xl border shadow-[0_1px_2px_rgb(16_24_40/0.04)] lg:min-h-0"
+        )}
+      >
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 px-3 py-2 md:px-4">
           <div className="flex rounded-lg bg-slate-100 p-0.5" role="tablist">
             {(
@@ -905,6 +926,19 @@ export function TargetScenarioPage() {
               </div>
             </>
           )}
+          <button
+            type="button"
+            onClick={() => setFullPage((v) => !v)}
+            aria-pressed={fullPage}
+            title={fullPage ? `${t("Exit full page")} (Esc)` : t("Full page")}
+            className={clsx(
+              "order-last ml-auto flex h-8 min-w-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-2 text-[12.5px] font-medium transition",
+              fullPage ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100" : "border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            )}
+          >
+            {fullPage ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            {fullPage ? t("Exit full page") : <span className="sr-only">{t("Full page")}</span>}
+          </button>
           {tab === "months" && (
             <span className="text-[12.5px] text-slate-500">
               {t("Showing")} <span className="font-medium text-slate-800">{pathOf(plan, selected.id) || selected.name}</span> — {t("follows the hospital filter; click a row below to go deeper")}
