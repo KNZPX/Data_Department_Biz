@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { ChevronDown, FolderInput, LayoutGrid, List, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { TEMPLATES, boundsOf, connectorPath, isBox, type El, type Template } from "./model";
@@ -61,6 +61,26 @@ export function Thumb({ elements, w = 320, h = 180 }: { elements: El[]; w?: numb
 
 type View = "grid" | "list";
 const VIEW_KEY = "wb_gallery_view";
+
+// Grid/list choice is a per-browser preference kept in localStorage.
+const viewListeners = new Set<() => void>();
+function subscribeView(fn: () => void) {
+  viewListeners.add(fn);
+  return () => viewListeners.delete(fn);
+}
+function readView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
+  } catch {
+    return "grid";
+  }
+}
+function setView(v: View) {
+  try {
+    localStorage.setItem(VIEW_KEY, v);
+  } catch {}
+  viewListeners.forEach((fn) => fn());
+}
 
 function BoardActions({
   board,
@@ -138,18 +158,7 @@ export function BoardGallery({
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState<string>("all");
   const [menu, setMenu] = useState<string | null>(null);
-  const [view, setViewState] = useState<View>("grid");
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(VIEW_KEY) === "list") setViewState("list");
-    } catch {}
-  }, []);
-  function setView(v: View) {
-    setViewState(v);
-    try {
-      localStorage.setItem(VIEW_KEY, v);
-    } catch {}
-  }
+  const view = useSyncExternalStore(subscribeView, readView, () => "grid" as View);
 
   const folders = useMemo(() => {
     const map = new Map<string, { id: string; name: string; count: number }>();

@@ -102,6 +102,10 @@ const SHAPES: { kind: ShapeKind; icon: LucideIcon; label: string }[] = [
   { kind: "parallelogram", icon: ArrowLeftRight, label: "Input / output" },
 ];
 
+type MenuAction =
+  | "edit" | "label" | "duplicate" | "copy" | "connect" | "front" | "back" | "lock" | "delete"
+  | "paste" | "text" | "blocks" | "selectAll" | "fit";
+
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 // Miro look: grey canvas, floating white panels, #4262FF accent, near-black ink.
@@ -261,6 +265,15 @@ export function BoardCanvas({
   const [labelEditId, setLabelEditId] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
+  // Canvas size in state (not read from the ref during render) for placing menus and the toolbar.
+  const [view, setView] = useState({ w: 800, h: 600 });
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const ro = new ResizeObserver(() => setView({ w: node.clientWidth, h: node.clientHeight }));
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
   const elRef = useRef(elements);
   const camRef = useRef(camera);
   const selRef = useRef(selection);
@@ -273,15 +286,19 @@ export function BoardCanvas({
   const snapRef = useRef<{ id: string; side: Side; x: number; y: number } | null>(null);
   const [snap, setSnap] = useState<{ id: string; side: Side } | null>(null);
   const escIdleRef = useRef(onEscapeIdle);
-  escIdleRef.current = onEscapeIdle;
   const openUi = useRef(false);
+  const [hasClip, setHasClip] = useState(false);
 
-  elRef.current = elements;
-  camRef.current = camera;
-  selRef.current = selection;
-  interRef.current = interaction;
-
-  openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tool !== "select");
+  // Mirror the latest state into refs for event handlers. Handlers that change
+  // elements also write elRef directly, so it's never stale mid-gesture.
+  useLayoutEffect(() => {
+    escIdleRef.current = onEscapeIdle;
+    elRef.current = elements;
+    camRef.current = camera;
+    selRef.current = selection;
+    interRef.current = interaction;
+    openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tool !== "select");
+  });
 
   const byId = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
 
@@ -344,8 +361,10 @@ export function BoardCanvas({
 
   const metaRef = useRef(meta);
   const nameRef = useRef(name);
-  metaRef.current = meta;
-  nameRef.current = name;
+  useLayoutEffect(() => {
+    metaRef.current = meta;
+    nameRef.current = name;
+  });
   useEffect(() => {
     // Send a pending save before the page closes or the board unmounts.
     const flush = () => {
@@ -553,6 +572,7 @@ export function BoardCanvas({
         redo();
       } else if (mod && k === "c") {
         clipboard.current = elRef.current.filter((x) => selRef.current.includes(x.id));
+        setHasClip(clipboard.current.length > 0);
         if (clipboard.current.length) flash(`Copied ${clipboard.current.length}`);
       } else if (mod && k === "v") {
         if (clipboard.current.length) duplicate(clipboard.current, 40);
@@ -795,7 +815,7 @@ export function BoardCanvas({
         });
         elRef.current = next;
         setElements(next);
-        const now = performance.now();
+        const now = e.timeStamp;
         if (now - it.lastSend > 50) {
           it.lastSend = now;
           rt.sendOps({ upsert: next.filter((x) => it.orig.has(x.id)) });
@@ -978,6 +998,70 @@ export function BoardCanvas({
     }
   }
 
+  function runMenuAction(action: MenuAction, world: { x: number; y: number }) {
+    const sel = selRef.current;
+    const chosen = elRef.current.filter((x) => sel.includes(x.id));
+    const one = chosen.length === 1 ? chosen[0] : null;
+    switch (action) {
+      case "edit":
+        if (one) setEditingId(one.id);
+        break;
+      case "label":
+        if (one) setLabelEditId(one.id);
+        break;
+      case "duplicate":
+        duplicate(chosen);
+        break;
+      case "copy":
+        copySelected();
+        break;
+      case "connect":
+        setTool("connector");
+        break;
+      case "front": {
+        let z = maxZ();
+        update(sel, (el) => (el.kind === "frame" ? el : { ...el, z: ++z }));
+        break;
+      }
+      case "back":
+        update(sel, (el) => (el.kind === "frame" ? el : { ...el, z: Math.max(1, minZ() + 1) }));
+        break;
+      case "lock": {
+        const lock = !chosen.every((x) => x.locked);
+        update(sel, (el) => ({ ...el, locked: lock }));
+        break;
+      }
+      case "delete":
+        deleteSelection();
+        break;
+      case "paste":
+        pasteAt(world);
+        break;
+      case "text":
+        addBlock("n-text", world);
+        break;
+      case "blocks":
+        setLibraryOpen(true);
+        break;
+      case "selectAll":
+        setSelection(elRef.current.map((x) => x.id));
+        break;
+      case "fit":
+        fitTo(elRef.current);
+        break;
+    }
+  }
+
+  function copySelected() {
+    clipboard.current = elRef.current.filter((x) => selRef.current.includes(x.id));
+    setHasClip(clipboard.current.length > 0);
+    flash(`Copied ${clipboard.current.length}`);
+  }
+
+  function saveLabel(id: string, label: string) {
+    update([id], (x) => ({ ...(x as ConnectorEl), label: label || undefined }));
+  }
+
   function viewCenter() {
     const r = rootRef.current!.getBoundingClientRect();
     return toWorld(r.left + r.width / 2, r.top + r.height / 2);
@@ -1066,6 +1150,12 @@ export function BoardCanvas({
   const selected = selection.map((id) => byId.get(id)).filter((x): x is El => Boolean(x));
   const selBounds = selected.length ? boundsOf(selected, byId) : null;
   const single = selected.length === 1 ? selected[0] : null;
+  const labelEdit = (() => {
+    const cx = labelEditId ? byId.get(labelEditId) : undefined;
+    if (!cx || cx.kind !== "connector") return null;
+    const mid = connectorPath(cx, byId).mid;
+    return { id: cx.id, label: cx.label, at: { x: mid.x * camera.zoom + camera.x, y: mid.y * camera.zoom + camera.y } };
+  })();
 
   const toScreen = (x: number, y: number) => ({ x: x * camera.zoom + camera.x, y: y * camera.zoom + camera.y });
   const gridSize = 24 * camera.zoom * (camera.zoom < 0.35 ? 4 : camera.zoom < 0.7 ? 2 : 1);
@@ -1525,32 +1615,26 @@ export function BoardCanvas({
           )}
 
           {/* connector label editor */}
-          {labelEditId && (() => {
-            const cx = byId.get(labelEditId);
-            if (!cx || cx.kind !== "connector") return null;
-            const mid = connectorPath(cx, byId).mid;
-            const sp = toScreen(mid.x, mid.y);
-            return (
-              <input
-                key={labelEditId}
-                autoFocus
-                defaultValue={cx.label || ""}
-                placeholder="Type a label"
-                onPointerDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur();
-                }}
-                onBlur={(e) => {
-                  const v = e.target.value.trim();
-                  setLabelEditId(null);
-                  if (v !== (cx.label || "")) update([cx.id], (x) => ({ ...(x as ConnectorEl), label: v || undefined }));
-                }}
-                className="pointer-events-auto absolute w-44 -translate-x-1/2 -translate-y-1/2 rounded-[3px] bg-white px-2 py-1 text-center text-[13px] text-[#1C1C1E] shadow-md outline-none ring-[1.5px] ring-[#4262FF]"
-                style={{ left: sp.x, top: sp.y, outline: "none" }}
-              />
-            );
-          })()}
+          {labelEdit && (
+            <input
+              key={labelEdit.id}
+              autoFocus
+              defaultValue={labelEdit.label || ""}
+              placeholder="Type a label"
+              onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur();
+              }}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                setLabelEditId(null);
+                if (v !== (labelEdit.label || "")) saveLabel(labelEdit.id, v);
+              }}
+              className="pointer-events-auto absolute w-44 -translate-x-1/2 -translate-y-1/2 rounded-[3px] bg-white px-2 py-1 text-center text-[13px] text-[#1C1C1E] shadow-md outline-none ring-[1.5px] ring-[#4262FF]"
+              style={{ left: labelEdit.at.x, top: labelEdit.at.y, outline: "none" }}
+            />
+          )}
 
           {/* remote cursors */}
           {peers
@@ -1849,7 +1933,7 @@ export function BoardCanvas({
           data-ui
           role="menu"
           className={clsx("absolute z-40 w-60 p-1.5 text-[14px]", POPOVER)}
-          style={{ left: Math.min(menu.x, (rootRef.current?.clientWidth || 800) - 252), top: Math.max(8, Math.min(menu.y, (rootRef.current?.clientHeight || 600) - 380)) }}
+          style={{ left: Math.min(menu.x, view.w - 252), top: Math.max(8, Math.min(menu.y, view.h - 380)) }}
           onPointerDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -1890,36 +1974,26 @@ export function BoardCanvas({
             </div>
           )}
           {(menu.onElement
-            ? [
-                ...(single && isBox(single) && single.kind !== "draw" && !single.locked ? [["Edit text", "Enter", () => setEditingId(single.id)]] : []),
-                ...(single && single.kind === "connector" && !single.locked ? [[single.label ? "Edit line text" : "Add text to line", "Enter", () => setLabelEditId(single.id)]] : []),
-                ["Duplicate", "Ctrl+D", () => duplicate(selected)],
-                ["Copy", "Ctrl+C", () => {
-                  clipboard.current = selected;
-                  flash(`Copied ${selected.length}`);
-                }],
-                ["Connect from here", "L", () => setTool("connector")],
-                ["Bring to front", "", () => {
-                  let z = maxZ();
-                  update(selection, (el) => (el.kind === "frame" ? el : { ...el, z: ++z }));
-                }],
-                ["Send to back", "", () => update(selection, (el) => (el.kind === "frame" ? el : { ...el, z: Math.max(1, minZ() + 1) }))],
-                [selected.every((x) => x.locked) ? "Unlock" : "Lock", "", () => {
-                  const lock = !selected.every((x) => x.locked);
-                  update(selection, (el) => ({ ...el, locked: lock }));
-                }],
-                ["Delete", "Del", deleteSelection],
-              ]
-            : [
-                ["Paste here", "Ctrl+V", () => pasteAt(menu.world)],
-                ["Add text", "T", () => addBlock("n-text", menu.world)],
-                ["More blocks…", "B", () => setLibraryOpen(true)],
-                ["Select all", "Ctrl+A", () => setSelection(elRef.current.map((x) => x.id))],
-                ["Zoom to fit", "Shift+1", () => fitTo(elRef.current)],
-              ]
-          ).map(([label, hint, fn]) => {
-            const l = label as string;
-            const disabled = l === "Paste here" && clipboard.current.length === 0;
+            ? ([
+                ...(single && isBox(single) && single.kind !== "draw" && !single.locked ? [["edit", "Edit text", "Enter"]] : []),
+                ...(single && single.kind === "connector" && !single.locked ? [["label", single.label ? "Edit line text" : "Add text to line", "Enter"]] : []),
+                ["duplicate", "Duplicate", "Ctrl+D"],
+                ["copy", "Copy", "Ctrl+C"],
+                ["connect", "Connect from here", "L"],
+                ["front", "Bring to front", ""],
+                ["back", "Send to back", ""],
+                ["lock", selected.every((x) => x.locked) ? "Unlock" : "Lock", ""],
+                ["delete", "Delete", "Del"],
+              ] as [MenuAction, string, string][])
+            : ([
+                ["paste", "Paste here", "Ctrl+V"],
+                ["text", "Add text", "T"],
+                ["blocks", "More blocks…", "B"],
+                ["selectAll", "Select all", "Ctrl+A"],
+                ["fit", "Zoom to fit", "Shift+1"],
+              ] as [MenuAction, string, string][])
+          ).map(([action, l, hint]) => {
+            const disabled = action === "paste" && !hasClip;
             return (
               <button
                 key={l}
@@ -1928,7 +2002,7 @@ export function BoardCanvas({
                 disabled={disabled}
                 onClick={() => {
                   setMenu(null);
-                  (fn as () => void)();
+                  runMenuAction(action, menu.world);
                 }}
                 className={clsx(
                   "flex h-9 w-full items-center justify-between rounded-md px-2.5 text-left disabled:opacity-40",
@@ -1940,7 +2014,7 @@ export function BoardCanvas({
                   {l === "Paste here" && <ClipboardPaste className="h-4 w-4 text-[#656B81]" />}
                   {l}
                 </span>
-                <span className="text-[12px] text-[#9A9DAA]">{hint as string}</span>
+                <span className="text-[12px] text-[#9A9DAA]">{hint}</span>
               </button>
             );
           })}
@@ -1954,8 +2028,8 @@ export function BoardCanvas({
           x={toScreen(selBounds.x + selBounds.w / 2, 0).x}
           y={toScreen(0, selBounds.y).y}
           below={toScreen(0, selBounds.y + selBounds.h).y}
-          containerW={rootRef.current?.clientWidth || 800}
-          containerH={rootRef.current?.clientHeight || 600}
+          containerW={view.w}
+          containerH={view.h}
           selected={selected}
           onUpdate={(fn) => update(selection, fn)}
           onFront={() => {
@@ -1980,9 +2054,8 @@ export function BoardCanvas({
       )}
 
       {/* Bottom-right: minimap + zoom */}
-      {showMap && <Minimap elements={elements} camera={camera} rootRef={rootRef} onJump={(x, y) => {
-        const r = rootRef.current!.getBoundingClientRect();
-        setCamera((c) => ({ ...c, x: r.width / 2 - x * c.zoom, y: r.height / 2 - y * c.zoom }));
+      {showMap && <Minimap elements={elements} camera={camera} size={view} onJump={(x, y) => {
+        setCamera((c) => ({ ...c, x: view.w / 2 - x * c.zoom, y: view.h / 2 - y * c.zoom }));
       }} />}
       <div data-ui className="absolute bottom-3 right-3 z-20 flex items-center gap-2">
         <div className={clsx("flex h-10 items-center gap-0.5 px-1", PANEL)}>
@@ -2512,20 +2585,19 @@ function RouteIcon({ route }: { route: ConnectorEl["route"] }) {
 function Minimap({
   elements,
   camera,
-  rootRef,
+  size,
   onJump,
 }: {
   elements: El[];
   camera: Camera;
-  rootRef: React.RefObject<HTMLDivElement | null>;
+  size: { w: number; h: number };
   onJump: (x: number, y: number) => void;
 }) {
   const W = 200;
   const H = 130;
   const boxes = elements.filter(isBox);
-  const r = rootRef.current?.getBoundingClientRect();
-  if (!boxes.length || !r) return null;
-  const view = { x: -camera.x / camera.zoom, y: -camera.y / camera.zoom, w: r.width / camera.zoom, h: r.height / camera.zoom };
+  if (!boxes.length) return null;
+  const view = { x: -camera.x / camera.zoom, y: -camera.y / camera.zoom, w: size.w / camera.zoom, h: size.h / camera.zoom };
   const b = boundsOf(boxes, new Map())!;
   const all = {
     x: Math.min(b.x, view.x),
