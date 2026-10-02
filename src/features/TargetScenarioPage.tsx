@@ -1448,9 +1448,12 @@ function NumberCell({
   signed,
   title,
   onClear,
+  percent,
 }: {
   value: number;
   decimals: number;
+  /** A share in % (no + sign). */
+  percent?: boolean;
   onCommit: (v: number) => void;
   disabled?: boolean;
   suffix?: string;
@@ -1465,7 +1468,7 @@ function NumberCell({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = value.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-  const text = suffix === "%" || signed ? `${value > 0 ? "+" : ""}${shown}${suffix || ""}` : shown;
+  const text = percent ? `${shown}%` : suffix === "%" || signed ? `${value > 0 ? "+" : ""}${shown}${suffix || ""}` : shown;
 
   function finish(v: string | null) {
     setDraft(null);
@@ -1483,8 +1486,8 @@ function NumberCell({
         disabled={disabled}
         onClick={() => setDraft(value.toFixed(decimals))}
         className={clsx(
-          "w-full rounded-md text-right tabular-nums transition",
-          big ? "px-0 text-left text-[22px] font-semibold tracking-tight text-slate-900" : "px-2 py-1",
+          "rounded-md text-right tabular-nums transition",
+          big ? "w-full px-0 text-left text-[22px] font-semibold tracking-tight text-slate-900" : "ml-auto block w-full max-w-[9rem] border border-transparent px-2 py-1",
           !big && (disabled ? "" : "hover:bg-white hover:ring-1 hover:ring-slate-300"),
           !big && pinned && "bg-blue-50 font-semibold text-blue-800",
           !big && !pinned && (muted ? "text-slate-400" : tone === "pos" ? "text-emerald-700" : tone === "neg" ? "text-rose-600" : "text-slate-900"),
@@ -1498,7 +1501,7 @@ function NumberCell({
   }
   const over = hint?.max !== undefined && parseFloat(draft.replace(/,/g, "")) > hint.max + 1e-9;
   return (
-    <div className="relative">
+    <div className={clsx("relative", !big && "ml-auto w-full max-w-[9rem]")}>
       <input
         autoFocus
         value={draft}
@@ -1511,7 +1514,7 @@ function NumberCell({
           if (e.key === "Escape") setDraft(null);
         }}
         className={clsx(
-          "no-focus-outline w-full rounded-md border bg-white text-right tabular-nums outline-none ring-4",
+          "no-focus-outline block w-full rounded-md border bg-white text-right tabular-nums outline-none ring-2",
           big ? "px-2 py-0.5 text-left text-[20px] font-semibold" : "px-2 py-1 text-[13px]",
           over ? "border-amber-400 ring-amber-100" : "border-blue-400 ring-blue-100"
         )}
@@ -1649,7 +1652,36 @@ function MixView({
   const dec = unitDecimals(unit, plan.step);
   const Y = plan.targetYear;
   const B = Y - 1;
+  const [asShare, setAsShare] = useState(false);
   const sites = siteFilter === "ALL" ? plan.nodes[plan.rootId].children : [siteFilter];
+  const sumOf = (r: Record<string, number>) => Object.values(r).reduce((a, x) => a + x, 0);
+  /** One editable figure: the amount, or its share of the hospital in % mode (the other shown small underneath). */
+  const figure = (id: string, dim: MixDim, m: string, field: MixField, all: Record<string, number>, extra: ReactNode, title: string, muted?: boolean) => {
+    const v = all[m];
+    const tot = sumOf(all);
+    const share = tot > 0 ? (v / tot) * 100 : 0;
+    return (
+      <>
+        {asShare ? (
+          <NumberCell
+            value={share}
+            decimals={1}
+            percent
+            muted={muted}
+            disabled={!canEdit}
+            title={`${title} — type its share of the hospital in %`}
+            onCommit={(pct) => onMix(id, dim, m, (Math.max(0, Math.min(100, pct)) / 100) * tot, field)}
+          />
+        ) : (
+          <NumberCell value={v / div} decimals={dec} muted={muted} disabled={!canEdit} title={title} onCommit={(x) => onMix(id, dim, m, x * div, field)} />
+        )}
+        <span className="block px-2 text-right text-[11px] tabular-nums text-slate-400">
+          {asShare ? fmtU(v, plan.step, unit) : `${share.toFixed(0)}%`}
+          {extra}
+        </span>
+      </>
+    );
+  };
   const rowIds = [...sites, ...(sites.length > 1 ? [plan.rootId] : [])];
   const section = (dim: MixDim, title: string, blurb: string) => {
     const members = MIX_MEMBERS[dim];
@@ -1704,33 +1736,30 @@ function MixView({
                         <Fragment key={m}>
                           <td className="border-b border-l border-slate-100 px-1.5 py-1.5">
                             {isNet ? (
-                              <span className="block px-2 text-right tabular-nums text-slate-500">{fmtU(b[m], plan.step, unit)}</span>
+                              <span className="block px-2 py-1 text-right tabular-nums text-slate-500">{fmtU(b[m], plan.step, unit)}</span>
                             ) : (
-                              <NumberCell
-                                value={b[m] / div}
-                                decimals={dec}
-                                muted
-                                disabled={!canEdit}
-                                title={`${n.name} ${m}: ${B} full year — the rest of the hospital's ${B} is shared by the others`}
-                                onCommit={(v) => onMix(id, dim, m, v * div, "base26")}
-                              />
+                              figure(id, dim, m, "base26", b, null, `${n.name} ${m}: ${B} full year — the others share the rest of the hospital's ${B}`, true)
                             )}
                           </td>
                           <td className="border-b border-slate-100 px-1.5 py-1.5">
                             {isNet ? (
-                              <span className="block px-2 text-right tabular-nums text-slate-900">{fmtU(t[m], plan.step, unit)}</span>
+                              <>
+                                <span className="block px-2 py-1 text-right tabular-nums text-slate-900">{fmtU(t[m], plan.step, unit)}</span>
+                                <span className="block px-2 text-right text-[11px] font-normal tabular-nums text-slate-400">
+                                  {share.toFixed(0)}%{g !== null && <span className={clsx("ml-1.5", g >= 0 ? "text-emerald-600" : "text-rose-600")}>{fmtPct(g)}</span>}
+                                </span>
+                              </>
                             ) : (
-                              <NumberCell
-                                value={t[m] / div}
-                                decimals={dec}
-                                disabled={!canEdit}
-                                title={`${n.name} ${m}: ${Y} target — the hospital total stays; the others share what's left`}
-                                onCommit={(v) => onMix(id, dim, m, v * div, "target")}
-                              />
+                              figure(
+                                id,
+                                dim,
+                                m,
+                                "target",
+                                t,
+                                g !== null && <span className={clsx("ml-1.5", g >= 0 ? "text-emerald-600" : "text-rose-600")}>{fmtPct(g)}</span>,
+                                `${n.name} ${m}: ${Y} target — the hospital total stays; the others share what's left`
+                              )
                             )}
-                            <span className="block px-2 text-right text-[11px] tabular-nums text-slate-400">
-                              {share.toFixed(0)}%{g !== null && <span className={clsx("ml-1.5", g >= 0 ? "text-emerald-600" : "text-rose-600")}>{fmtPct(g)}</span>}
-                            </span>
                           </td>
                         </Fragment>
                       );
@@ -1747,10 +1776,35 @@ function MixView({
   };
   return (
     <div className="p-4">
-      <p className="mb-4 max-w-3xl text-[12.5px] text-slate-500">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <p className="max-w-3xl text-[12.5px] text-slate-500">
         OPD/IPD and segments are two more ways to cut each hospital&rsquo;s total, next to the CoE / SBU split in the Plan tab. Set the totals there, then
         distribute them here: change one part and the others share what&rsquo;s left, while every CoE / SBU keeps its own total.
       </p>
+        <div className="flex shrink-0 items-center gap-2 text-[12.5px] text-slate-500">
+          Enter as
+          <div className="flex rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="Enter as">
+            {([
+              [false, unitLabel(unit)],
+              [true, "% share"],
+            ] as const).map(([v, label]) => (
+              <button
+                key={String(v)}
+                type="button"
+                role="radio"
+                aria-checked={asShare === v}
+                onClick={() => setAsShare(v)}
+                className={clsx(
+                  "rounded-md px-2.5 py-1 font-medium transition",
+                  asShare === v ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
       {section("setting", "OPD / IPD", `Each hospital's ${Y} target and ${B} full year by setting.`)}
       {section("market", "Segment", `Each hospital's ${Y} target and ${B} full year by patient segment.`)}
     </div>
