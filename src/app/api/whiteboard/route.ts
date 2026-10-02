@@ -37,20 +37,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: "Deleted board" });
     }
 
+    const by = _g.user.name || _g.user.email;
     if (body.board) {
-      await saveDbWhiteboardBoard(body.board);
+      await saveDbWhiteboardBoard({ ...body.board, updated_by: by });
       return NextResponse.json({ success: true, message: "Saved board to Supabase" });
     }
 
     if (Array.isArray(body.boards)) {
       for (const b of body.boards) {
-        await saveDbWhiteboardBoard(b);
+        await saveDbWhiteboardBoard({ ...b, updated_by: by });
       }
       return NextResponse.json({ success: true, message: "Saved all boards to Supabase" });
     }
 
     if (body.id && body.name) {
-      await saveDbWhiteboardBoard(body);
+      await saveDbWhiteboardBoard({ ...body, updated_by: by });
       return NextResponse.json({ success: true, message: "Saved board to Supabase" });
     }
 

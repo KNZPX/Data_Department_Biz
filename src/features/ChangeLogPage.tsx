@@ -81,13 +81,13 @@ export function ChangeLogPage() {
       {/* Filter Bar */}
       <Panel className="p-4 sm:p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-full bg-slate-100 p-1 border border-slate-200">
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
             <button
               type="button"
               onClick={() => setActionFilter("all")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
-                actionFilter === "all" ? "bg-[#002D72] text-white shadow-xs" : "text-slate-600 hover:text-[#002D72]"
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200",
+                actionFilter === "all" ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
               )}
             >
               All Events ({logs.length})
@@ -96,8 +96,8 @@ export function ChangeLogPage() {
               type="button"
               onClick={() => setActionFilter("publish")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
-                actionFilter === "publish" ? "bg-blue-500 text-white shadow-xs" : "text-slate-600 hover:text-blue-500"
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200",
+                actionFilter === "publish" ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
               )}
             >
               Publishes Only ({publishCount})
@@ -106,8 +106,8 @@ export function ChangeLogPage() {
               type="button"
               onClick={() => setActionFilter("update")}
               className={clsx(
-                "rounded-full px-4 py-1.5 text-xs font-semibold transition",
-                actionFilter === "update" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-blue-600"
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200",
+                actionFilter === "update" ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
               )}
             >
               Updates Only ({logs.length - publishCount})

@@ -180,7 +180,7 @@ export function DaxScriptModal({ model, onClose }: { model: string; onClose: () 
                   key={f.id}
                   type="button"
                   onClick={() => setFormat(f.id)}
-                  className={clsx("rounded-lg px-3 py-1.5 text-sm", format === f.id ? "bg-ink text-white" : "text-slate-600 hover:bg-slate-100")}
+                  className={clsx("rounded-lg px-3 py-1.5 text-sm", format === f.id ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}
                 >
                   {f.label}
                 </button>

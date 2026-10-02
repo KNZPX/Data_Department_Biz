@@ -2,11 +2,35 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowUpRight, FileUp, GitCommitHorizontal, LogIn, PencilLine, Plus, Trash2, type LucideIcon } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  FileUp,
+  FunctionSquare,
+  GitCommitHorizontal,
+  LayoutGrid,
+  LogIn,
+  PencilLine,
+  Plus,
+  Trash2,
+  TrendingUp,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess, useAuth } from "@/components/auth/LoginGate";
 import { initialsOf, toneFor, usePresence } from "@/components/layout/Presence";
 import { TrendChart, type Point } from "@/components/TrendChart";
+import { CountUp } from "@/components/ui";
+
+const CARD = "rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgb(16_24_40/0.04)]";
+
+const QUICK: { href: string; page: string; title: string; hint: string; icon: LucideIcon }[] = [
+  { href: "/dax", page: "dax", title: "Find a measure", hint: "Formulas and definitions by model", icon: FunctionSquare },
+  { href: "/reports", page: "reports", title: "Browse reports", hint: "Workspaces and publish history", icon: LayoutGrid },
+  { href: "/whiteboard", page: "whiteboard", title: "Sketch a data flow", hint: "Boards for flows and retros", icon: Workflow },
+  { href: "/target-scenario", page: "target-scenario", title: "Plan targets", hint: "2027 target simulator", icon: TrendingUp },
+];
 
 type Grain = "day" | "month" | "year";
 type Delta = { now: number; start: number };
@@ -56,9 +80,11 @@ function Change({ now, start, suffix = "since start" }: { now: number; start: nu
 
 function Kpi({ label, value, children }: { label: string; value: number; children?: React.ReactNode }) {
   return (
-    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-1 text-[28px] font-semibold leading-tight tabular-nums tracking-tight text-slate-900">{value.toLocaleString()}</p>
+    <div className={clsx(CARD, "lift p-4")}>
+      <p className="text-[12.5px] text-slate-500">{label}</p>
+      <p className="mt-1 text-[28px] font-semibold leading-tight tabular-nums tracking-tight text-slate-900">
+        <CountUp value={value} />
+      </p>
       <div className="mt-1 min-h-[16px]">{children}</div>
     </div>
   );
@@ -66,7 +92,7 @@ function Kpi({ label, value, children }: { label: string; value: number; childre
 
 export function HomePage() {
   const { user } = useAuth();
-  const { can } = useAccess();
+  const { can, canPage } = useAccess();
   const online = usePresence();
   const [grain, setGrain] = useState<Grain>("day");
   const [data, setData] = useState<Insights | null>(null);
@@ -94,21 +120,22 @@ export function HomePage() {
       <div className="mx-auto max-w-7xl space-y-6 pb-10">
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-sm text-slate-500">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
-            <h2 className="mt-1 text-[32px] font-semibold leading-tight tracking-tight text-slate-900">Hello, {firstName}.</h2>
+            <p className="text-[13px] text-slate-500">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+            <h2 className="mt-1 text-[30px] font-semibold leading-tight tracking-tight text-slate-900">Hello, {firstName}.</h2>
+            <p className="mt-1 text-[14px] text-slate-500">Here&rsquo;s what changed across the team&rsquo;s models, licenses and boards.</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="flex -space-x-2">
                 {online.slice(0, 5).map((u) => (
-                  <span key={u.email} title={u.name} className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-semibold text-white ring-2 ring-paper" style={{ background: toneFor(u.email) }}>
+                  <span key={u.email} title={u.name} className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-semibold text-white ring-2 ring-white" style={{ background: toneFor(u.email) }}>
                     {initialsOf(u.name)}
                   </span>
                 ))}
               </div>
               <span className="text-xs text-slate-500">{online.length <= 1 ? "Only you online" : `${online.length} online`}</span>
             </div>
-            <div role="tablist" aria-label="Trend period" className="flex rounded-xl bg-white p-1 ring-1 ring-slate-200">
+            <div role="tablist" aria-label="Trend period" className="flex rounded-lg bg-slate-100 p-0.5">
               {(["day", "month", "year"] as Grain[]).map((g) => (
                 <button
                   key={g}
@@ -116,7 +143,10 @@ export function HomePage() {
                   aria-selected={grain === g}
                   type="button"
                   onClick={() => setGrain(g)}
-                  className={clsx("rounded-lg px-3.5 py-1.5 text-sm", grain === g ? "bg-ink text-white" : "text-slate-600 hover:bg-slate-50")}
+                  className={clsx(
+                    "rounded-md px-3 py-1.5 text-[13px] font-medium transition-all duration-200",
+                    grain === g ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
+                  )}
                 >
                   {g === "day" ? "Daily" : g === "month" ? "Monthly" : "Yearly"}
                 </button>
@@ -125,17 +155,32 @@ export function HomePage() {
           </div>
         </div>
 
+        <nav aria-label="Quick actions" className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {QUICK.filter((q) => canPage(q.page)).map((q) => (
+            <Link key={q.href} href={q.href} className={clsx(CARD, "lift group flex items-center gap-3 p-3.5")}>
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-600 transition-colors duration-300 group-hover:bg-blue-600 group-hover:text-white">
+                <q.icon className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-medium text-slate-900">{q.title}</span>
+                <span className="block truncate text-[12px] text-slate-500">{q.hint}</span>
+              </span>
+              <ArrowRight className="h-4 w-4 shrink-0 -translate-x-1 text-slate-300 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:text-blue-600 group-hover:opacity-100" />
+            </Link>
+          ))}
+        </nav>
+
         {can("home.semantic") && (
           <section aria-labelledby="sem-h" className="space-y-3">
             <div className="flex items-end justify-between">
-              <h3 id="sem-h" className="text-[18px] font-semibold text-slate-900">
+              <h3 id="sem-h" className="text-[17px] font-semibold tracking-tight text-slate-900">
                 Semantic models <span className="text-sm font-normal text-slate-500">since {since(s?.startedAt)}</span>
               </h3>
               <Link href="/dax" className="text-sm text-blue-600 hover:underline">
                 Open DAX dictionary
               </Link>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Kpi label="Model measures" value={s?.totals.measures || 0}>{s && <Change now={s.totals.measures} start={s.totals.measuresStart} />}</Kpi>
               <Kpi label="Columns" value={s?.totals.columns || 0}>{s && <Change now={s.totals.columns} start={s.totals.columnsStart} />}</Kpi>
               <Kpi label="Written by the team" value={s?.totals.custom || 0}>
@@ -146,7 +191,7 @@ export function HomePage() {
               </Kpi>
             </div>
             <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
-              <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+              <div className={clsx(CARD, "p-4")}>
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-slate-900">Measures over time</p>
                   <p className="flex gap-3 text-xs text-slate-500">
@@ -155,11 +200,11 @@ export function HomePage() {
                     <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-coral" /> Removed</span>
                   </p>
                 </div>
-                {loading && !s ? <div className="h-60 animate-pulse rounded-xl bg-slate-50" /> : <TrendChart data={s?.series || []} totalLabel="Measures" changedLabel="Formula changes" />}
+                {loading && !s ? <div className="skeleton h-60 rounded-lg" /> : <TrendChart data={s?.series || []} totalLabel="Measures" changedLabel="Formula changes" />}
               </div>
               <div className="space-y-3">
                 {s?.models.map((m) => (
-                  <Link key={m.code} href={`/dax?model=${m.code}`} className="group block rounded-2xl bg-white p-4 ring-1 ring-slate-200/80 transition hover:ring-blue-300">
+                  <Link key={m.code} href={`/dax?model=${m.code}`} className={clsx(CARD, "lift group block p-4 hover:border-blue-200")}>
                     <div className="flex items-start justify-between">
                       <div className="min-w-0">
                         <p className="font-mono text-xs text-blue-700">{m.code}</p>
@@ -200,14 +245,14 @@ export function HomePage() {
         {can("home.license") && (
           <section aria-labelledby="lic-h" className="space-y-3">
             <div className="flex items-end justify-between">
-              <h3 id="lic-h" className="text-[18px] font-semibold text-slate-900">
+              <h3 id="lic-h" className="text-[17px] font-semibold tracking-tight text-slate-900">
                 Power BI licenses <span className="text-sm font-normal text-slate-500">since {since(l?.startedAt)}</span>
               </h3>
               <Link href="/licenses" className="text-sm text-blue-600 hover:underline">
                 Open licenses
               </Link>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Kpi label="Active licenses" value={l?.totals.active || 0}>{l && <Change now={l.totals.active} start={l.totals.activeStart} />}</Kpi>
               <Kpi label="Pro" value={l?.totals.pro || 0}>
                 <span className="text-xs text-slate-400">{l ? Math.round((l.totals.pro / Math.max(1, l.totals.active)) * 100) : 0}% of active</span>
@@ -220,11 +265,11 @@ export function HomePage() {
               </Kpi>
             </div>
             <div className="grid gap-3 lg:grid-cols-[1.6fr_1fr]">
-              <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+              <div className={clsx(CARD, "p-4")}>
                 <p className="mb-2 text-sm font-medium text-slate-900">Active licenses over time</p>
-                {loading && !l ? <div className="h-60 animate-pulse rounded-xl bg-slate-50" /> : <TrendChart data={l?.series || []} totalLabel="Active" addedLabel="Approved" removedLabel="Revoked" />}
+                {loading && !l ? <div className="skeleton h-60 rounded-lg" /> : <TrendChart data={l?.series || []} totalLabel="Active" addedLabel="Approved" removedLabel="Revoked" />}
               </div>
-              <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/80">
+              <div className={clsx(CARD, "p-4")}>
                 <p className="mb-3 text-sm font-medium text-slate-900">Active by site</p>
                 <ul className="space-y-2.5">
                   {l?.bySite.map((b) => (
@@ -234,7 +279,7 @@ export function HomePage() {
                         <span className="tabular-nums text-slate-900">{b.n}</span>
                       </div>
                       <div className="h-2 rounded-full bg-slate-100">
-                        <div className="h-2 rounded-full bg-blue-600" style={{ width: `${(b.n / Math.max(1, l.totals.active)) * 100}%` }} />
+                        <div className="h-2 origin-left rounded-full bg-blue-600 [animation:grow-x_var(--dur-3)_var(--ease-out-soft)_backwards]" style={{ width: `${(b.n / Math.max(1, l.totals.active)) * 100}%` }} />
                       </div>
                     </li>
                   ))}
@@ -245,9 +290,9 @@ export function HomePage() {
         )}
 
         {can("home.activity") && (
-          <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200/80">
+          <section className={clsx(CARD, "p-5")}>
             <div className="mb-2 flex items-end justify-between">
-              <h3 className="text-[18px] font-semibold text-slate-900">Recent activity</h3>
+              <h3 className="text-[17px] font-semibold tracking-tight text-slate-900">Recent activity</h3>
               <Link href="/changelog" className="text-sm text-blue-600 hover:underline">
                 Full activity log
               </Link>

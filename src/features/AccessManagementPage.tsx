@@ -279,7 +279,7 @@ export function AccessManagementPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">{u.is_guest ? "Guest password" : "Microsoft 365"}</td>
                     <td className="px-4 py-3">
-                      <span className={clsx("rounded-md px-2 py-0.5 text-xs", u.role === "admin" ? "bg-ink text-white" : u.role === "guest" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700")}>
+                      <span className={clsx("rounded-md px-2 py-0.5 text-xs", u.role === "admin" ? "bg-blue-50 text-blue-700" : u.role === "guest" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700")}>
                         {u.role === "admin" ? "Admin" : u.role === "guest" ? "Guest" : "Member"}
                       </span>
                       {!u.is_active && <span className="ml-2 text-xs text-coral">Turned off</span>}

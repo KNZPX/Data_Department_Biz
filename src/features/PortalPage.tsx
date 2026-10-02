@@ -60,7 +60,8 @@ import type { PowerBiItem } from "@/lib/powerbiTypes";
 
 export function PortalPage() {
   const { user, dbProvider } = useAuth();
-  const { currentTheme, currentCanvas, radiusPreset } = useTheme();
+  const { currentTheme, currentCanvas, appearance } = useTheme();
+  const radiusPreset = appearance.radius === "rounded" ? "squircle" : "standard";
 
   // Data states
   const [items, setItems] = useState<PowerBiItem[]>([]);

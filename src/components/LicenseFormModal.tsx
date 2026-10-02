@@ -140,7 +140,7 @@ export function LicenseFormModal({
                 className={clsx(
                   "rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition",
                   active
-                    ? "bg-slate-900 text-white shadow-xs"
+                    ? "bg-blue-600 text-white shadow-xs"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 )}
               >

@@ -30,8 +30,8 @@ type Resources = {
 
 const TYPE_LABEL = { workspace: "Workspace", dataset: "Dataset", report: "Report" } as const;
 const LEVEL_TONE: Record<string, string> = {
-  Admin: "bg-ink text-white",
-  Owner: "bg-ink text-white",
+  Admin: "bg-blue-50 text-blue-700",
+  Owner: "bg-blue-50 text-blue-700",
   Member: "bg-blue-100 text-blue-800",
   Write: "bg-blue-100 text-blue-800",
   Edit: "bg-blue-100 text-blue-800",

@@ -497,7 +497,7 @@ export function TargetScenarioPage() {
               className={clsx(
                 "px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer",
                 siteFilter === "ALL"
-                  ? "bg-slate-900 text-white shadow-xs"
+                  ? "bg-blue-600 text-white shadow-xs"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               )}
             >
@@ -937,21 +937,21 @@ export function TargetScenarioPage() {
               {/* 4 Cascading Columns */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {/* Column 1: Central PKT */}
-                <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3 flex flex-col justify-between">
+                <div className="p-4 rounded-2xl bg-blue-600 text-white space-y-3 flex flex-col justify-between">
                   <div>
-                    <span className="text-[11px] font-semibold text-slate-400 block">Level 0: Network HQ</span>
+                    <span className="text-[11px] font-semibold text-blue-100 block">Level 0: Network HQ</span>
                     <h4 className="text-lg font-semibold text-white mt-1">PKT Consolidated</h4>
-                    <div className="text-2xl font-semibold text-emerald-400 mt-2">
+                    <div className="text-2xl font-semibold text-white mt-2">
                       ฿{formatMB(pktNode?.targetRev27 || 0)} MB
                     </div>
-                    <div className="text-xs text-slate-400 mt-1">
-                      YoY Growth: <span className="text-emerald-400 font-semibold">{formatPct(pktNode?.growthRevPct || 0)}</span>
+                    <div className="text-xs text-blue-100 mt-1">
+                      YoY Growth: <span className="text-white font-semibold">{formatPct(pktNode?.growthRevPct || 0)}</span>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleOpenDelegateModal("PKT")}
-                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer"
+                    className="w-full py-2 bg-white hover:bg-blue-50 text-blue-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <span>Delegate to 3 Sites</span>
                     <ArrowRight className="h-3.5 w-3.5" />

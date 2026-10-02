@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { BoardCanvas } from "./whiteboard/BoardCanvas";
 import { BoardGallery, type GalleryBoard } from "./whiteboard/BoardGallery";
 import { normalizeElements, uid, type BoardMeta, type Template } from "./whiteboard/model";
-import { useAccess } from "@/components/auth/LoginGate";
+import { useAccess, useAuth } from "@/components/auth/LoginGate";
 
 // ---------------------------------------------------------------------------
 // Legacy types, still used by the DAX page's "Open in whiteboard" export.
@@ -59,7 +59,18 @@ export function getPortCoordinate(
   }
 }
 
-type ApiBoard = { id: string; name: string; folder_id: string; folder_name: string; description?: string; nodes: unknown[]; updated_at?: string };
+type ApiBoard = {
+  id: string;
+  name: string;
+  folder_id: string;
+  folder_name: string;
+  description?: string;
+  nodes: unknown[];
+  updated_at?: string;
+  created_at?: string;
+  created_by?: string | null;
+  updated_by?: string | null;
+};
 
 function toGallery(b: ApiBoard): GalleryBoard {
   return { ...b, elements: normalizeElements(b.nodes) };
@@ -77,6 +88,7 @@ async function saveBoard(b: GalleryBoard) {
 
 export function WhiteboardPage() {
   const { can } = useAccess();
+  const { user } = useAuth();
   const canEdit = can("whiteboard.edit");
   const [boards, setBoards] = useState<GalleryBoard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +151,9 @@ export function WhiteboardPage() {
       folder_id: folder.id,
       folder_name: folder.name,
       updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      created_by: user?.name || null,
+      updated_by: user?.name || null,
       elements: t.build(),
     };
     setBoards((prev) => [b, ...prev]);
@@ -150,7 +165,7 @@ export function WhiteboardPage() {
     setBoards((prev) =>
       prev.map((b) => {
         if (b.id !== id) return b;
-        const next = { ...b, ...p };
+        const next = { ...b, ...p, updated_at: new Date().toISOString(), updated_by: user?.name || b.updated_by };
         void saveBoard(next);
         return next;
       })

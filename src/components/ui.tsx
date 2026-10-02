@@ -2,7 +2,7 @@
 
 import { clsx } from "clsx";
 import { AlertCircle, Search, X, type LucideIcon } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
@@ -20,15 +20,15 @@ export function Button({
   return (
     <button
       className={clsx(
-        "btn rounded-full font-semibold transition duration-150 active:scale-[0.98]",
-        dense ? "btn-sm text-xs px-3.5" : "text-sm px-5",
-        size === "iconWide" && "h-9 w-9 p-0 sm:h-10 sm:w-auto sm:px-4",
-        size === "icon" && "h-9 w-9 p-0 sm:h-10 sm:w-10",
-        variant === "primary" && "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-xs",
-        variant === "secondary" && "btn-outline border-slate-200 bg-white text-slate-800 hover:bg-blue-600/10 hover:border-blue-600/30 hover:text-blue-600",
-        variant === "danger" && "bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-xs",
-        variant === "gold" && "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 font-semibold shadow-xs",
-        variant === "ghost" && "btn-ghost text-slate-600 hover:bg-blue-600/10 hover:text-blue-600",
+        "btn rounded-lg font-medium shadow-none transition duration-150 active:scale-[0.98]",
+        dense ? "btn-sm h-8 min-h-8 text-xs px-3" : "h-9 min-h-9 text-[13.5px] px-4",
+        size === "iconWide" && "h-9 w-9 p-0 sm:w-auto sm:px-3.5",
+        size === "icon" && "h-9 w-9 p-0",
+        variant === "primary" && "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-[0_1px_2px_rgb(16_24_40/0.08)]",
+        variant === "secondary" && "btn-outline border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900",
+        variant === "danger" && "bg-rose-600 hover:bg-rose-700 text-white border-rose-600",
+        variant === "gold" && "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-100",
+        variant === "ghost" && "btn-ghost border-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900",
         className,
       )}
       {...props}
@@ -46,11 +46,11 @@ export function IconButton({
     <button
       type="button"
       className={clsx(
-        "btn btn-circle btn-sm shrink-0 shadow-2xs transition duration-150 active:scale-95",
-        tone === "danger" && "btn-soft text-rose-600 bg-rose-50 border border-rose-200",
-        tone === "edit" && "btn-soft text-blue-600 bg-blue-600/10 border border-blue-600/20",
-        tone === "gold" && "btn-soft text-blue-500 bg-blue-500/10 border border-blue-500/20",
-        tone === "default" && "btn-ghost border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-600/30",
+        "btn btn-sm btn-square h-8 w-8 min-h-8 shrink-0 rounded-lg shadow-none transition duration-150 active:scale-95",
+        tone === "danger" && "btn-soft text-rose-600 bg-rose-50 border border-rose-100 hover:bg-rose-100",
+        tone === "edit" && "btn-soft text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100",
+        tone === "gold" && "btn-soft text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100",
+        tone === "default" && "btn-ghost border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900",
         className,
       )}
       {...props}
@@ -72,7 +72,7 @@ export function ViewToggle<T extends string>({
   compact?: boolean;
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-full p-1 bg-slate-100 border border-slate-200/60">
+    <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
       {options.map((option) => {
         const Icon = option.icon;
         const active = option.value === value;
@@ -83,10 +83,10 @@ export function ViewToggle<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={clsx(
-              "btn btn-sm rounded-full px-3.5 text-xs font-semibold border-none transition duration-150",
+              "btn btn-sm h-8 min-h-8 rounded-md px-3 text-xs font-medium border-none shadow-none transition-all duration-200",
               active
-                ? "bg-blue-600 text-white shadow-xs"
-                : "btn-ghost text-slate-600 hover:bg-white/80 hover:text-blue-600",
+                ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]"
+                : "btn-ghost bg-transparent text-slate-500 hover:bg-transparent hover:text-slate-900",
             )}
           >
             {Icon ? <Icon className="h-3.5 w-3.5 mr-1" /> : null}
@@ -94,8 +94,8 @@ export function ViewToggle<T extends string>({
             {option.count !== undefined ? (
               <span
                 className={clsx(
-                  "badge badge-xs ml-1 font-mono font-semibold",
-                  active ? "bg-blue-500 text-white border-blue-500" : "badge-ghost text-slate-600",
+                  "badge badge-xs ml-1 border-none font-mono font-medium",
+                  active ? "bg-blue-50 text-blue-700" : "bg-slate-200/70 text-slate-500",
                 )}
               >
                 {option.count}
@@ -169,8 +169,8 @@ export function Input({
     return (
       <label
         className={clsx(
-          "input input-bordered flex items-center gap-2 rounded-full bg-white border-slate-200 text-slate-900 shadow-2xs transition focus-within:border-slate-800 focus-within:ring-2 focus-within:ring-slate-800/10",
-          dense ? "input-sm h-8 px-3 text-xs" : "h-10 px-4 text-sm",
+          "input input-bordered flex items-center gap-2 rounded-lg bg-white border-slate-200 text-slate-900 shadow-none transition focus-within:border-blue-400 focus-within:outline-none focus-within:ring-4 focus-within:ring-blue-100",
+          dense ? "input-sm h-8 px-3 text-xs" : "h-9 px-3 text-sm",
           className,
         )}
       >
@@ -200,8 +200,8 @@ export function Input({
       {...props}
       value={value}
       className={clsx(
-        "input input-bordered w-full rounded-full bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 shadow-2xs transition focus:border-slate-800 focus:ring-2 focus:ring-slate-800/10",
-        dense ? "input-sm h-8 px-3 text-xs" : "h-10 px-4 text-sm",
+        "input input-bordered w-full rounded-lg bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 shadow-none transition focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100",
+        dense ? "input-sm h-8 px-3 text-xs" : "h-9 px-3 text-sm",
         className,
       )}
     />
@@ -244,8 +244,8 @@ export function Select({
     <select
       {...props}
       className={clsx(
-        "select select-bordered w-full rounded-full bg-white border-slate-200 text-slate-900 shadow-2xs transition focus:border-slate-800",
-        dense ? "select-sm h-8 px-2.5 text-xs" : "h-10 px-3.5 text-sm",
+        "select select-bordered w-full rounded-lg bg-white border-slate-200 text-slate-900 shadow-none transition focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100",
+        dense ? "select-sm h-8 px-2.5 text-xs" : "h-9 px-3 text-sm",
         className,
       )}
     />
@@ -257,7 +257,7 @@ export function Textarea({ dense = false, ...props }: TextareaHTMLAttributes<HTM
     <textarea
       {...props}
       className={clsx(
-        "textarea textarea-bordered w-full rounded-2xl bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 shadow-2xs transition focus:border-slate-800",
+        "textarea textarea-bordered w-full rounded-lg bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 shadow-none transition focus:border-blue-400 focus:outline-none focus:ring-4 focus:ring-blue-100",
         dense ? "min-h-12 px-3 py-2 text-xs" : "min-h-24 px-3.5 py-2.5 text-sm",
         props.className,
       )}
@@ -267,7 +267,7 @@ export function Textarea({ dense = false, ...props }: TextareaHTMLAttributes<HTM
 
 export function Panel({ children, className, dense = false }: { children: ReactNode; className?: string; dense?: boolean }) {
   return (
-    <div className={clsx("card bg-white border border-slate-200/80 shadow-xs rounded-2xl", dense ? "p-4 sm:p-5" : "p-5 sm:p-6", className)}>
+    <div className={clsx("card bg-white border border-slate-200/80 shadow-[0_1px_2px_rgb(16_24_40/0.04)] rounded-xl", dense ? "p-4 sm:p-5" : "p-5 sm:p-6", className)}>
       {children}
     </div>
   );
@@ -279,8 +279,8 @@ export function Modal({ className, children }: { className?: string; children: R
   const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
   if (!mounted) return null;
   return createPortal(
-    <div className={clsx("modal modal-open fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-900/60 p-2.5 backdrop-blur-xs transition-all sm:p-4", className)}>
-      {children}
+    <div className={clsx("modal modal-open fade-enter fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-900/35 p-2.5 backdrop-blur-[2px] transition-all sm:p-4", className)}>
+      <div className="contents [&>*]:[animation:pop-in_var(--dur-3)_var(--ease-out-soft)_backwards]">{children}</div>
     </div>,
     document.body
   );
@@ -301,35 +301,66 @@ export function StatCard({
 }) {
   const toneBg: Record<string, string> = {
     default: "bg-blue-50 text-blue-600",
-    gold: "bg-blue-500/15 text-blue-600",
-    blue: "bg-blue-600/10 text-blue-600",
-    emerald: "bg-emerald-100 text-emerald-800",
+    gold: "bg-blue-50 text-blue-600",
+    blue: "bg-blue-50 text-blue-600",
+    emerald: "bg-emerald-50 text-emerald-700",
   };
 
   return (
     <div
       className={clsx(
-        "card bg-white border border-slate-200/80 p-4 sm:p-5 shadow-2xs rounded-2xl transition duration-200 hover:border-slate-300 hover:shadow-xs",
+        "card lift bg-white border border-slate-200/80 p-4 sm:p-5 shadow-[0_1px_2px_rgb(16_24_40/0.04)] rounded-xl",
         className,
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="text-xs sm:text-sm font-medium text-slate-500">{label}</div>
         {Icon ? (
-          <div className={clsx("grid h-9 w-9 shrink-0 place-items-center rounded-2xl shadow-2xs", toneBg[tone])}>
+          <div className={clsx("grid h-9 w-9 shrink-0 place-items-center rounded-lg", toneBg[tone])}>
             <Icon className="h-4.5 w-4.5" />
           </div>
         ) : null}
       </div>
-      <div className="text-xl sm:text-2xl font-semibold font-mono text-slate-900 mt-1">{value}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums tracking-tight text-slate-900 sm:text-2xl">
+        {typeof value === "number" ? <CountUp value={value} /> : value}
+      </div>
     </div>
   );
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="card border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center text-sm text-slate-500 rounded-2xl">
+    <div className="card border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 rounded-xl fade-enter">
       {children}
     </div>
   );
+}
+
+/** Animates a number from its previous value (0 on first render) to `value`. */
+export function CountUp({ value, duration = 700, format = (n: number) => Math.round(n).toLocaleString() }: { value: number; duration?: number; format?: (n: number) => string }) {
+  const [shown, setShown] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    const motion = document.documentElement.dataset.motion;
+    const start = from.current;
+    if (motion === "off" || start === value) {
+      from.current = value;
+      const id = requestAnimationFrame(() => setShown(value));
+      return () => cancelAnimationFrame(id);
+    }
+    const ms = motion === "reduced" ? Math.min(200, duration) : duration;
+    const t0 = performance.now();
+    let id = 0;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms);
+      const eased = 1 - Math.pow(1 - k, 3);
+      const v = start + (value - start) * eased;
+      from.current = v;
+      setShown(v);
+      if (k < 1) id = requestAnimationFrame(tick);
+    };
+    id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [value, duration]);
+  return <>{format(shown)}</>;
 }

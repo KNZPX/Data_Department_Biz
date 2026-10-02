@@ -408,7 +408,7 @@ export function BimImportModal({
             </>
           )}
           {stage === "done" && (
-            <button type="button" onClick={close} className="rounded-xl bg-ink px-5 py-2 text-sm font-medium text-white">
+            <button type="button" onClick={close} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">
               Done
             </button>
           )}

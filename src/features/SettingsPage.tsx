@@ -1,45 +1,406 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Bell,
-  Check,
-  CheckCircle2,
-  Copy,
-  Database,
-  ExternalLink,
-  KeyRound,
-  LayoutDashboard,
-  LogIn,
-  Pin,
-  RefreshCw,
-  Save,
-  Server,
-  ShieldAlert,
-  Sparkles,
-  ToggleLeft,
-  ToggleRight,
-} from "lucide-react";
-import { Button, Input, Panel, Textarea } from "@/components/ui";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Check, CheckCircle2, Cloud, CloudOff, Database, KeyRound, LayoutDashboard, Loader2, Palette, RotateCcw, Save, ShieldAlert } from "lucide-react";
+import { clsx } from "clsx";
+import { Input, Textarea } from "@/components/ui";
 import { TokenModal } from "@/components/TokenModal";
-import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/components/auth/LoginGate";
+import {
+  ACCENTS,
+  DENSITIES,
+  FONTS,
+  MOTIONS,
+  RADII,
+  SURFACES,
+  isHex,
+  mix,
+  useTheme,
+  type Appearance,
+} from "@/context/ThemeContext";
+
+type Tab = "appearance" | "portal" | "connection";
+
+const TABS: { id: Tab; label: string; icon: typeof Palette }[] = [
+  { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "portal", label: "Portal content", icon: LayoutDashboard },
+  { id: "connection", label: "Connection", icon: KeyRound },
+];
 
 export function SettingsPage() {
-  const [tokenStatus, setTokenStatus] = useState<{
-    hasToken: boolean;
-    accessToken?: string | null;
-    expiresAt: string | null;
-    expired: boolean;
-  } | null>(null);
-  const [tokenModalOpen, setTokenModalOpen] = useState(false);
+  const params = useSearchParams();
+  const router = useRouter();
+  const initial = (params.get("tab") as Tab) || "appearance";
+  const [activeTab, setActiveTab] = useState<Tab>(TABS.some((t) => t.id === initial) ? initial : "appearance");
 
-  // Tabs: portal | connection
-  const [activeTab, setActiveTab] = useState<"portal" | "connection">("portal");
+  function pick(t: Tab) {
+    setActiveTab(t);
+    router.replace(`/settings?tab=${t}`, { scroll: false });
+  }
 
-  // Theme Context (Ocean Sapphire)
-  const { currentTheme } = useTheme();
+  return (
+    <div className="h-full overflow-y-auto pr-1">
+      <div className="mx-auto max-w-5xl space-y-5 pb-12">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">Settings</h2>
+            <p className="text-[13.5px] text-slate-500">Your own look, the team&rsquo;s portal content, and connections.</p>
+          </div>
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="tablist">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === id}
+                onClick={() => pick(id)}
+                className={clsx(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-all duration-200",
+                  activeTab === id ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-  // Portal Management State (Persisted in localStorage)
+        <div key={activeTab} className="fade-enter">
+          {activeTab === "appearance" && <AppearanceTab />}
+          {activeTab === "portal" && <PortalTab />}
+          {activeTab === "connection" && <ConnectionTab />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-3 border-b border-slate-100 py-5 last:border-0 md:grid-cols-[200px_1fr] md:gap-6">
+      <div>
+        <h3 className="text-[14px] font-semibold text-slate-900">{title}</h3>
+        {hint && <p className="mt-0.5 text-[12.5px] leading-snug text-slate-500">{hint}</p>}
+      </div>
+      <div>{children}</div>
+    </section>
+  );
+}
+
+function Choice({ active, onClick, children, className }: { active: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={clsx(
+        "relative rounded-xl border bg-white p-3 text-left transition-all duration-200",
+        active ? "border-blue-500 ring-4 ring-blue-100" : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/60",
+        className
+      )}
+    >
+      {active && (
+        <span className="pop-in absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-blue-600 text-white">
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </span>
+      )}
+      {children}
+    </button>
+  );
+}
+
+function AppearanceTab() {
+  const { appearance, setAppearance, resetAppearance, saveState } = useTheme();
+  const { user } = useAuth();
+  const [hex, setHex] = useState(appearance.accent);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHex(appearance.accent);
+  }, [appearance.accent]);
+  const set = (p: Partial<Appearance>) => setAppearance(p);
+  const custom = !ACCENTS.some((a) => a.hex.toLowerCase() === appearance.accent.toLowerCase());
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
+      <div className="rounded-xl border border-slate-200/80 bg-white px-5 shadow-[0_1px_2px_rgb(16_24_40/0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-4">
+          <div>
+            <h3 className="text-[15px] font-semibold text-slate-900">Your appearance</h3>
+            <p className="text-[12.5px] text-slate-500">
+              Only you see these choices. They&rsquo;re saved to {user?.email ? <span className="font-medium text-slate-700">{user.email}</span> : "your account"} and follow you to any computer.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <SaveBadge state={saveState} />
+            <button
+              type="button"
+              onClick={resetAppearance}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Reset
+            </button>
+          </div>
+        </div>
+
+        <Section title="Accent colour" hint="Buttons, links, the active page and charts' highlight.">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {ACCENTS.map((a) => {
+              const on = a.hex.toLowerCase() === appearance.accent.toLowerCase();
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  title={a.name}
+                  aria-label={a.name}
+                  aria-pressed={on}
+                  onClick={() => set({ accent: a.hex })}
+                  className={clsx(
+                    "grid h-9 w-9 place-items-center rounded-full transition-transform duration-200 hover:scale-110",
+                    on && "ring-2 ring-offset-2"
+                  )}
+                  style={{ background: a.hex, ["--tw-ring-color" as string]: a.hex }}
+                >
+                  {on && <Check className="pop-in h-4 w-4 text-white" strokeWidth={3} />}
+                </button>
+              );
+            })}
+            <label
+              className={clsx(
+                "flex h-9 items-center gap-2 rounded-full border pl-1 pr-3 text-[12.5px] transition",
+                custom ? "border-blue-500 ring-4 ring-blue-100" : "border-slate-200"
+              )}
+              title="Pick any colour"
+            >
+              <input
+                type="color"
+                value={appearance.accent}
+                onChange={(e) => set({ accent: e.target.value })}
+                className="h-7 w-7 cursor-pointer rounded-full border-0 bg-transparent p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0"
+                aria-label="Custom accent colour"
+              />
+              <input
+                value={hex}
+                onChange={(e) => {
+                  const v = e.target.value.startsWith("#") ? e.target.value : `#${e.target.value}`;
+                  setHex(v);
+                  if (isHex(v)) set({ accent: v });
+                }}
+                className="w-[72px] bg-transparent font-mono text-[12px] uppercase text-slate-700 outline-none"
+                aria-label="Accent hex code"
+                maxLength={7}
+              />
+            </label>
+          </div>
+        </Section>
+
+        <Section title="Background" hint="White stays the main colour; this sets the space behind panels.">
+          <div className="grid gap-2.5 sm:grid-cols-3">
+            {SURFACES.map((s) => (
+              <Choice key={s.id} active={appearance.surface === s.id} onClick={() => set({ surface: s.id })}>
+                <span className="mb-2 flex h-14 overflow-hidden rounded-lg border border-slate-200" style={{ background: s.bg }}>
+                  <span className="w-1/4 border-r border-slate-200 bg-white" />
+                  <span className="m-2 flex-1 rounded-md border border-slate-200 bg-white" />
+                </span>
+                <span className="block text-[13px] font-medium text-slate-900">{s.name}</span>
+                <span className="block text-[11.5px] text-slate-500">{s.hint}</span>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Corners" hint="How rounded cards, buttons and inputs are.">
+          <div className="grid gap-2.5 sm:grid-cols-3">
+            {RADII.map((r) => (
+              <Choice key={r.id} active={appearance.radius === r.id} onClick={() => set({ radius: r.id })}>
+                <span className="mb-2 flex h-10 items-center gap-2">
+                  {[0, 1].map((i) => (
+                    <span
+                      key={i}
+                      className="h-9 w-12 border border-slate-300 bg-slate-50"
+                      style={{ borderRadius: r.id === "rounded" ? 12 : r.id === "soft" ? 6 : 2 }}
+                    />
+                  ))}
+                </span>
+                <span className="block text-[13px] font-medium text-slate-900">{r.name}</span>
+                <span className="block text-[11.5px] text-slate-500">{r.hint}</span>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Font" hint="All three read Thai and English well.">
+          <div className="grid gap-2.5 sm:grid-cols-3">
+            {FONTS.map((f) => (
+              <Choice key={f.id} active={appearance.font === f.id} onClick={() => set({ font: f.id })}>
+                <span className="mb-1 block text-[22px] leading-tight text-slate-900" style={{ fontFamily: f.family }}>
+                  Aa กขค 123
+                </span>
+                <span className="block text-[12.5px] text-slate-600" style={{ fontFamily: f.family }}>
+                  {f.name}
+                </span>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Density" hint="Compact fits more rows in tables and lists.">
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {DENSITIES.map((d) => (
+              <Choice key={d.id} active={appearance.density === d.id} onClick={() => set({ density: d.id })}>
+                <span className="mb-2 flex flex-col" style={{ gap: d.id === "compact" ? 3 : 6 }}>
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} className="h-2 rounded bg-slate-200" style={{ width: `${90 - i * 18}%` }} />
+                  ))}
+                </span>
+                <span className="block text-[13px] font-medium text-slate-900">{d.name}</span>
+                <span className="block text-[11.5px] text-slate-500">{d.hint}</span>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Motion" hint="Page transitions, menus, the sliding nav highlight and counting numbers.">
+          <div className="grid gap-2.5 sm:grid-cols-3">
+            {MOTIONS.map((m) => (
+              <Choice key={m.id} active={appearance.motion === m.id} onClick={() => set({ motion: m.id })}>
+                <span className="mb-2 flex h-6 items-center">
+                  <span
+                    className={clsx("h-2.5 w-2.5 rounded-full bg-blue-600", m.id === "full" && "animate-bounce", m.id === "reduced" && "animate-pulse")}
+                  />
+                </span>
+                <span className="block text-[13px] font-medium text-slate-900">{m.name}</span>
+                <span className="block text-[11.5px] text-slate-500">{m.hint}</span>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Sidebar" hint="You can also collapse it from the sidebar itself.">
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+            {[
+              [false, "Expanded"],
+              [true, "Icons only"],
+            ].map(([v, label]) => (
+              <button
+                key={String(v)}
+                type="button"
+                onClick={() => set({ sidebarCollapsed: v as boolean })}
+                className={clsx(
+                  "rounded-md px-3 py-1.5 text-[13px] font-medium transition-all",
+                  appearance.sidebarCollapsed === v ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                {label as string}
+              </button>
+            ))}
+          </div>
+        </Section>
+      </div>
+
+      <div className="lg:sticky lg:top-0 lg:self-start">
+        <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.06em] text-slate-400">Preview</p>
+        <Preview a={appearance} />
+      </div>
+    </div>
+  );
+}
+
+function SaveBadge({ state }: { state: ReturnType<typeof useTheme>["saveState"] }) {
+  if (state === "idle") return null;
+  const map = {
+    saving: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, text: "Saving…", cls: "text-slate-500" },
+    saved: { icon: <Cloud className="h-3.5 w-3.5" />, text: "Saved to your account", cls: "text-emerald-700" },
+    error: { icon: <CloudOff className="h-3.5 w-3.5" />, text: "Couldn't save — kept on this computer", cls: "text-coral" },
+    local: { icon: <CloudOff className="h-3.5 w-3.5" />, text: "Saved on this computer", cls: "text-slate-500" },
+  }[state];
+  return (
+    <span key={state} className={clsx("fade-enter flex items-center gap-1.5 text-[12px]", map.cls)}>
+      {map.icon}
+      {map.text}
+    </span>
+  );
+}
+
+/** A small mock of the app painted with the chosen settings. */
+function Preview({ a }: { a: Appearance }) {
+  const surface = SURFACES.find((s) => s.id === a.surface)!.bg;
+  const r = a.radius === "rounded" ? 10 : a.radius === "soft" ? 6 : 3;
+  const font = FONTS.find((f) => f.id === a.font)!.family;
+  const light = mix(a.accent, "#FFFFFF", 0.9);
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_8px_24px_-12px_rgb(16_24_40/0.18)]" style={{ fontFamily: font }}>
+      <div className="flex h-[260px]">
+        <div className={clsx("flex shrink-0 flex-col gap-1 border-r border-slate-200 bg-white p-2 transition-all duration-300", a.sidebarCollapsed ? "w-10" : "w-24")}>
+          <span className="mb-1 grid h-5 w-5 place-items-center text-[8px] font-bold text-white" style={{ background: a.accent, borderRadius: r / 2 }}>
+            BA
+          </span>
+          {["Home", "Reports", "DAX", "Boards"].map((n, i) => (
+            <span
+              key={n}
+              className="flex h-5 items-center gap-1 px-1 text-[9px]"
+              style={{ borderRadius: r / 2, background: i === 2 ? light : undefined, color: i === 2 ? a.accent : "#4b5565", fontWeight: i === 2 ? 600 : 400 }}
+            >
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: i === 2 ? a.accent : "#cdd2da" }} />
+              {!a.sidebarCollapsed && n}
+            </span>
+          ))}
+        </div>
+        <div className="flex-1 space-y-2 p-2.5" style={{ background: surface }}>
+          <div className="text-[11px] font-semibold text-slate-900">DAX dictionary</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[849, 1877].map((n) => (
+              <div key={n} className="border border-slate-200 bg-white p-1.5" style={{ borderRadius: r }}>
+                <div className="text-[8px] text-slate-500">Measures</div>
+                <div className="text-[13px] font-semibold text-slate-900">{n.toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-1 border border-slate-200 bg-white p-1.5" style={{ borderRadius: r }}>
+            {[70, 55, 82].map((w, i) => (
+              <div key={i} className="flex items-center gap-1" style={{ height: a.density === "compact" ? 9 : 13 }}>
+                <span className="h-1.5 rounded-full bg-slate-200" style={{ width: `${w}%` }} />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            <span className="px-2 py-1 text-[9px] font-medium text-white" style={{ background: a.accent, borderRadius: r / 1.5 }}>
+              New measure
+            </span>
+            <span className="border border-slate-200 bg-white px-2 py-1 text-[9px] text-slate-700" style={{ borderRadius: r / 1.5 }}>
+              Export
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+function Card({ icon: Icon, title, hint, action, children }: { icon: typeof Palette; title: string; hint: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="space-y-5 rounded-xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_2px_rgb(16_24_40/0.04)] md:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-lg bg-blue-50 text-blue-600">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-[15px] font-semibold text-slate-900">{title}</h3>
+            <p className="text-[12.5px] text-slate-500">{hint}</p>
+          </div>
+        </div>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PortalTab() {
   const [portalTitle, setPortalTitle] = useState("Biz-Analytic Intelligence Platform");
   const [portalSubtitle, setPortalSubtitle] = useState(
     "Centralized enterprise business intelligence portal, executive KPI metrics, certified Power BI semantic models, version audit logs, and governance."
@@ -51,262 +412,138 @@ export function SettingsPage() {
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
-    void fetchToken();
-    loadPortalConfig();
+    const saved = localStorage.getItem("portal_hub_settings");
+    if (!saved) return;
+    try {
+      const data = JSON.parse(saved);
+      /* eslint-disable react-hooks/set-state-in-effect */
+      if (data.portalTitle) setPortalTitle(data.portalTitle);
+      if (data.portalSubtitle) setPortalSubtitle(data.portalSubtitle);
+      if (data.portalBannerActive !== undefined) setPortalBannerActive(data.portalBannerActive);
+      if (data.portalAnnouncement) setPortalAnnouncement(data.portalAnnouncement);
+      /* eslint-enable react-hooks/set-state-in-effect */
+    } catch {}
   }, []);
 
-  async function fetchToken() {
-    try {
-      const res = await fetch("/api/powerbi/token", { cache: "no-store" });
-      if (res.ok) {
-        const json = await res.json();
-        setTokenStatus(json);
-      }
-    } catch {}
-  }
-
-  function loadPortalConfig() {
-    const saved = localStorage.getItem("portal_hub_settings");
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        if (data.portalTitle) setPortalTitle(data.portalTitle);
-        if (data.portalSubtitle) setPortalSubtitle(data.portalSubtitle);
-        if (data.portalBannerActive !== undefined) setPortalBannerActive(data.portalBannerActive);
-        if (data.portalAnnouncement) setPortalAnnouncement(data.portalAnnouncement);
-      } catch {}
-    }
-  }
-
-  function handleSavePortalConfig() {
-    const data = {
-      portalTitle,
-      portalSubtitle,
-      portalBannerActive,
-      portalAnnouncement,
-    };
-    localStorage.setItem("portal_hub_settings", JSON.stringify(data));
+  function save() {
+    localStorage.setItem("portal_hub_settings", JSON.stringify({ portalTitle, portalSubtitle, portalBannerActive, portalAnnouncement }));
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
   }
 
   return (
-    <div className="h-full overflow-y-auto space-y-6 max-w-5xl mx-auto pb-12 pr-1">
-      {/* Navigation Tabs Header */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 pb-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab("portal")}
-          style={{
-            backgroundColor: activeTab === "portal" ? currentTheme.primary : "transparent",
-            color: activeTab === "portal" ? "#ffffff" : "#475569",
-          }}
-          className="flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold transition shadow-xs hover:opacity-90"
-        >
-          <LayoutDashboard className="h-4 w-4" />
-          <span>Portal Hub Customization</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("connection")}
-          style={{
-            backgroundColor: activeTab === "connection" ? currentTheme.primary : "transparent",
-            color: activeTab === "connection" ? "#ffffff" : "#475569",
-          }}
-          className="flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold transition shadow-xs hover:opacity-90"
-        >
-          <KeyRound className="h-4 w-4" />
-          <span>Connection & Database</span>
-        </button>
+    <Card
+      icon={LayoutDashboard}
+      title="Portal content"
+      hint="Headline, description and the announcement banner."
+      action={
+        savedSuccess && (
+          <span className="pop-in inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-medium text-emerald-700">
+            <Check className="h-3.5 w-3.5" /> Saved
+          </span>
+        )
+      }
+    >
+      <div className="space-y-4 text-[13px]">
+        <label className="block space-y-1.5">
+          <span className="font-medium text-slate-700">Headline</span>
+          <Input value={portalTitle} onChange={(e) => setPortalTitle(e.target.value)} placeholder="Portal title" />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="font-medium text-slate-700">Description</span>
+          <Textarea rows={2} value={portalSubtitle} onChange={(e) => setPortalSubtitle(e.target.value)} placeholder="Description" />
+        </label>
+        <div className="border-t border-slate-100 pt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-slate-700">Announcement banner</p>
+              <p className="text-[12px] text-slate-500">A notice across the top of the portal.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={portalBannerActive}
+              onClick={() => setPortalBannerActive(!portalBannerActive)}
+              className={clsx("relative h-6 w-11 rounded-full transition-colors duration-200", portalBannerActive ? "bg-blue-600" : "bg-slate-300")}
+            >
+              <span className={clsx("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-200", portalBannerActive ? "translate-x-[22px]" : "translate-x-0.5")} />
+            </button>
+          </div>
+          {portalBannerActive && (
+            <div className="mt-3 pop-in">
+              <Input value={portalAnnouncement} onChange={(e) => setPortalAnnouncement(e.target.value)} placeholder="e.g. Q1 2026 models are synced" />
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end pt-2">
+          <button
+            type="button"
+            onClick={save}
+            className="flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-[13px] font-medium text-white transition hover:bg-blue-700 active:scale-[0.98]"
+          >
+            <Save className="h-4 w-4" /> Save
+          </button>
+        </div>
       </div>
+    </Card>
+  );
+}
 
-      {/* 1. PORTAL MANAGEMENT TAB */}
-      {activeTab === "portal" && (
-        <div className="space-y-5">
-          <div className="squircle-card p-6 md:p-8 space-y-6 bg-white">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-3">
-                <div
-                  style={{
-                    backgroundColor: currentTheme.primaryLight,
-                    color: currentTheme.primary,
-                  }}
-                  className="grid h-12 w-12 place-items-center rounded-2xl shadow-xs"
-                >
-                  <LayoutDashboard className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900">Portal Content & Headlines</h2>
-                  <p className="text-xs text-slate-500">
-                    Configure welcome hero messages, broadcast banners, and portal descriptions
-                  </p>
-                </div>
-              </div>
+function ConnectionTab() {
+  const [tokenStatus, setTokenStatus] = useState<{ hasToken: boolean; expiresAt: string | null; expired: boolean } | null>(null);
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
 
-              {savedSuccess && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 border border-emerald-200 animate-in fade-in">
-                  <Check className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>Saved Successfully!</span>
-                </span>
-              )}
-            </div>
+  async function fetchToken() {
+    try {
+      const res = await fetch("/api/powerbi/token", { cache: "no-store" });
+      if (res.ok) setTokenStatus(await res.json());
+    } catch {}
+  }
+  useEffect(() => {
+    fetch("/api/powerbi/token", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setTokenStatus(j))
+      .catch(() => {});
+  }, []);
 
-            <div className="space-y-4 text-xs">
-              <div className="space-y-1.5">
-                <label className="font-semibold text-slate-700">Portal Hero Headline</label>
-                <Input
-                  value={portalTitle}
-                  onChange={(e) => setPortalTitle(e.target.value)}
-                  placeholder="Enter main portal title..."
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-slate-700">Portal Description Subtitle</label>
-                <Textarea
-                  rows={2}
-                  value={portalSubtitle}
-                  onChange={(e) => setPortalSubtitle(e.target.value)}
-                  placeholder="Enter description..."
-                />
-              </div>
-
-              <div className="border-t border-slate-100 pt-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="font-semibold text-slate-700">Broadcast Banner Announcement</label>
-                    <p className="text-[11px] text-slate-500">
-                      Display an executive notice bar across the top of the portal
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setPortalBannerActive(!portalBannerActive)}
-                    className="text-slate-500 hover:text-slate-800 transition"
-                  >
-                    {portalBannerActive ? (
-                      <ToggleRight
-                        style={{ color: currentTheme.primary }}
-                        className="h-7 w-7"
-                      />
-                    ) : (
-                      <ToggleLeft className="h-7 w-7 text-slate-300" />
-                    )}
-                  </button>
-                </div>
-
-                {portalBannerActive && (
-                  <div className="mt-2.5">
-                    <Input
-                      value={portalAnnouncement}
-                      onChange={(e) => setPortalAnnouncement(e.target.value)}
-                      placeholder="e.g. Q1 2026 Semantic Models are synchronized..."
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end pt-3">
-                <button
-                  type="button"
-                  onClick={handleSavePortalConfig}
-                  style={{
-                    backgroundColor: currentTheme.primary,
-                    boxShadow: `0 8px 16px -2px ${currentTheme.primaryGlow}`,
-                  }}
-                  className="flex items-center gap-2 rounded-full px-6 py-2.5 text-xs font-semibold text-white transition hover:opacity-90"
-                >
-                  <Save className="h-4 w-4" />
-                  <span>Save Portal Settings</span>
-                </button>
-              </div>
-            </div>
+  return (
+    <Card
+      icon={KeyRound}
+      title="Microsoft 365 and database"
+      hint="Power BI REST API, Microsoft Entra ID and Supabase."
+      action={
+        <button
+          type="button"
+          onClick={() => setTokenModalOpen(true)}
+          className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 text-[13px] font-medium text-white transition hover:bg-blue-700"
+        >
+          <KeyRound className="h-4 w-4" /> Update token
+        </button>
+      }
+    >
+      {tokenStatus?.hasToken ? (
+        <div className="space-y-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4 text-[13px]">
+          <div className="flex items-center gap-2 font-medium text-emerald-800">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Microsoft 365 access token active
           </div>
+          <p className="text-[12px] text-emerald-700">Expires {tokenStatus.expiresAt ? new Date(tokenStatus.expiresAt).toLocaleString() : "with this session"}</p>
+          <p className="font-mono text-[11.5px] text-emerald-800">Dataset.Read.All · Report.Read.All · Group.Read.All</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 text-[13px]">
+          <div className="mb-1 flex items-center gap-2 font-medium text-amber-800">
+            <ShieldAlert className="h-4 w-4 text-amber-600" /> No active token
+          </div>
+          <p className="text-[12px] text-amber-700">Sign in with your Microsoft work account to sync reports and run queries.</p>
         </div>
       )}
-
-      {/* 2. CONNECTION & DATABASE TAB */}
-      {activeTab === "connection" && (
-        <div className="space-y-5">
-          <div className="squircle-card p-6 md:p-8 space-y-5 bg-white">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-3">
-                <div
-                  style={{
-                    backgroundColor: currentTheme.primaryLight,
-                    color: currentTheme.primary,
-                  }}
-                  className="grid h-12 w-12 place-items-center rounded-2xl shadow-xs"
-                >
-                  <KeyRound className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900">Microsoft 365 OAuth & Database Status</h2>
-                  <p className="text-xs text-slate-500">
-                    Live connection status for Power BI REST API, Microsoft Entra ID, and Supabase Database
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setTokenModalOpen(true)}
-                style={{
-                  backgroundColor: currentTheme.primary,
-                  boxShadow: `0 8px 16px -2px ${currentTheme.primaryGlow}`,
-                }}
-                className="flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-white transition hover:opacity-90"
-              >
-                <KeyRound className="h-3.5 w-3.5" />
-                <span>Update Token</span>
-              </button>
-            </div>
-
-            {tokenStatus?.hasToken ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 text-xs space-y-2">
-                <div className="flex items-center gap-2 text-emerald-800 font-semibold">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                  <span>Microsoft 365 Access Token Active</span>
-                </div>
-                <p className="text-[11px] text-emerald-700">
-                  Token Expiry: {tokenStatus.expiresAt ? new Date(tokenStatus.expiresAt).toLocaleString() : "Active Session"}
-                </p>
-                <div className="flex items-center gap-2 pt-1 text-[11px] text-emerald-800 font-mono">
-                  <span>Scope: Dataset.Read.All, Report.Read.All, Group.Read.All</span>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-xs">
-                <div className="flex items-center gap-2 text-amber-800 font-semibold mb-1">
-                  <ShieldAlert className="h-4 w-4 text-amber-600" />
-                  <span>No Active OAuth Token</span>
-                </div>
-                <p className="text-[11px] text-amber-700">
-                  Please authenticate with your Microsoft Entra ID work account to synchronize reports and execute queries.
-                </p>
-              </div>
-            )}
-
-            {/* Supabase Database Connection Details */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-xs space-y-1.5">
-              <div className="flex items-center gap-2 font-semibold text-slate-800">
-                <Database className="h-4 w-4 text-blue-600" />
-                <span>Supabase PostgreSQL Cloud Storage</span>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                465 Power BI reports and dashboards, change logs, and license entries are persistently stored in Supabase cloud database.
-              </p>
-            </div>
-          </div>
+      <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-4 text-[13px]">
+        <div className="flex items-center gap-2 font-medium text-slate-800">
+          <Database className="h-4 w-4 text-blue-600" /> Supabase PostgreSQL
         </div>
-      )}
-
-      <TokenModal
-        isOpen={tokenModalOpen}
-        onClose={() => setTokenModalOpen(false)}
-        onSuccess={() => void fetchToken()}
-      />
-    </div>
+        <p className="text-[12px] text-slate-500">Reports, change logs, licenses, boards and each person&rsquo;s appearance are stored here.</p>
+      </div>
+      <TokenModal isOpen={tokenModalOpen} onClose={() => setTokenModalOpen(false)} onSuccess={() => void fetchToken()} />
+    </Card>
   );
 }

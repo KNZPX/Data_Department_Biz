@@ -14,9 +14,21 @@ type Base = {
   h: number;
   z: number;
   locked?: boolean;
+  /** Items sharing a groupId select and move together (Ctrl+G). */
+  groupId?: string;
 };
 
-export type StickyEl = Base & { kind: "sticky"; text: string; color: string };
+/** Whole-item text formatting (Miro's B / I / U / S and alignment). */
+export type TextFmt = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  align?: "left" | "center" | "right";
+};
+
+/** Sticky font size: undefined = auto-fit to the text, like Miro's "Auto". */
+export type StickyEl = Base & { kind: "sticky"; text: string; color: string; fontSize?: number; fmt?: TextFmt };
 export type ShapeEl = Base & {
   kind: "shape";
   shape: ShapeKind;
@@ -25,11 +37,14 @@ export type ShapeEl = Base & {
   stroke: string;
   textColor: string;
   fontSize: number;
+  fmt?: TextFmt;
 };
-export type TextEl = Base & { kind: "text"; text: string; color: string; fontSize: number; bold?: boolean };
+/** `bold` is the pre-`fmt` field; fmtOf() reads either. */
+export type TextEl = Base & { kind: "text"; text: string; color: string; fontSize: number; bold?: boolean; fmt?: TextFmt };
 export type CardEl = Base & { kind: "card"; title: string; body: string; accent: string; tag?: string };
 export type FrameEl = Base & { kind: "frame"; title: string; fill: string };
-export type DrawEl = Base & { kind: "draw"; points: [number, number][]; stroke: string; width: number };
+/** opacity < 1 = highlighter stroke. */
+export type DrawEl = Base & { kind: "draw"; points: [number, number][]; stroke: string; width: number; opacity?: number };
 
 export type Endpoint = { id?: string; side?: Side; x: number; y: number };
 export type ConnectorEl = {
@@ -97,6 +112,23 @@ export function uid(prefix = "el") {
 
 export function isBox(el: El): el is BoxEl {
   return el.kind !== "connector";
+}
+
+export function fmtOf(el: El): TextFmt {
+  if (el.kind === "text") return { bold: el.bold, ...el.fmt };
+  if (el.kind === "sticky" || el.kind === "shape") return el.fmt || {};
+  return {};
+}
+
+/** CSS for an item's whole-text formatting. */
+export function fmtStyle(f: TextFmt): { fontWeight?: number; fontStyle?: string; textDecoration?: string; textAlign?: "left" | "center" | "right" } {
+  const deco = [f.underline && "underline", f.strike && "line-through"].filter(Boolean).join(" ");
+  return {
+    fontWeight: f.bold ? 700 : undefined,
+    fontStyle: f.italic ? "italic" : undefined,
+    textDecoration: deco || undefined,
+    textAlign: f.align,
+  };
 }
 
 // ---------------------------------------------------------------------------
