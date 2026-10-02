@@ -28,6 +28,11 @@ function ago(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function isCollab(j: unknown): j is Collab {
+  const c = j as Collab | null;
+  return Boolean(c && Array.isArray(c.comments) && c.review && typeof c.review.status === "string");
+}
+
 /** Load + mutate the collaboration state for one item. */
 export function useItemCollab(item: ItemRef | null) {
   const [data, setData] = useState<Collab | null>(null);
@@ -35,14 +40,15 @@ export function useItemCollab(item: ItemRef | null) {
   const load = useCallback(async () => {
     if (!id) return;
     const res = await fetch(`/api/dax/collab?item=${encodeURIComponent(id)}`, { cache: "no-store" }).catch(() => null);
-    if (res?.ok) setData(await res.json());
+    const j = res?.ok ? await res.json().catch(() => null) : null;
+    if (isCollab(j)) setData(j);
   }, [id]);
   useEffect(() => {
     let alive = true;
     if (!id) return;
     fetch(`/api/dax/collab?item=${encodeURIComponent(id)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => alive && setData(j))
+      .then((j) => alive && isCollab(j) && setData(j))
       .catch(() => {});
     return () => {
       alive = false;
