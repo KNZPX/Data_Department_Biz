@@ -30,32 +30,31 @@ $$;
 revoke all on function public._request_session_ok() from public;
 grant execute on function public._request_session_ok() to anon, authenticated;
 
-do $$
-declare
-  t text;
-  p record;
-begin
-  foreach t in array array[
-    'change_log', 'dax_annotations', 'dax_dictionary_items', 'dax_imports',
-    'dax_model_relationships', 'dax_model_tables', 'dax_models',
-    'powerbi_items', 'powerbi_licenses', 'powerbi_permissions',
-    'target_scenarios', 'whiteboard_boards', 'app_users'
-  ] loop
-    execute format('alter table public.%I enable row level security', t);
-    for p in select polname from pg_policy where polrelid = format('public.%I', t)::regclass loop
-      execute format('drop policy %I on public.%I', p.polname, t);
-    end loop;
-    execute format(
-      'create policy "signed-in sessions" on public.%I for all to anon, authenticated using ((select public._request_session_ok())) with check ((select public._request_session_ok()))',
-      t
-    );
-  end loop;
-end $$;
+-- Applied as ALTER POLICY on the existing "<table> open all" policies (same
+-- names kept), plus new "signed-in sessions" policies on the two DAX tables
+-- that had RLS off. A temporary "probe" policy on change_log (used to confirm
+-- production requests carried a live session before locking) was altered to
+-- the same rule.
+alter policy "change_log open all" on public.change_log using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "dax_imports open all" on public.dax_imports using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "dax_model_relationships open all" on public.dax_model_relationships using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "dax_model_tables open all" on public.dax_model_tables using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "dax_models open all" on public.dax_models using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "powerbi_items open all" on public.powerbi_items using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "powerbi_licenses open all" on public.powerbi_licenses using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "powerbi_permissions open all" on public.powerbi_permissions using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "target_scenarios open all" on public.target_scenarios using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "whiteboard_boards open all" on public.whiteboard_boards using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter policy "app_users read" on public.app_users using ((select public._request_session_ok()));
+
+create policy "signed-in sessions" on public.dax_annotations for all to anon, authenticated using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+create policy "signed-in sessions" on public.dax_dictionary_items for all to anon, authenticated using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+alter table public.dax_annotations enable row level security;
+alter table public.dax_dictionary_items enable row level security;
 
 -- app_users is changed only through the admin_* / user_record_login functions.
 revoke insert, update, delete on table public.app_users from anon, authenticated;
 
 -- Legacy single-token table: unused since tokens moved to per-session rows.
-alter table public.powerbi_token enable row level security;
-drop policy if exists "powerbi_token open all" on public.powerbi_token;
+alter policy "powerbi_token open all" on public.powerbi_token using (false) with check (false);
 revoke all on table public.powerbi_token from anon, authenticated;
