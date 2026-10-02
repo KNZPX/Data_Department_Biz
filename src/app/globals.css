@@ -563,7 +563,7 @@ html[data-motion="reduced"] .lift:hover { transform: none; }
 html[data-motion="reduced"] .wb-btn:active { scale: 1; }
 
 /* Whiteboard shapes and connector wire */
-.wb-shape { filter: drop-shadow(0 1px 1px rgb(16 24 40 / 0.05)) drop-shadow(0 6px 10px rgb(16 24 40 / 0.07)); }
+.wb-shape { filter: drop-shadow(0 1px 2px rgb(16 24 40 / 0.06)) drop-shadow(0 8px 16px rgb(16 24 40 / 0.08)); }
 @keyframes wb-march { to { stroke-dashoffset: -26; } }
 @keyframes wb-dot-pulse {
   0%, 100% { scale: 1; opacity: 1; }

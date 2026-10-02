@@ -137,21 +137,8 @@ const SHAPES: { kind: ShapeKind; label: string }[] = [
   { kind: "plus", label: "Plus" },
 ];
 
-/** Soft pastel fill with a matching outline, one family per shape so a board reads at a glance. */
-const SHAPE_LOOK: Record<ShapeKind, { fill: string; stroke: string }> = (() => {
-  const blue = { fill: "#E8EEFF", stroke: "#4262FF" };
-  const yellow = { fill: "#FFF4CC", stroke: "#E0A200" };
-  const green = { fill: "#DEF7EA", stroke: "#1F9D5C" };
-  const pink = { fill: "#FFE6EE", stroke: "#E0457B" };
-  const violet = { fill: "#F0EAFF", stroke: "#7B5CFF" };
-  const teal = { fill: "#DDF5FA", stroke: "#0E9BB8" };
-  const peach = { fill: "#FFEBDD", stroke: "#F07B2C" };
-  return {
-    round: blue, rect: blue, pill: teal, ellipse: green, diamond: yellow, triangle: peach, pentagon: violet,
-    hexagon: violet, octagon: pink, parallelogram: peach, cylinder: teal, document: blue, callout: green,
-    cloud: teal, star: yellow, heart: pink, arrow: green, chevron: violet, plus: pink,
-  };
-})();
+/** New shapes start as clean white cards (white outline, soft shadow); recolour from the context bar. */
+const SHAPE_LOOK = { fill: "#FFFFFF", stroke: "#FFFFFF" };
 const SHAPE_TEXT = "#1C1C1E";
 
 /** Starting size: round-ish shapes start square. */
@@ -786,7 +773,7 @@ export function BoardCanvas({
       case "shape": {
         const d = shapeSize(shapeKind);
         const r = size || { x: at.x - d.w / 2, y: at.y - d.h / 2, ...d };
-        return { id: uid(), kind: "shape", shape: shapeKind, ...r, z, text: "", ...SHAPE_LOOK[shapeKind], textColor: SHAPE_TEXT, fontSize: 16 };
+        return { id: uid(), kind: "shape", shape: shapeKind, ...r, z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16 };
       }
       case "text":
         return { id: uid(), kind: "text", x: at.x, y: at.y - 16, w: 260, h: 40, z, text: "", color: INK, fontSize: 22 };
@@ -2475,7 +2462,7 @@ export function BoardCanvas({
                           className={clsx("wb-btn grid h-10 w-10 place-items-center rounded-lg", shapeKind === sh.kind ? "bg-[#E6EAFF] ring-1 ring-[#4262FF]/40" : "hover:bg-[#F1F2F5]")}
                         >
                           <svg width="26" height="20" viewBox="-4 -4 118 88" className="overflow-visible transition-transform duration-200 hover:scale-110">
-                            <path d={shapePath(sh.kind, 110, 80)} fill={SHAPE_LOOK[sh.kind].fill} stroke={SHAPE_LOOK[sh.kind].stroke} strokeWidth={6} strokeLinejoin="round" />
+                            <path d={shapePath(sh.kind, 110, 80)} fill="#FFFFFF" stroke="#656B81" strokeWidth={6} strokeLinejoin="round" />
                           </svg>
                         </button>
                       ))}
@@ -2663,7 +2650,7 @@ export function BoardCanvas({
                     onClick={() => {
                       const z = maxZ() + 1;
                       const { w, h } = shapeSize(sh.kind);
-                      const el: BoxEl = { id: uid(), kind: "shape", shape: sh.kind, x: menu.world.x - w / 2, y: menu.world.y - h / 2, w, h, z, text: "", ...SHAPE_LOOK[sh.kind], textColor: SHAPE_TEXT, fontSize: 16 };
+                      const el: BoxEl = { id: uid(), kind: "shape", shape: sh.kind, x: menu.world.x - w / 2, y: menu.world.y - h / 2, w, h, z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16 };
                       setMenu(null);
                       commit([...elRef.current, el]);
                       setSelection([el.id]);
