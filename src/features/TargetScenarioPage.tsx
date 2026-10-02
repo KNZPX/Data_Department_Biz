@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   CalendarRange,
@@ -31,6 +31,7 @@ import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, promptDialog, toast } from "@/components/feedback";
 import {
   MB,
+  actualOf,
   addSub,
   changeStep,
   childrenOf,
@@ -39,8 +40,11 @@ import {
   fromSnapshot,
   growthPct,
   maxFor,
+  monthsOf,
   removeSub,
   renameSub,
+  setActual,
+  setActualMonths,
   setLocked,
   setTarget,
   spreadEvenGrowth,
@@ -55,6 +59,7 @@ import {
 import { DEFAULT_STEP, buildBasePlan, legacyToTargets } from "@/lib/targetPlanBase";
 import { HOSPITAL_PROFILES, TARGET_META } from "@/data/targetScenarioData";
 import { useT } from "@/lib/i18n";
+import { usePersonalPref } from "@/lib/usePersonalPref";
 
 // =============================================================================
 // 2027 target planner. Set a number at any level; the level above never moves
@@ -95,20 +100,22 @@ function fmtMB(thb: number, step: number) {
   const d = decimalsFor(step);
   return (thb / MB).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 }
+type Unit = "MB" | "THB";
+const UnitContext = createContext<Unit>("MB");
+/** THB → text in the person's unit (MB with the step's decimals, or whole Baht). */
+function fmtU(thb: number, step: number, unit: Unit) {
+  return unit === "MB" ? fmtMB(thb, step) : Math.round(thb).toLocaleString("en-US");
+}
+const unitDiv = (unit: Unit) => (unit === "MB" ? MB : 1);
+const unitDecimals = (unit: Unit, step: number) => (unit === "MB" ? decimalsFor(step) : 0);
+const unitLabel = (unit: Unit) => (unit === "MB" ? "MB" : "฿");
+
 function fmtPct(p: number) {
   if (!Number.isFinite(p)) return "—";
   return `${p > 0 ? "+" : ""}${p.toFixed(1)}%`;
 }
 function siteColor(site: string) {
   return HOSPITAL_PROFILES[site]?.color || "#2563eb";
-}
-function monthsFor(plan: Plan, id: string): number[] {
-  let n: PlanNode | undefined = plan.nodes[id];
-  while (n) {
-    if (n.months?.length === 12) return n.months;
-    n = n.parentId ? plan.nodes[n.parentId] : undefined;
-  }
-  return new Array(12).fill(1 / 12);
 }
 function pathOf(plan: Plan, id: string): string {
   const parts: string[] = [];
@@ -118,6 +125,10 @@ function pathOf(plan: Plan, id: string): string {
     n = plan.nodes[n.parentId];
   }
   return parts.join(" › ");
+}
+
+function emptyReport(n: PlanNode): ChangeReport {
+  return { nodeId: n.id, from: n.target, to: n.target, requested: n.target, clamped: false, siblings: [], scaledLocked: [], autoUnlocked: null };
 }
 
 function loadScenario(base: Plan, s: SavedScenario): Plan {
@@ -140,6 +151,10 @@ export function TargetScenarioPage() {
   const [report, setReport] = useState<(ChangeReport & { label: string }) | null>(null);
   const [showMoved, setShowMoved] = useState(false);
 
+  const [unitPref, saveUnit] = usePersonalPref<Unit>("targetUnit", "target:unit");
+  const unit: Unit = unitPref === "THB" ? "THB" : "MB";
+  const div = unitDiv(unit);
+  const dec = unitDecimals(unit, plan.step);
   const [tab, setTab] = useState<Tab>("plan");
   const [siteFilter, setSiteFilter] = useState<string>("ALL");
   const [query, setQuery] = useState("");
@@ -230,8 +245,8 @@ export function TargetScenarioPage() {
   function applyTarget(id: string, thb: number, label?: string) {
     if (!canEdit) return;
     const { plan: next, report: r } = setTarget(plan, id, thb);
-    commit(next, { ...r, label: label || `${plan.nodes[id].name} set to ${fmtMB(r.to, plan.step)} MB` });
-    if (r.clamped) toast.info("Capped at what's left", { body: `The most ${plan.nodes[id].name} can take is ${fmtMB(r.to, plan.step)} MB without going over ${plan.nodes[plan.nodes[id].parentId!].name}.` });
+    commit(next, { ...r, label: label || `${plan.nodes[id].name} set to ${fmtU(r.to, plan.step, unit)} ${unitLabel(unit)}` });
+    if (r.clamped) toast.info("Capped at what's left", { body: `The most ${plan.nodes[id].name} can take is ${fmtU(r.to, plan.step, unit)} ${unitLabel(unit)} without going over ${plan.nodes[plan.nodes[id].parentId!].name}.` });
   }
   function toggleLock(id: string) {
     const n = plan.nodes[id];
@@ -244,7 +259,7 @@ export function TargetScenarioPage() {
       siblings: [],
       scaledLocked: [],
       autoUnlocked: null,
-      label: n.locked ? `${n.name} is automatic again` : `${n.name} pinned at ${fmtMB(n.target, plan.step)} MB`,
+      label: n.locked ? `${n.name} is automatic again` : `${n.name} pinned at ${fmtU(n.target, plan.step, unit)} ${unitLabel(unit)}`,
     });
   }
   async function addSubUnit(coeId: string) {
@@ -438,6 +453,7 @@ export function TargetScenarioPage() {
 
   // ---- render --------------------------------------------------------------------
   return (
+    <UnitContext.Provider value={unit}>
     <div className="flex h-full flex-col gap-3 overflow-y-auto lg:overflow-hidden">
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 shadow-[0_1px_2px_rgb(16_24_40/0.04)] md:px-4">
@@ -478,7 +494,7 @@ export function TargetScenarioPage() {
                     <button type="button" onClick={() => void switchTo(s)} className="min-w-0 flex-1 px-2.5 py-2 text-left">
                       <span className="block truncate text-[13px] font-medium text-slate-900">{s.name}</span>
                       <span className="block truncate text-[11.5px] text-slate-500">
-                        {s.snapshot?.revTgt ? `${fmtMB(s.snapshot.revTgt, 0.1 * MB)} MB · ` : ""}
+                        {s.snapshot?.revTgt ? `${fmtU(s.snapshot.revTgt, 0.1 * MB, unit)} ${unitLabel(unit)} · ` : ""}
                         {s.created_by ? `${s.created_by} · ` : ""}
                         {new Date(s.updated_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                       </span>
@@ -525,6 +541,35 @@ export function TargetScenarioPage() {
               <Redo2 className="h-4 w-4" />
             </button>
           </div>
+          <div className="flex h-9 items-center rounded-lg border border-slate-200 p-0.5 text-[12.5px]" role="radiogroup" aria-label="Unit">
+            {(["MB", "THB"] as const).map((u) => (
+              <button
+                key={u}
+                type="button"
+                role="radio"
+                aria-checked={unit === u}
+                onClick={() => saveUnit(u)}
+                className={clsx("h-full rounded-md px-2.5 font-medium transition", unit === u ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800")}
+              >
+                {u === "MB" ? t("Million ฿") : t("Baht")}
+              </button>
+            ))}
+          </div>
+          <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] text-slate-600" title="How many months of 2026 are actual. The rest of the year is estimated from each unit's usual monthly pattern.">
+            {t("2026 actual")}
+            <select
+              value={plan.actualMonths}
+              disabled={!canEdit}
+              onChange={(e) => commit(setActualMonths(plan, Number(e.target.value)), undefined)}
+              className="bg-transparent font-medium text-slate-900 outline-none"
+            >
+              {Array.from({ length: 13 }, (_, i) => (
+                <option key={i} value={i}>
+                  {i === 0 ? t("none (estimate)") : `${i} ${t("months")} (${MONTHS[0]}–${MONTHS[i - 1]})`}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] text-slate-600" title="Every target is rounded to this, and the levels still add up">
             {t("Round to")}
             <select
@@ -535,7 +580,7 @@ export function TargetScenarioPage() {
             >
               {STEPS.map((s) => (
                 <option key={s.v} value={s.v}>
-                  {s.label}
+                  {unit === "MB" ? s.label : `${s.v.toLocaleString("en-US")} ฿`}
                 </option>
               ))}
             </select>
@@ -572,7 +617,7 @@ export function TargetScenarioPage() {
           active={siteFilter === "ALL"}
           onClick={() => setSiteFilter("ALL")}
           editable={canEdit}
-          onCommit={(v) => applyTarget(root.id, v, `Network target set to ${fmtMB(v, plan.step)} MB`)}
+          onCommit={(v) => applyTarget(root.id, v, `Network target set to ${fmtU(v, plan.step, unit)} ${unitLabel(unit)}`)}
           color="#2563eb"
           icon={<Network className="h-4 w-4" />}
         />
@@ -661,9 +706,9 @@ export function TargetScenarioPage() {
               <span className="font-medium">{report.label}.</span>
               {report.siblings.length > 0 && plan.nodes[report.nodeId]?.parentId && (
                 <span>
-                  To keep {plan.nodes[plan.nodes[report.nodeId].parentId!].name} at {fmtMB(plan.nodes[plan.nodes[report.nodeId].parentId!].target, plan.step)} MB,{" "}
+                  To keep {plan.nodes[plan.nodes[report.nodeId].parentId!].name} at {fmtU(plan.nodes[plan.nodes[report.nodeId].parentId!].target, plan.step, unit)} {unitLabel(unit)},{" "}
                   {report.siblings.length} other {report.siblings.length === 1 ? "unit" : "units"} moved by{" "}
-                  <span className="font-medium tabular-nums">{fmtMB(report.siblings.reduce((a, s) => a + s.to - s.from, 0), plan.step)} MB</span>.
+                  <span className="font-medium tabular-nums">{fmtU(report.siblings.reduce((a, s) => a + s.to - s.from, 0), plan.step, unit)} {unitLabel(unit)}</span>.
                 </span>
               )}
               {report.autoUnlocked && <span>{plan.nodes[report.autoUnlocked]?.name} switched to automatic to take the rest.</span>}
@@ -688,7 +733,7 @@ export function TargetScenarioPage() {
                   <div key={s.id} className="flex justify-between gap-2 tabular-nums">
                     <span className="truncate text-blue-900/80">{plan.nodes[s.id]?.name}</span>
                     <span>
-                      {fmtMB(s.from, plan.step)} → <span className="font-medium">{fmtMB(s.to, plan.step)}</span>
+                      {fmtU(s.from, plan.step, unit)} → <span className="font-medium">{fmtU(s.to, plan.step, unit)}</span>
                     </span>
                   </div>
                 ))}
@@ -699,14 +744,22 @@ export function TargetScenarioPage() {
 
         <div className="min-h-0 flex-1 overflow-auto">
           {tab === "plan" && (
-            <table className="w-full min-w-[920px] border-separate border-spacing-0 text-[13px]">
+            <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-[13px]">
               <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
                 <tr className="text-left text-[11.5px] font-medium text-slate-500">
                   <th className="border-b border-slate-200 py-2 pl-4 pr-2 font-medium">{t("Unit")}</th>
                   <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("2025 actual")}</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("2026 base")}</th>
-                  <th className="w-[170px] border-b border-slate-200 px-2 py-2 text-right font-medium text-slate-800">{t("2027 target (MB)")}</th>
-                  <th className="w-[110px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Growth")}</th>
+                  {plan.actualMonths > 0 && (
+                    <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title="Typed actuals for a CoE / sub-unit set its 2026 full year">
+                      {t("2026 actual")} <span className="font-normal text-slate-400">{MONTHS[0]}–{MONTHS[plan.actualMonths - 1]}</span>
+                    </th>
+                  )}
+                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title={plan.actualMonths > 0 ? `${plan.actualMonths} months actual + ${12 - plan.actualMonths} estimated` : "Estimate"}>
+                    {t("2026 full year")}
+                  </th>
+                  <th className="w-[170px] border-b border-slate-200 px-2 py-2 text-right font-medium text-slate-800">{t("2027 target")} ({unitLabel(unit)})</th>
+                  <th className="w-[100px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Growth")} %</th>
+                  <th className="w-[140px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("+ vs 2026")}</th>
                   <th className="w-[150px] border-b border-slate-200 px-2 py-2 font-medium">{t("Share of parent")}</th>
                   <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Visits 2027")}</th>
                   <th className="w-[76px] border-b border-slate-200 py-2 pl-2 pr-4" />
@@ -747,24 +800,42 @@ export function TargetScenarioPage() {
                           {n.custom && <span className="shrink-0 rounded bg-violet-50 px-1.5 py-px text-[10.5px] font-medium text-violet-700">added</span>}
                         </div>
                       </td>
-                      <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-400">{n.prior25 ? fmtMB(n.prior25, plan.step) : "—"}</td>
-                      <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-500">{n.base26 ? fmtMB(n.base26, plan.step) : "—"}</td>
+                      <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-400">{n.prior25 ? fmtU(n.prior25, plan.step, unit) : "—"}</td>
+                      {plan.actualMonths > 0 && (
+                        <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                          {n.level === "coe" || n.level === "sub" ? (
+                            <NumberCell
+                              value={actualOf(plan, n.id) / div}
+                              decimals={dec}
+                              disabled={!canEdit}
+                              pinned={n.actual !== undefined}
+                              muted={n.actual === undefined}
+                              title={n.actual === undefined ? "Estimated from the 2026 base — click to type the real actual" : "Typed actual — clear it to go back to the data"}
+                              onCommit={(v) => commit(setActual(plan, n.id, v * div), { ...emptyReport(n), label: `${n.name}: 2026 actual set to ${fmtU(v * div, plan.step, unit)} ${unitLabel(unit)}` })}
+                              onClear={n.actual !== undefined ? () => commit(setActual(plan, n.id, null)) : undefined}
+                            />
+                          ) : (
+                            <span className="block px-2 text-right tabular-nums text-slate-400">{fmtU(actualOf(plan, n.id), plan.step, unit)}</span>
+                          )}
+                        </td>
+                      )}
+                      <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-500">{n.base26 ? fmtU(n.base26, plan.step, unit) : "—"}</td>
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
                         <NumberCell
-                          value={n.target / MB}
-                          decimals={decimalsFor(plan.step)}
+                          value={n.target / div}
+                          decimals={dec}
                           disabled={!canEdit}
                           pinned={n.locked}
                           hint={
                             parent
                               ? {
-                                  max: maxFor(plan, n.id) / MB,
-                                  fair: fairShare(plan, n.id) / MB,
+                                  max: maxFor(plan, n.id) / div,
+                                  fair: fairShare(plan, n.id) / div,
                                   parentName: parent.name,
                                 }
                               : undefined
                           }
-                          onCommit={(mb) => applyTarget(n.id, mb * MB)}
+                          onCommit={(v) => applyTarget(n.id, v * div)}
                         />
                       </td>
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
@@ -775,6 +846,17 @@ export function TargetScenarioPage() {
                           tone={g >= 0 ? "pos" : "neg"}
                           disabled={!canEdit || n.base26 <= 0}
                           onCommit={(pct) => applyTarget(n.id, n.base26 * (1 + pct / 100), `${n.name} set to ${fmtPct(pct)} growth`)}
+                        />
+                      </td>
+                      <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                        <NumberCell
+                          value={(n.target - n.base26) / div}
+                          decimals={dec}
+                          signed
+                          tone={n.target >= n.base26 ? "pos" : "neg"}
+                          disabled={!canEdit}
+                          title="Add this much on top of the 2026 full year"
+                          onCommit={(v) => applyTarget(n.id, n.base26 + v * div, `${n.name} set to 2026 ${v >= 0 ? "+" : "−"}${fmtU(Math.abs(v * div), plan.step, unit)} ${unitLabel(unit)}`)}
                         />
                       </td>
                       <td className="border-b border-slate-100 px-2 py-1.5">
@@ -854,7 +936,7 @@ export function TargetScenarioPage() {
                 })}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400">
+                    <td colSpan={11} className="py-12 text-center text-slate-400">
                       Nothing matches “{query}”.
                     </td>
                   </tr>
@@ -871,11 +953,12 @@ export function TargetScenarioPage() {
           <span className="flex items-center gap-1">
             <Lock className="h-3 w-3 text-blue-600" /> {t("Pinned: kept when other units are rebalanced")}
           </span>
-          <span>Type a number in MB or a growth %; the level above never changes, the rest of its units share what&rsquo;s left.</span>
+          <span>Set a target three ways — an amount, a growth %, or + on top of 2026 — in Baht or million Baht. The level above never changes; the rest of its units share what&rsquo;s left.</span>
           {!canEdit && <span className="ml-auto font-medium text-slate-600">View only — ask an admin for “Save scenarios” to edit.</span>}
         </div>
       </div>
     </div>
+    </UnitContext.Provider>
   );
 }
 
@@ -907,6 +990,8 @@ function KpiCard({
   icon?: ReactNode;
 }) {
   const g = growthPct(node);
+  const unit = useContext(UnitContext);
+  const div = unitDiv(unit);
   return (
     <div
       role="button"
@@ -926,17 +1011,17 @@ function KpiCard({
       </div>
       <div className="mt-1 flex items-baseline gap-1" onClick={(e) => e.stopPropagation()}>
         <NumberCell
-          value={node.target / MB}
-          decimals={decimalsFor(step)}
+          value={node.target / div}
+          decimals={unitDecimals(unit, step)}
           disabled={!editable}
           big
-          hint={max !== undefined && Number.isFinite(max) ? { max: max / MB, parentName: "the network" } : undefined}
-          onCommit={(mb) => onCommit(mb * MB)}
+          hint={max !== undefined && Number.isFinite(max) ? { max: max / div, parentName: "the network" } : undefined}
+          onCommit={(v) => onCommit(v * div)}
         />
-        <span className="text-[12px] text-slate-400">MB</span>
+        <span className="text-[12px] text-slate-400">{unitLabel(unit)}</span>
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-[11.5px] text-slate-400">
-        <span className="tabular-nums">2026 base {fmtMB(node.base26, step)}</span>
+        <span className="tabular-nums">2026 {fmtU(node.base26, step, unit)}</span>
         {share !== undefined && (
           <>
             <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-100">
@@ -961,6 +1046,10 @@ function NumberCell({
   pinned,
   big,
   hint,
+  muted,
+  signed,
+  title,
+  onClear,
 }: {
   value: number;
   decimals: number;
@@ -970,11 +1059,15 @@ function NumberCell({
   tone?: "pos" | "neg";
   pinned?: boolean;
   big?: boolean;
+  muted?: boolean;
+  signed?: boolean;
+  title?: string;
+  onClear?: () => void;
   hint?: { max?: number; fair?: number; parentName: string };
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = value.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-  const text = suffix === "%" ? `${value > 0 ? "+" : ""}${shown}${suffix}` : shown;
+  const text = suffix === "%" || signed ? `${value > 0 ? "+" : ""}${shown}${suffix || ""}` : shown;
 
   function finish(v: string | null) {
     setDraft(null);
@@ -996,10 +1089,10 @@ function NumberCell({
           big ? "px-0 text-left text-[22px] font-semibold tracking-tight text-slate-900" : "px-2 py-1",
           !big && (disabled ? "" : "hover:bg-white hover:ring-1 hover:ring-slate-300"),
           !big && pinned && "bg-blue-50 font-semibold text-blue-800",
-          !big && !pinned && (tone === "pos" ? "text-emerald-700" : tone === "neg" ? "text-rose-600" : "text-slate-900"),
+          !big && !pinned && (muted ? "text-slate-400" : tone === "pos" ? "text-emerald-700" : tone === "neg" ? "text-rose-600" : "text-slate-900"),
           disabled ? "cursor-default" : "cursor-text"
         )}
-        title={disabled ? undefined : "Click to change"}
+        title={disabled ? undefined : title || "Click to change"}
       >
         {text}
       </button>
@@ -1025,39 +1118,52 @@ function NumberCell({
           over ? "border-amber-400 ring-amber-100" : "border-blue-400 ring-blue-100"
         )}
       />
-      {hint && (
+      {(hint || onClear) && (
         <div className="pop-in absolute right-0 top-full z-20 mt-1 w-60 rounded-lg border border-slate-200 bg-white p-2 text-left text-[12px] font-normal text-slate-600 shadow-[0_12px_32px_-8px_rgb(16_24_40/0.2)]">
-          {hint.max !== undefined && (
+          {hint?.max !== undefined && (
             <button
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
-                finish(String(hint.max));
+                finish(String(hint.max!));
               }}
               className={clsx("flex w-full justify-between rounded px-1.5 py-1 hover:bg-slate-50", over && "text-amber-700")}
             >
               <span>Most it can take</span>
-              <span className="font-medium tabular-nums">{hint.max.toLocaleString("en-US", { maximumFractionDigits: decimals })}</span>
+              <span className="font-medium tabular-nums">{hint.max!.toLocaleString("en-US", { maximumFractionDigits: decimals })}</span>
             </button>
           )}
-          {hint.fair !== undefined && (
+          {hint?.fair !== undefined && (
             <button
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
-                finish(String(hint.fair));
+                finish(String(hint.fair!));
               }}
               className="flex w-full justify-between rounded px-1.5 py-1 text-blue-700 hover:bg-blue-50"
             >
               <span className="flex items-center gap-1">
                 <Sparkles className="h-3 w-3" /> Suggested (same growth as {hint.parentName})
               </span>
-              <span className="font-medium tabular-nums">{hint.fair.toLocaleString("en-US", { maximumFractionDigits: decimals })}</span>
+              <span className="font-medium tabular-nums">{hint.fair!.toLocaleString("en-US", { maximumFractionDigits: decimals })}</span>
             </button>
           )}
-          <p className="mt-1 border-t border-slate-100 px-1.5 pt-1 text-[11px] text-slate-400">
+          {onClear && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setDraft(null);
+                onClear();
+              }}
+              className="flex w-full rounded px-1.5 py-1 text-slate-600 hover:bg-slate-50"
+            >
+              Use the data again
+            </button>
+          )}
+          {hint && <p className="mt-1 border-t border-slate-100 px-1.5 pt-1 text-[11px] text-slate-400">
             {over ? `Above that, it's capped so ${hint.parentName} doesn't go over.` : `The rest of ${hint.parentName} rebalances automatically.`}
-          </p>
+          </p>}
         </div>
       )}
     </div>
@@ -1130,6 +1236,7 @@ function RowMenu({
 }
 
 function SegmentsView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) {
+  const unit = useContext(UnitContext);
   const sites = siteFilter === "ALL" ? plan.nodes[plan.rootId].children : [siteFilter];
   type Cell = { t: number; b: number };
   const empty = (): Record<string, Cell> => Object.fromEntries(SEGMENTS.map((s) => [s, { t: 0, b: 0 }]));
@@ -1155,7 +1262,7 @@ function SegmentsView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) 
   }
   const cell = (c: Cell) => (
     <td className="border-b border-slate-100 px-3 py-2.5 text-right">
-      <div className="tabular-nums text-slate-900">{fmtMB(c.t, plan.step)}</div>
+      <div className="tabular-nums text-slate-900">{fmtU(c.t, plan.step, unit)}</div>
       <div className={clsx("text-[11.5px] tabular-nums", c.t >= c.b ? "text-emerald-600" : "text-rose-600")}>{fmtPct(c.b > 0 ? ((c.t - c.b) / c.b) * 100 : 0)}</div>
     </td>
   );
@@ -1201,7 +1308,8 @@ function SegmentsView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) 
 }
 
 function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
-  const w = monthsFor(plan, node.id);
+  const unit = useContext(UnitContext);
+  const w = monthsOf(plan, node.id);
   const target = w.map((x) => x * node.target);
   const base = w.map((x) => x * node.base26);
   const max = Math.max(...target, ...base, 1);
@@ -1211,12 +1319,12 @@ function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
       <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h3 className="text-[15px] font-semibold text-slate-900">{node.name}</h3>
         <span className="text-[12.5px] text-slate-500">
-          {fmtMB(node.target, plan.step)} MB for {TARGET_META.target_year}, phased like {TARGET_META.base_year}&rsquo;s monthly revenue
+          {fmtU(node.target, plan.step, unit)} {unitLabel(unit)} for {TARGET_META.target_year}, phased like {TARGET_META.base_year}&rsquo;s monthly revenue
         </span>
       </div>
       <div className="grid grid-cols-12 items-end gap-1.5 rounded-xl border border-slate-100 p-3" style={{ height: 180 }}>
         {target.map((t, i) => (
-          <div key={i} className="flex h-full flex-col justify-end gap-1" title={`${MONTHS[i]}: ${fmtMB(t, plan.step)} MB (2026 base ${fmtMB(base[i], plan.step)})`}>
+          <div key={i} className="flex h-full flex-col justify-end gap-1" title={`${MONTHS[i]}: ${fmtU(t, plan.step, unit)} ${unitLabel(unit)} (2026 base ${fmtU(base[i], plan.step, unit)})`}>
             <div className="flex flex-1 items-end gap-0.5">
               <div className="w-1/2 rounded-t bg-slate-200" style={{ height: `${(base[i] / max) * 100}%` }} />
               <div className="w-1/2 origin-bottom rounded-t bg-blue-600 [animation:grow-y_var(--dur-3)_var(--ease-out-soft)_backwards]" style={{ height: `${(t / max) * 100}%` }} />
@@ -1237,7 +1345,7 @@ function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
         <table className="w-full min-w-[900px] border-separate border-spacing-0 text-[12.5px]">
           <thead>
             <tr className="text-[11.5px] text-slate-500">
-              <th className="border-b border-slate-200 px-2 py-2 text-left font-medium">MB</th>
+              <th className="border-b border-slate-200 px-2 py-2 text-left font-medium">{unitLabel(unit)}</th>
               {MONTHS.map((m) => (
                 <th key={m} className="border-b border-slate-200 px-2 py-2 text-right font-medium">
                   {m}
@@ -1248,16 +1356,16 @@ function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
           </thead>
           <tbody>
             {[node, ...kids].map((n, idx) => {
-              const ww = monthsFor(plan, n.id);
+              const ww = monthsOf(plan, n.id);
               return (
                 <tr key={n.id} className={idx === 0 ? "font-semibold" : ""}>
                   <td className="border-b border-slate-100 px-2 py-1.5 text-slate-800">{idx === 0 ? "Total" : n.name}</td>
                   {ww.map((x, i) => (
                     <td key={i} className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-700">
-                      {fmtMB(x * n.target, plan.step)}
+                      {fmtU(x * n.target, plan.step, unit)}
                     </td>
                   ))}
-                  <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-900">{fmtMB(n.target, plan.step)}</td>
+                  <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-900">{fmtU(n.target, plan.step, unit)}</td>
                 </tr>
               );
             })}

@@ -183,6 +183,14 @@ const TH: Record<string, string> = {
   "Saved by the team": "ที่ทีมบันทึกไว้",
   "Nothing saved yet.": "ยังไม่มีที่บันทึกไว้",
   "Pinned: kept when other units are rebalanced": "ปักหมุด: ค่าจะคงไว้เมื่อหน่วยอื่นถูกปรับ",
+  "Million ฿": "ล้านบาท",
+  Baht: "บาท",
+  "2026 actual": "Actual 2026",
+  "2026 full year": "ทั้งปี 2026",
+  "2027 target": "เป้า 2027",
+  "+ vs 2026": "+ จาก 2026",
+  months: "เดือน",
+  "none (estimate)": "ไม่มี (ประมาณการ)",
 };
 
 export function translate(lang: string, text: string, vars?: Record<string, string | number>) {
