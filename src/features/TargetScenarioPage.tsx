@@ -54,6 +54,7 @@ import {
 } from "@/lib/targetPlan";
 import { DEFAULT_STEP, buildBasePlan, legacyToTargets } from "@/lib/targetPlanBase";
 import { HOSPITAL_PROFILES, TARGET_META } from "@/data/targetScenarioData";
+import { useT } from "@/lib/i18n";
 
 // =============================================================================
 // 2027 target planner. Set a number at any level; the level above never moves
@@ -129,6 +130,7 @@ function loadScenario(base: Plan, s: SavedScenario): Plan {
 
 export function TargetScenarioPage() {
   const { can } = useAccess();
+  const t = useT();
   const canEdit = can("target.edit");
   const basePlan = useMemo(() => buildBasePlan(), []);
 
@@ -464,13 +466,13 @@ export function TargetScenarioPage() {
               <button type="button" onClick={() => void switchTo(null)} className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50">
                 <Sparkles className="mt-0.5 h-4 w-4 text-blue-600" />
                 <span>
-                  <span className="block text-[13px] font-medium text-slate-900">Start from the agreed plan</span>
+                  <span className="block text-[13px] font-medium text-slate-900">{t("Start from the agreed plan")}</span>
                   <span className="block text-[12px] text-slate-500">Revise 2027 (V2): 7,550 MB · BPK 5,140 · BSI 2,035 · DBK 375</span>
                 </span>
               </button>
-              <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-400">Saved by the team</p>
+              <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-400">{t("Saved by the team")}</p>
               <div className="max-h-72 overflow-y-auto">
-                {scenarios.length === 0 && <p className="px-2.5 py-3 text-[12.5px] text-slate-400">Nothing saved yet.</p>}
+                {scenarios.length === 0 && <p className="px-2.5 py-3 text-[12.5px] text-slate-400">{t("Nothing saved yet.")}</p>}
                 {scenarios.map((s) => (
                   <div key={s.id} className={clsx("group flex items-center gap-1 rounded-lg", current.id === s.id ? "bg-blue-50" : "hover:bg-slate-50")}>
                     <button type="button" onClick={() => void switchTo(s)} className="min-w-0 flex-1 px-2.5 py-2 text-left">
@@ -506,7 +508,7 @@ export function TargetScenarioPage() {
           title={issues.length ? "Some levels don't add up" : "Every level adds up to the one above"}
         >
           {issues.length ? <AlertTriangle className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-          {issues.length ? `${issues.length} levels don't add up` : "Every level adds up"}
+          {issues.length ? `${issues.length} levels don't add up` : t("Every level adds up")}
         </span>
         {current.savedBy && current.updatedAt && (
           <span className="hidden text-[12px] text-slate-400 2xl:inline">
@@ -524,7 +526,7 @@ export function TargetScenarioPage() {
             </button>
           </div>
           <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] text-slate-600" title="Every target is rounded to this, and the levels still add up">
-            Round to
+            {t("Round to")}
             <select
               value={plan.step}
               disabled={!canEdit}
@@ -545,7 +547,7 @@ export function TargetScenarioPage() {
             <>
               {current.id && (
                 <button type="button" onClick={() => void save(true)} className="h-9 rounded-lg border border-slate-200 px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50">
-                  Save as new
+                  {t("Save as new")}
                 </button>
               )}
               <button
@@ -554,7 +556,7 @@ export function TargetScenarioPage() {
                 disabled={saving || (!dirty && !!current.id)}
                 className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-[13px] font-medium text-white transition hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50"
               >
-                <Save className="h-4 w-4" /> {current.id ? "Save" : "Save scenario"}
+                <Save className="h-4 w-4" /> {current.id ? t("Save") : t("Save scenario")}
               </button>
             </>
           )}
@@ -564,7 +566,7 @@ export function TargetScenarioPage() {
       {/* KPI strip */}
       <div className="grid shrink-0 grid-cols-2 gap-2 lg:grid-cols-4">
         <KpiCard
-          title="Phuket network"
+          title={t("Phuket network")}
           node={root}
           step={plan.step}
           active={siteFilter === "ALL"}
@@ -597,9 +599,9 @@ export function TargetScenarioPage() {
           <div className="flex rounded-lg bg-slate-100 p-0.5" role="tablist">
             {(
               [
-                ["plan", "Plan", Network],
-                ["segments", "By segment", Users],
-                ["months", "By month", CalendarRange],
+                ["plan", t("Plan"), Network],
+                ["segments", t("By segment"), Users],
+                ["months", t("By month"), CalendarRange],
               ] as const
             ).map(([id, label, Icon]) => (
               <button
@@ -624,15 +626,15 @@ export function TargetScenarioPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Find a unit…"
+                  placeholder={t("Find a unit…")}
                   className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-2 text-[13px] outline-none transition focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100"
                 />
               </label>
               <div className="hidden items-center gap-1 whitespace-nowrap text-[12.5px] text-slate-500 md:flex">
-                Show down to
+                {t("Show down to")}
                 {(["site", "coe", "setting", "market"] as const).map((l) => (
                   <button key={l} type="button" onClick={() => expandTo(l)} className="rounded-md px-2 py-1 font-medium text-slate-600 hover:bg-slate-100">
-                    {LEVEL_LABEL[l]}
+                    {t(LEVEL_LABEL[l])}
                   </button>
                 ))}
                 <button type="button" onClick={() => setExpanded(new Set(["PKT"]))} className="grid h-7 w-7 place-items-center rounded-md hover:bg-slate-100" title="Collapse all" aria-label="Collapse all">
@@ -669,11 +671,11 @@ export function TargetScenarioPage() {
               <span className="ml-auto flex items-center gap-1">
                 {report.siblings.length > 0 && (
                   <button type="button" onClick={() => setShowMoved((v) => !v)} className="rounded-md px-2 py-0.5 font-medium text-blue-700 hover:bg-blue-100">
-                    {showMoved ? "Hide" : "What moved"}
+                    {showMoved ? t("Hide") : t("What moved")}
                   </button>
                 )}
                 <button type="button" onClick={undo} className="flex items-center gap-1 rounded-md px-2 py-0.5 font-medium text-blue-700 hover:bg-blue-100">
-                  <Undo2 className="h-3.5 w-3.5" /> Undo
+                  <Undo2 className="h-3.5 w-3.5" /> {t("Undo")}
                 </button>
                 <button type="button" onClick={() => setReport(null)} className="grid h-6 w-6 place-items-center rounded-md hover:bg-blue-100" aria-label="Dismiss">
                   <X className="h-3.5 w-3.5" />
@@ -700,13 +702,13 @@ export function TargetScenarioPage() {
             <table className="w-full min-w-[920px] border-separate border-spacing-0 text-[13px]">
               <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
                 <tr className="text-left text-[11.5px] font-medium text-slate-500">
-                  <th className="border-b border-slate-200 py-2 pl-4 pr-2 font-medium">Unit</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">2025 actual</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">2026 base</th>
-                  <th className="w-[170px] border-b border-slate-200 px-2 py-2 text-right font-medium text-slate-800">2027 target (MB)</th>
-                  <th className="w-[110px] border-b border-slate-200 px-2 py-2 text-right font-medium">Growth</th>
-                  <th className="w-[150px] border-b border-slate-200 px-2 py-2 font-medium">Share of parent</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">Visits 2027</th>
+                  <th className="border-b border-slate-200 py-2 pl-4 pr-2 font-medium">{t("Unit")}</th>
+                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("2025 actual")}</th>
+                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("2026 base")}</th>
+                  <th className="w-[170px] border-b border-slate-200 px-2 py-2 text-right font-medium text-slate-800">{t("2027 target (MB)")}</th>
+                  <th className="w-[110px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Growth")}</th>
+                  <th className="w-[150px] border-b border-slate-200 px-2 py-2 font-medium">{t("Share of parent")}</th>
+                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Visits 2027")}</th>
                   <th className="w-[76px] border-b border-slate-200 py-2 pl-2 pr-4" />
                 </tr>
               </thead>
@@ -867,7 +869,7 @@ export function TargetScenarioPage() {
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-[11.5px] text-slate-500">
           <span className="flex items-center gap-1">
-            <Lock className="h-3 w-3 text-blue-600" /> Pinned: kept when other units are rebalanced
+            <Lock className="h-3 w-3 text-blue-600" /> {t("Pinned: kept when other units are rebalanced")}
           </span>
           <span>Type a number in MB or a growth %; the level above never changes, the rest of its units share what&rsquo;s left.</span>
           {!canEdit && <span className="ml-auto font-medium text-slate-600">View only — ask an admin for “Save scenarios” to edit.</span>}

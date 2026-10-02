@@ -8,10 +8,13 @@ import { Input, Textarea } from "@/components/ui";
 import { TokenModal } from "@/components/TokenModal";
 import { useAccess, useAuth } from "@/components/auth/LoginGate";
 import { toast } from "@/components/feedback";
+import { useT } from "@/lib/i18n";
 import { ANNOUNCEMENT_EVENT, type Announcement, type AnnouncementRecord } from "@/components/layout/AnnouncementBanner";
 import {
   ACCENTS,
   DENSITIES,
+  LANGUAGES,
+  THEMES,
   FONTS,
   MOTIONS,
   RADII,
@@ -31,6 +34,7 @@ const TABS: { id: Tab; label: string; icon: typeof Palette }[] = [
 ];
 
 export function SettingsPage() {
+  const t = useT();
   const params = useSearchParams();
   const router = useRouter();
   const asked = params.get("tab");
@@ -47,8 +51,8 @@ export function SettingsPage() {
       <div className="mx-auto max-w-5xl space-y-5 pb-12">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">Settings</h2>
-            <p className="text-[13.5px] text-slate-500">Your own look, the team announcement, and connections.</p>
+            <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">{t("Settings")}</h2>
+            <p className="text-[13.5px] text-slate-500">{t("Your own look, the team announcement, and connections.")}</p>
           </div>
           <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="tablist">
             {TABS.map(({ id, label, icon: Icon }) => (
@@ -64,7 +68,7 @@ export function SettingsPage() {
                 )}
               >
                 <Icon className="h-4 w-4" />
-                {label}
+                {t(label)}
               </button>
             ))}
           </div>
@@ -82,10 +86,11 @@ export function SettingsPage() {
 
 // -----------------------------------------------------------------------------
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  const t = useT();
   return (
     <section className="grid gap-3 border-b border-slate-100 py-5 last:border-0 md:grid-cols-[200px_1fr] md:gap-6">
       <div>
-        <h3 className="text-[14px] font-semibold text-slate-900">{title}</h3>
+        <h3 className="text-[14px] font-semibold text-slate-900">{t(title)}</h3>
         {hint && <p className="mt-0.5 text-[12.5px] leading-snug text-slate-500">{hint}</p>}
       </div>
       <div>{children}</div>
@@ -116,6 +121,7 @@ function Choice({ active, onClick, children, className }: { active: boolean; onC
 }
 
 function AppearanceTab() {
+  const t = useT();
   const { appearance, setAppearance, resetAppearance, saveState } = useTheme();
   const { user } = useAuth();
   const [hex, setHex] = useState(appearance.accent);
@@ -131,7 +137,7 @@ function AppearanceTab() {
       <div className="rounded-xl border border-slate-200/80 bg-white px-5 shadow-[0_1px_2px_rgb(16_24_40/0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-4">
           <div>
-            <h3 className="text-[15px] font-semibold text-slate-900">Your appearance</h3>
+            <h3 className="text-[15px] font-semibold text-slate-900">{t("Your appearance")}</h3>
             <p className="text-[12.5px] text-slate-500">
               Only you see these choices. They&rsquo;re saved to {user?.email ? <span className="font-medium text-slate-700">{user.email}</span> : "your account"} and follow you to any computer.
             </p>
@@ -196,6 +202,36 @@ function AppearanceTab() {
                 maxLength={7}
               />
             </label>
+          </div>
+        </Section>
+
+        <Section title="Theme" hint="Light is the default. Dark re-colours every page for you only.">
+          <div className="grid gap-2.5 sm:grid-cols-3">
+            {THEMES.map((t) => (
+              <Choice key={t.id} active={appearance.theme === t.id} onClick={() => set({ theme: t.id })}>
+                <span className="mb-2 flex h-14 overflow-hidden rounded-lg border border-slate-200">
+                  {(t.id === "system" ? ["#f8f9fb", "#0d1117"] : [t.id === "dark" ? "#0d1117" : "#f8f9fb"]).map((bg, i) => (
+                    <span key={i} className="flex flex-1 p-1.5" style={{ background: bg }}>
+                      <span className="w-1/4 rounded-sm" style={{ background: bg === "#0d1117" ? "#161b24" : "#ffffff" }} />
+                      <span className="ml-1.5 flex-1 rounded-sm" style={{ background: bg === "#0d1117" ? "#161b24" : "#ffffff" }} />
+                    </span>
+                  ))}
+                </span>
+                <span className="block text-[13px] font-medium text-slate-900">{t.name}</span>
+                <span className="block text-[11.5px] text-slate-500">{t.hint}</span>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Language" hint="Menus, buttons and the main labels. Data and names stay as they are.">
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {LANGUAGES.map((l) => (
+              <Choice key={l.id} active={appearance.language === l.id} onClick={() => set({ language: l.id })}>
+                <span className="block text-[15px] font-semibold text-slate-900">{l.name}</span>
+                <span className="block text-[11.5px] text-slate-500">{l.hint}</span>
+              </Choice>
+            ))}
           </div>
         </Section>
 

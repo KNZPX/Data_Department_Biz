@@ -20,7 +20,7 @@ export type Ops = { upsert?: El[]; remove?: string[] };
 let client: SupabaseClient | null = null;
 let clientPromise: Promise<{ client: SupabaseClient; user: { name: string; email: string } } | null> | null = null;
 
-async function getClient() {
+export async function getRealtimeClient() {
   if (!clientPromise) {
     clientPromise = (async () => {
       const res = await fetch("/api/realtime-config", { cache: "no-store" });
@@ -57,7 +57,7 @@ export function useBoardRealtime(boardId: string | null, onRemoteOps: (ops: Ops)
     let alive = true;
     let channel: RealtimeChannel | null = null;
     (async () => {
-      const got = await getClient();
+      const got = await getRealtimeClient();
       if (!got || !alive) return;
       const color = toneFor(got.user.email);
       setMe({ ...got.user, color });

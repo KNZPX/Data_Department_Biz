@@ -35,6 +35,8 @@ import { PresenceStack, usePresence } from "@/components/layout/Presence";
 import { ConfirmHost, Toaster } from "@/components/feedback";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
 import { CommandPalette } from "@/components/layout/CommandPalette";
+import { NotificationsButton } from "@/components/layout/NotificationsButton";
+import { useT } from "@/lib/i18n";
 
 type NavItem = { href: string; label: string; hint: string; icon: LucideIcon };
 type NavGroup = { title: string; items: NavItem[] };
@@ -103,6 +105,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const { user, logout, refreshAuth, isGuest } = useAuth();
   const { canPage } = useAccess();
   const { appearance, setAppearance, loadFor } = useTheme();
+  const t = useT();
   const visibleGroups = NAV_GROUPS.map((g) => ({
     ...g,
     items: g.items.filter((i) => {
@@ -257,7 +260,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           {!narrow && (
             <span className="min-w-0 leading-tight fade-enter">
               <span className="block truncate text-[14.5px] font-semibold tracking-tight text-slate-900">Biz-Analytic</span>
-              <span className="block truncate text-[11.5px] text-slate-500">Data &amp; Business Analysis</span>
+              <span className="block truncate text-[11.5px] text-slate-500">{t("Data & Business Analysis")}</span>
             </span>
           )}
         </Link>
@@ -307,7 +310,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             className="group flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 pl-3 pr-2 text-left text-[13px] text-slate-400 transition hover:border-slate-300 hover:bg-white"
           >
             <Search className="h-4 w-4 transition-colors group-hover:text-blue-600" />
-            <span className="flex-1">Search…</span>
+            <span className="flex-1">{t("Search…")}</span>
             <kbd className="rounded border border-slate-200 bg-white px-1.5 py-px font-sans text-[10px] text-slate-400">Ctrl K</kbd>
           </button>
         )}
@@ -325,7 +328,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         {visibleGroups.map((group, gi) => (
           <div key={group.title} className={clsx(gi > 0 && "mt-4")}>
             {!narrow ? (
-              <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-400">{group.title}</p>
+              <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-400">{t(group.title)}</p>
             ) : (
               gi > 0 && <div className="mx-auto mb-3 h-px w-6 bg-slate-200" />
             )}
@@ -338,7 +341,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                     <Link
                       href={item.href}
                       onClick={() => setMobileOpen(false)}
-                      title={narrow ? item.label : item.hint}
+                      title={narrow ? t(item.label) : t(item.hint)}
                       aria-current={active ? "page" : undefined}
                       className={clsx(
                         "group relative z-[1] flex h-9 items-center gap-3 rounded-lg px-3 text-[13.5px] transition-colors duration-200",
@@ -353,7 +356,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         )}
                         strokeWidth={active ? 2.1 : 1.8}
                       />
-                      {!narrow && <span className="truncate transition-transform duration-300 group-hover:translate-x-0.5">{item.label}</span>}
+                      {!narrow && <span className="truncate transition-transform duration-300 group-hover:translate-x-0.5">{t(item.label)}</span>}
                     </Link>
                   </li>
                 );
@@ -368,7 +371,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         {!narrow && (
           <div className="mb-2.5 flex items-center justify-between px-1">
             <p className="text-[11.5px] text-slate-500">
-              {online.length <= 1 ? "Only you right now" : `${online.length} people working now`}
+              {online.length <= 1 ? t("Only you right now") : t("{n} people working now", { n: online.length })}
             </p>
             <PresenceStack users={online} max={4} />
           </div>
@@ -410,7 +413,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             )}
           >
             <LogOut className="h-4 w-4" />
-            {!narrow && <span>Sign out</span>}
+            {!narrow && <span>{t("Sign out")}</span>}
           </button>
         </div>
       </div>
@@ -438,17 +441,19 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
           <div key={pathname} className="min-w-0 fade-enter">
             <div className="flex items-center gap-1.5 text-[12px] text-slate-400">
-              <span className="hidden sm:inline">{activeGroup?.title}</span>
+              <span className="hidden sm:inline">{activeGroup ? t(activeGroup.title) : null}</span>
               <span className="hidden sm:inline">/</span>
-              <h1 className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{activeNavItem.label}</h1>
+              <h1 className="truncate text-[15px] font-semibold tracking-tight text-slate-900">{t(activeNavItem.label)}</h1>
             </div>
-            <p className="hidden sm:block truncate text-[12px] leading-tight text-slate-500">{activeNavItem.hint}</p>
+            <p className="hidden sm:block truncate text-[12px] leading-tight text-slate-500">{t(activeNavItem.hint)}</p>
           </div>
 
           <div className="ml-auto flex items-center gap-1.5 md:gap-2">
             <div className="hidden lg:block mr-1">
               <PresenceStack users={online} max={4} />
             </div>
+
+            <NotificationsButton />
 
             {/* Recent publishes and changes */}
             <div className="relative" ref={popupRef}>
@@ -474,7 +479,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 <div className="pop-in absolute right-0 top-11 z-50 flex max-h-[520px] w-80 flex-col rounded-xl border border-slate-200 bg-white shadow-[0_12px_32px_-8px_rgb(16_24_40/0.2)] sm:w-96 md:w-[420px]">
                   <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                     <div>
-                      <h4 className="text-[13px] font-semibold text-slate-900">Publishes and changes</h4>
+                      <h4 className="text-[13px] font-semibold text-slate-900">{t("Publishes and changes")}</h4>
                       <p className="text-[11.5px] text-slate-500">
                         {logs.length} events · {unreadCount} unread
                       </p>
@@ -524,7 +529,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         type="text"
                         value={logSearch}
                         onChange={(e) => setLogSearch(e.target.value)}
-                        placeholder="Search by report or person"
+                        placeholder={t("Search by report or person")}
                         className="h-8 w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 text-[12.5px] text-slate-700 outline-none focus:border-blue-400"
                       />
                     </div>
@@ -538,7 +543,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         ))}
                       </div>
                     ) : filteredLogs.length === 0 ? (
-                      <div className="py-8 text-center text-[12.5px] text-slate-400">Nothing here yet.</div>
+                      <div className="py-8 text-center text-[12.5px] text-slate-400">{t("Nothing here yet.")}</div>
                     ) : (
                       filteredLogs.map((log) => {
                         const isPublish = log.change_type === "PUBLISH" || log.change_type === "VERSION_UPDATE";
@@ -651,10 +656,10 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           ) : (
             <div className="grid h-full place-items-center">
               <div className="max-w-sm text-center">
-                <p className="text-lg font-semibold text-slate-900">You don&rsquo;t have access to this page</p>
-                <p className="mt-2 text-sm text-slate-500">Ask an admin to add it under People &amp; access.</p>
+                <p className="text-lg font-semibold text-slate-900">{t("You don't have access to this page")}</p>
+                <p className="mt-2 text-sm text-slate-500">{t("Ask an admin to add it under People & access.")}</p>
                 <Link href="/" className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
-                  Go to Home
+                  {t("Go to Home")}
                 </Link>
               </div>
             </div>

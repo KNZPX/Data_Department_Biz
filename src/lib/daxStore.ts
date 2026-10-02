@@ -1,6 +1,7 @@
 // Server-only: the DAX dictionary now lives in Supabase (dax_dictionary_items),
 // fed by .bim imports, instead of a static JSON file bundled with the app.
 import { getSupabaseClient, insertDbChangeLogs } from "./db";
+import { onFormulasChanged } from "./collab";
 import { normalizeExpression, type BimItem, type BimRelationship, type BimTable } from "./bimModel";
 
 export type DaxRow = {
@@ -220,6 +221,11 @@ export async function importItems(opts: {
 
   if (logs.length) await insertDbChangeLogs(logs);
   invalidateDaxCache();
+  // Watchers hear about changed formulas; reviewed items go back to draft.
+  const changedItems = logs
+    .filter((l) => l.action === "update")
+    .map((l) => ({ id: String(l.entity_id), name: opts.items.find((i) => i.id === l.entity_id)?.name || String(l.entity_id), modelCode: opts.modelCode }));
+  await onFormulasChanged(changedItems, opts.user).catch((e) => console.error("Couldn't notify watchers", e));
   return { created, changed, unchanged };
 }
 
