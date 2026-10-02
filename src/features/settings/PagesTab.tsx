@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, GitFork, Info, List, Loader2, RotateCcw, Save, ShieldAlert, ShieldCheck } from "lucide-react";
 import { clsx } from "clsx";
-import { useAccess } from "@/components/auth/LoginGate";
+import { useAccess, useAuth } from "@/components/auth/LoginGate";
 import { toast } from "@/components/feedback";
 import { TreeDiagram, type TreeNode } from "@/components/TreeDiagram";
 import { NAV_GROUPS } from "@/components/layout/AppShell";
@@ -33,6 +33,7 @@ function buildPolicy(p: AccessPolicy | null): Required<AccessPolicy> {
 
 export function PagesTab() {
   const t = useT();
+  const { refreshAuth } = useAuth();
   const { isAdmin } = useAccess();
   const [saved, setSaved] = useState<Required<AccessPolicy>>(() => buildPolicy(null));
   const [draft, setDraft] = useState<Required<AccessPolicy> | null>(null);
@@ -95,7 +96,9 @@ export function PagesTab() {
       setSaved(cur);
       setDraft(null);
       setMeta({ updatedBy: json.updatedBy, updatedAt: json.updatedAt });
-      toast("Page access saved", { body: "People see the change the next time a page loads." });
+      // Re-read my own access so the menu and this page change right away.
+      void refreshAuth();
+      toast("Page access saved", { body: "Your menu updates now; others see it the next time a page loads." });
     } catch (e) {
       toast.error("Couldn't save", { body: e instanceof Error ? e.message : undefined });
     } finally {
@@ -174,6 +177,7 @@ export function PagesTab() {
               >
                 <RotateCcw className="h-4 w-4" /> Defaults
               </button>
+              {dirty && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[12px] font-medium text-amber-700 ring-1 ring-amber-200">Not saved yet</span>}
               <button
                 type="button"
                 onClick={() => void save()}
