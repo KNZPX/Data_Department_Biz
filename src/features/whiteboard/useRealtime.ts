@@ -42,7 +42,8 @@ export function useBoardRealtime(boardId: string | null, onRemoteOps: (ops: Ops)
   const [me, setMe] = useState<{ name: string; email: string; color: string } | null>(null);
   const [connected, setConnected] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const keyRef = useRef<string>(Math.random().toString(36).slice(2));
+  const [presenceKey] = useState(() => Math.random().toString(36).slice(2));
+  const keyRef = useRef(presenceKey);
   const opsRef = useRef(onRemoteOps);
   const lastCursor = useRef(0);
   const selectionRef = useRef<string[]>([]);

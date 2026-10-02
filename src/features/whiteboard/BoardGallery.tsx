@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { FolderInput, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import { ChevronDown, FolderInput, LayoutGrid, List, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { TEMPLATES, boundsOf, connectorPath, isBox, type El, type Template } from "./model";
 
@@ -38,17 +38,17 @@ export function Thumb({ elements, w = 320, h = 180 }: { elements: El[]; w?: numb
       <g transform={`translate(${ox},${oy}) scale(${s})`}>
         {elements
           .filter((e) => e.kind === "frame")
-          .map((e) => isBox(e) && <rect key={e.id} x={e.x} y={e.y} width={e.w} height={e.h} rx={6} fill={e.kind === "frame" ? e.fill : "#fff"} stroke="#DDE3EB" strokeWidth={2 / s} />)}
+          .map((e) => isBox(e) && <rect key={e.id} x={e.x} y={e.y} width={e.w} height={e.h} rx={6} fill={e.kind === "frame" ? e.fill : "#fff"} stroke="#E6E6E6" strokeWidth={2 / s} />)}
         {elements
           .filter((e) => e.kind === "connector")
-          .map((e) => e.kind === "connector" && <path key={e.id} d={connectorPath(e, byId).d} fill="none" stroke="#8E9AAB" strokeWidth={1.5 / s} />)}
+          .map((e) => e.kind === "connector" && <path key={e.id} d={connectorPath(e, byId).d} fill="none" stroke="#1A1A1A" strokeWidth={1.5 / s} />)}
         {elements
           .filter((e) => isBox(e) && e.kind !== "frame")
           .map((e) => {
             if (!isBox(e)) return null;
             const fill = e.kind === "sticky" ? e.color : e.kind === "shape" ? e.fill : "#FFFFFF";
             const stroke = e.kind === "shape" ? e.stroke : e.kind === "card" ? e.accent : "none";
-            if (e.kind === "text") return <rect key={e.id} x={e.x} y={e.y + e.h / 3} width={e.w * 0.8} height={e.h / 3} rx={2} fill="#C3CCD8" />;
+            if (e.kind === "text") return <rect key={e.id} x={e.x} y={e.y + e.h / 3} width={e.w * 0.8} height={e.h / 3} rx={2} fill="#C3C6D4" />;
             if (e.kind === "draw") return <polyline key={e.id} transform={`translate(${e.x},${e.y})`} points={e.points.map((q) => q.join(",")).join(" ")} fill="none" stroke={e.stroke} strokeWidth={2 / s} />;
             return (
               <rect key={e.id} x={e.x} y={e.y} width={e.w} height={e.h} rx={e.kind === "shape" && e.shape === "ellipse" ? e.h / 2 : 6} fill={fill} stroke={stroke} strokeWidth={2 / s} />
@@ -56,6 +56,83 @@ export function Thumb({ elements, w = 320, h = 180 }: { elements: El[]; w?: numb
           })}
       </g>
     </svg>
+  );
+}
+
+type View = "grid" | "list";
+const VIEW_KEY = "wb_gallery_view";
+
+// Grid/list choice is a per-browser preference kept in localStorage.
+const viewListeners = new Set<() => void>();
+function subscribeView(fn: () => void) {
+  viewListeners.add(fn);
+  return () => viewListeners.delete(fn);
+}
+function readView(): View {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
+  } catch {
+    return "grid";
+  }
+}
+function setView(v: View) {
+  try {
+    localStorage.setItem(VIEW_KEY, v);
+  } catch {}
+  viewListeners.forEach((fn) => fn());
+}
+
+function BoardActions({
+  board,
+  onClose,
+  onRename,
+  onMove,
+  onDelete,
+  askFolder,
+}: {
+  board: GalleryBoard;
+  onClose: () => void;
+  onRename: (id: string, name: string) => void;
+  onMove: (id: string, folder: { id: string; name: string }) => void;
+  onDelete: (id: string) => void;
+  askFolder: () => { id: string; name: string } | null;
+}) {
+  const item = "flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left hover:bg-[#F1F2F5]";
+  return (
+    <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded-lg bg-white p-1.5 text-[14px] text-[#1C1C1E] shadow-[0_0_0_1px_rgba(34,36,40,.06),0_6px_24px_rgba(34,36,40,.18)]">
+      <button
+        type="button"
+        className={item}
+        onClick={() => {
+          onClose();
+          const n = window.prompt("Rename board", board.name);
+          if (n?.trim()) onRename(board.id, n.trim());
+        }}
+      >
+        <Pencil className="h-4 w-4 text-[#656B81]" /> Rename
+      </button>
+      <button
+        type="button"
+        className={item}
+        onClick={() => {
+          onClose();
+          const f = askFolder();
+          if (f) onMove(board.id, f);
+        }}
+      >
+        <FolderInput className="h-4 w-4 text-[#656B81]" /> Move to folder
+      </button>
+      <button
+        type="button"
+        className={clsx(item, "mt-1 border-t border-[#E9EAEF] text-[#E0291B] hover:bg-[#FFEDEB]")}
+        onClick={() => {
+          onClose();
+          if (window.confirm(`Delete "${board.name}" for everyone? This can't be undone.`)) onDelete(board.id);
+        }}
+      >
+        <Trash2 className="h-4 w-4" /> Delete
+      </button>
+    </div>
   );
 }
 
@@ -80,8 +157,8 @@ export function BoardGallery({
 }) {
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState<string>("all");
-  const [picker, setPicker] = useState(false);
   const [menu, setMenu] = useState<string | null>(null);
+  const view = useSyncExternalStore(subscribeView, readView, () => "grid" as View);
 
   const folders = useMemo(() => {
     const map = new Map<string, { id: string; name: string; count: number }>();
@@ -97,6 +174,7 @@ export function BoardGallery({
     (b) => (folder === "all" || b.folder_id === folder) && (!q.trim() || b.name.toLowerCase().includes(q.toLowerCase()))
   );
   const activeFolder = folders.find((f) => f.id === folder);
+  const target = activeFolder ? { id: activeFolder.id, name: activeFolder.name } : { id: "folder_general", name: "General Workflows" };
 
   function askFolder(): { id: string; name: string } | null {
     const name = window.prompt("Folder name", activeFolder?.name || "General Workflows");
@@ -105,158 +183,173 @@ export function BoardGallery({
     return existing ? { id: existing.id, name: existing.name } : { id: `folder_${name.trim().toLowerCase().replace(/[^a-z0-9ก-๙]+/g, "_")}`, name: name.trim() };
   }
 
-  return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-6xl pb-10">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h2 className="text-[30px] font-semibold tracking-tight text-slate-900">Boards</h2>
-            <p className="mt-1 text-[15px] text-slate-500">Sketch data flows, run retros and plan dashboards together — changes show up live for everyone on the board.</p>
-          </div>
-          {canEdit && <button
-            type="button"
-            onClick={() => setPicker(true)}
-            className="inline-flex items-center gap-2 self-start rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            New board
-          </button>}
-        </div>
+  const actions = (b: GalleryBoard) =>
+    canEdit && (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenu(menu === b.id ? null : b.id);
+          }}
+          className="grid h-8 w-8 place-items-center rounded-md text-[#656B81] hover:bg-[#F1F2F5] hover:text-[#1C1C1E]"
+          aria-label="Board actions"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+        {menu === b.id && <BoardActions board={b} onClose={() => setMenu(null)} onRename={onRename} onMove={onMove} onDelete={onDelete} askFolder={askFolder} />}
+      </div>
+    );
 
-        <div className="mt-6 flex flex-wrap items-center gap-2">
+  return (
+    <div className="h-full overflow-y-auto rounded-xl bg-white text-[#1C1C1E]" onClick={() => setMenu(null)}>
+      <div className="mx-auto max-w-6xl px-4 pb-12 pt-6 md:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-[24px] font-semibold tracking-tight">Boards</h2>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9A9DAA]" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Find a board"
-              className="w-60 rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400"
+              placeholder="Search by title"
+              className="h-10 w-64 rounded-lg border border-[#E9EAEF] bg-white pl-9 pr-3 text-[14px] outline-none placeholder:text-[#9A9DAA] hover:border-[#C3C6D4] focus:border-[#4262FF] focus:ring-2 focus:ring-[#4262FF]/20"
             />
           </div>
-          {[{ id: "all", name: "All boards", count: boards.length }, ...folders].map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFolder(f.id)}
-              className={clsx(
-                "rounded-xl px-3 py-2 text-sm transition",
-                folder === f.id ? "bg-ink text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-slate-300"
-              )}
-            >
-              {f.name} <span className={folder === f.id ? "text-slate-400" : "text-slate-400"}>{f.count}</span>
-            </button>
-          ))}
         </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {loading && [0, 1, 2].map((i) => <div key={i} className="h-60 animate-pulse rounded-2xl bg-white ring-1 ring-slate-200" />)}
-          {!loading && shown.length === 0 && (
-            <button type="button" onClick={() => setPicker(true)} className="col-span-full rounded-2xl border border-dashed border-slate-300 p-10 text-center hover:border-blue-400">
-              <p className="text-[15px] font-medium text-slate-900">No boards here yet</p>
-              <p className="mt-1 text-sm text-slate-500">Start one from a template.</p>
-            </button>
-          )}
-          {shown.map((b) => (
-            <div key={b.id} className="group relative overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200/80 transition hover:ring-blue-300">
-              <button type="button" onClick={() => onOpen(b.id)} className="block w-full text-left">
-                <div className="h-44 border-b border-slate-100 bg-[radial-gradient(circle,rgba(14,27,46,.10)_1px,transparent_1.4px)] [background-size:16px_16px]">
-                  <Thumb elements={b.elements} />
-                </div>
-                <div className="p-4 pr-12">
-                  <p className="truncate text-[15px] font-medium text-slate-900">{b.name}</p>
-                  <p className="mt-0.5 truncate text-xs text-slate-500">
-                    {b.folder_name}, {relTime(b.updated_at)}
-                  </p>
-                </div>
-              </button>
-              {canEdit && <button
+        {canEdit && (
+          <section className="mt-6">
+            <div className="flex gap-4 overflow-x-auto pb-2">
+              <button
                 type="button"
-                onClick={() => setMenu(menu === b.id ? null : b.id)}
-                className="absolute bottom-4 right-3 grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                aria-label="Board actions"
+                onClick={() => onCreate(TEMPLATES[0], target)}
+                className="group flex w-[168px] shrink-0 flex-col text-left"
               >
-                <MoreHorizontal className="h-4 w-4" />
-              </button>}
-              {menu === b.id && (
-                <div className="absolute bottom-14 right-3 z-10 w-44 rounded-xl bg-white p-1 text-sm shadow-lg ring-1 ring-slate-200">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                    onClick={() => {
-                      setMenu(null);
-                      const n = window.prompt("Rename board", b.name);
-                      if (n?.trim()) onRename(b.id, n.trim());
-                    }}
-                  >
-                    <Pencil className="h-4 w-4 text-slate-400" /> Rename
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50"
-                    onClick={() => {
-                      setMenu(null);
-                      const f = askFolder();
-                      if (f) onMove(b.id, f);
-                    }}
-                  >
-                    <FolderInput className="h-4 w-4 text-slate-400" /> Move to folder
-                  </button>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-coral hover:bg-coral/10"
-                    onClick={() => {
-                      setMenu(null);
-                      if (window.confirm(`Delete "${b.name}" for everyone? This can't be undone.`)) onDelete(b.id);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" /> Delete
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {picker && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4 backdrop-blur-[2px]" onClick={() => setPicker(false)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="tpl-title" className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 id="tpl-title" className="text-lg font-semibold text-slate-900">New board</h3>
-                <p className="text-sm text-slate-500">Saved in {activeFolder?.name || "General Workflows"}</p>
-              </div>
-              <button type="button" onClick={() => setPicker(false)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
-                <X className="h-4 w-4" />
+                <span className="grid h-[104px] w-full place-items-center rounded-lg bg-[#4262FF] text-white transition-colors group-hover:bg-[#3550E6]">
+                  <Plus className="h-9 w-9" strokeWidth={1.5} />
+                </span>
+                <span className="mt-2 text-[14px] font-medium">New board</span>
               </button>
+              {TEMPLATES.filter((t) => t.id !== "blank").map((t) => (
+                <button key={t.id} type="button" onClick={() => onCreate(t, target)} className="group flex w-[168px] shrink-0 flex-col text-left" title={t.description}>
+                  <span className="block h-[104px] w-full overflow-hidden rounded-lg bg-[#F2F2F2] ring-1 ring-inset ring-black/5 transition-shadow group-hover:ring-2 group-hover:ring-[#4262FF]">
+                    <Thumb elements={t.build()} w={168} h={104} />
+                  </span>
+                  <span className="mt-2 truncate text-[14px] font-medium">{t.name}</span>
+                </button>
+              ))}
             </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              {TEMPLATES.map((t) => {
-                const preview = t.build();
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setPicker(false);
-                      onCreate(t, activeFolder ? { id: activeFolder.id, name: activeFolder.name } : { id: "folder_general", name: "General Workflows" });
-                    }}
-                    className="overflow-hidden rounded-xl text-left ring-1 ring-slate-200 transition hover:ring-blue-400"
-                  >
-                    <div className="h-28 bg-slate-50">
-                      {preview.length ? <Thumb elements={preview} w={260} h={112} /> : <div className="grid h-full place-items-center text-slate-300"><Plus className="h-6 w-6" /></div>}
-                    </div>
-                    <div className="p-3">
-                      <p className="text-sm font-medium text-slate-900">{t.name}</p>
-                      <p className="text-xs text-slate-500">{t.description}</p>
-                    </div>
-                  </button>
-                );
-              })}
+            <p className="mt-1 text-[12px] text-[#656B81]">New boards are saved in {target.name}.</p>
+          </section>
+        )}
+
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-[18px] font-semibold">{activeFolder?.name || "All boards"}</h3>
+          <div className="flex items-center gap-2">
+            <label className="relative">
+              <span className="sr-only">Folder</span>
+              <select
+                value={folder}
+                onChange={(e) => setFolder(e.target.value)}
+                className="h-9 appearance-none rounded-lg border border-[#E9EAEF] bg-white pl-3 pr-8 text-[14px] outline-none hover:border-[#C3C6D4] focus:border-[#4262FF]"
+              >
+                <option value="all">All folders ({boards.length})</option>
+                {folders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({f.count})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#656B81]" />
+            </label>
+            <div className="flex rounded-lg border border-[#E9EAEF] p-0.5">
+              {(
+                [
+                  ["grid", LayoutGrid, "Grid view"],
+                  ["list", List, "List view"],
+                ] as const
+              ).map(([v, Icon, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  aria-pressed={view === v}
+                  aria-label={label}
+                  title={label}
+                  className={clsx("grid h-8 w-8 place-items-center rounded-md", view === v ? "bg-[#E6EAFF] text-[#4262FF]" : "text-[#656B81] hover:bg-[#F1F2F5]")}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              ))}
             </div>
           </div>
         </div>
-      )}
+
+        {loading && (
+          <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-52 animate-pulse rounded-lg bg-[#F2F2F2]" />
+            ))}
+          </div>
+        )}
+        {!loading && shown.length === 0 && (
+          <div className="mt-4 rounded-lg border border-dashed border-[#C3C6D4] p-10 text-center">
+            <p className="text-[15px] font-medium">{q ? "No boards match your search" : "No boards here yet"}</p>
+            <p className="mt-1 text-[14px] text-[#656B81]">{canEdit ? "Start one from the row above." : "Boards your team creates will show up here."}</p>
+          </div>
+        )}
+
+        {!loading && shown.length > 0 && view === "grid" && (
+          <div className="mt-4 grid gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {shown.map((b) => (
+              <div key={b.id} className="group">
+                <button type="button" onClick={() => onOpen(b.id)} className="block w-full text-left">
+                  <div className="aspect-[16/10] overflow-hidden rounded-lg bg-[#F2F2F2] ring-1 ring-inset ring-black/5 transition-shadow group-hover:ring-2 group-hover:ring-[#4262FF]">
+                    <Thumb elements={b.elements} />
+                  </div>
+                </button>
+                <div className="mt-2 flex items-start gap-1">
+                  <button type="button" onClick={() => onOpen(b.id)} className="min-w-0 flex-1 text-left">
+                    <p className="truncate text-[14px] font-medium">{b.name}</p>
+                    <p className="mt-0.5 truncate text-[12px] text-[#656B81]">
+                      {b.folder_name} · {relTime(b.updated_at)}
+                    </p>
+                  </button>
+                  {actions(b)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && shown.length > 0 && view === "list" && (
+          <div className="mt-4">
+            <div className="grid grid-cols-[minmax(0,1fr)_40px] gap-4 border-b border-[#E9EAEF] px-2 pb-2 text-[12px] font-medium text-[#656B81] md:grid-cols-[minmax(0,1fr)_200px_180px_40px]">
+              <span>Name</span>
+              <span className="hidden md:block">Folder</span>
+              <span className="hidden md:block">Last modified</span>
+              <span />
+            </div>
+            {shown.map((b) => (
+              <div
+                key={b.id}
+                className="grid cursor-pointer grid-cols-[minmax(0,1fr)_40px] items-center gap-4 rounded-md px-2 py-2 hover:bg-[#F7F8FA] md:grid-cols-[minmax(0,1fr)_200px_180px_40px]"
+                onClick={() => onOpen(b.id)}
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="h-9 w-14 shrink-0 overflow-hidden rounded bg-[#F2F2F2] ring-1 ring-inset ring-black/5">
+                    <Thumb elements={b.elements} w={112} h={72} />
+                  </span>
+                  <span className="truncate text-[14px] font-medium">{b.name}</span>
+                </span>
+                <span className="hidden truncate text-[13px] text-[#656B81] md:block">{b.folder_name}</span>
+                <span className="hidden truncate text-[13px] text-[#656B81] md:block">{relTime(b.updated_at).replace(/^Edited /, "")}</span>
+                <span onClick={(e) => e.stopPropagation()}>{actions(b)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

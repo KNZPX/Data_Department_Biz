@@ -65,9 +65,31 @@ export type BoardMeta = {
 // ---------------------------------------------------------------------------
 // Palettes
 // ---------------------------------------------------------------------------
-export const STICKY_COLORS = ["#FFF1A8", "#FFD7A8", "#FFC4D6", "#E3D5FF", "#C8E6FF", "#C9F2DD", "#E8ECF1", "#FFFFFF"];
-export const INK_COLORS = ["#0E1B2E", "#1F5FD6", "#0E9F8E", "#7C4DDB", "#E4572E", "#D99A00", "#637083", "#FFFFFF"];
-export const FILL_COLORS = ["#FFFFFF", "#E3ECFB", "#D9F3EF", "#EDE5FC", "#FDE3DA", "#FFF1C7", "#EDF1F6", "#0E1B2E"];
+// Miro's sticky-note colours, in the order its picker shows them.
+export const STICKY_COLORS = [
+  "#FFF9B1", "#F5D128", "#FF9D48", "#D5F692",
+  "#C9DF56", "#93D275", "#67C6C0", "#FFCEE0",
+  "#EA94BB", "#C6A2D2", "#F0939D", "#A6CCF5",
+  "#6CD8FA", "#9EA9FF", "#F5F6F8", "#1A1A1A",
+];
+// Miro's 16-colour palette for shape fill, border, text and lines.
+export const MIRO_COLORS = [
+  "#FFFFFF", "#FEF445", "#FAC710", "#F24726",
+  "#E6E6E6", "#CEE741", "#8FD14F", "#DA0063",
+  "#808080", "#12CDD4", "#0CA789", "#9510AC",
+  "#1A1A1A", "#2D9BF0", "#414BB2", "#652CB3",
+];
+export const INK_COLORS = MIRO_COLORS;
+export const FILL_COLORS = MIRO_COLORS;
+export const MIRO_BLUE = "#4262FF";
+
+/** Dark text on light fills, white text on dark ones. */
+export function readableOn(hex: string) {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return "#1A1A1A";
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5 ? "#FFFFFF" : "#1A1A1A";
+}
 
 export function uid(prefix = "el") {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -267,7 +289,7 @@ export function normalizeElements(raw: unknown): El[] {
     const base = { id: n.id, x: n.x || 0, y: n.y || 0, w: n.width || 230, h: n.height || 100, z: z++ };
     const accent = n.color || "#1F5FD6";
     if (n.type === "sticky") {
-      out.push({ ...base, kind: "sticky", text: [n.title, n.description].filter(Boolean).join("\n"), color: accent.length === 7 && parseInt(accent.slice(1, 3), 16) > 200 ? accent : "#FFF1A8" });
+      out.push({ ...base, kind: "sticky", text: [n.title, n.description].filter(Boolean).join("\n"), color: accent.length === 7 && parseInt(accent.slice(1, 3), 16) > 200 ? accent : "#FFF9B1" });
     } else if (n.type === "text") {
       out.push({ ...base, kind: "text", text: n.title || n.description || "", color: "#0E1B2E", fontSize: 18 });
     } else if (LEGACY_SHAPE[n.type] && !n.description) {
@@ -344,9 +366,9 @@ export const TEMPLATES: Template[] = [
       frame(0, 0, 440, 620, "Went well", "#F1FBF8"),
       frame(480, 0, 440, 620, "To improve", "#FFF6F2"),
       frame(960, 0, 440, 620, "Actions", "#F2F6FE"),
-      sticky(40, 70, "Dashboard shipped on time", STICKY_COLORS[5]),
-      sticky(520, 70, "Refresh failed twice", STICKY_COLORS[2]),
-      sticky(1000, 70, "Add refresh alert", STICKY_COLORS[4]),
+      sticky(40, 70, "Dashboard shipped on time", STICKY_COLORS[3]),
+      sticky(520, 70, "Refresh failed twice", STICKY_COLORS[7]),
+      sticky(1000, 70, "Add refresh alert", STICKY_COLORS[11]),
     ],
   },
   {
@@ -370,8 +392,8 @@ export const TEMPLATES: Template[] = [
       frame(400, 0, 360, 700, "Doing", "#F5F7FA"),
       frame(800, 0, 360, 700, "Done", "#F5F7FA"),
       sticky(90, 70, "New request", STICKY_COLORS[0]),
-      sticky(490, 70, "In progress", STICKY_COLORS[4]),
-      sticky(890, 70, "Delivered", STICKY_COLORS[5]),
+      sticky(490, 70, "In progress", STICKY_COLORS[11]),
+      sticky(890, 70, "Delivered", STICKY_COLORS[3]),
     ],
   },
   {
@@ -382,9 +404,9 @@ export const TEMPLATES: Template[] = [
       const c = box(0, 0, "What should the next dashboard answer?", "ellipse", "#1F5FD6", 320, 160);
       const ideas = [
         sticky(-360, -260, "Idea"),
-        sticky(460, -260, "Idea", STICKY_COLORS[3]),
-        sticky(-360, 260, "Idea", STICKY_COLORS[4]),
-        sticky(460, 260, "Idea", STICKY_COLORS[5]),
+        sticky(460, -260, "Idea", STICKY_COLORS[9]),
+        sticky(-360, 260, "Idea", STICKY_COLORS[11]),
+        sticky(460, 260, "Idea", STICKY_COLORS[3]),
       ];
       return [c, ...ideas, ...ideas.map((i) => ({ ...link(c.id, i.id), route: "curve" as const, arrowEnd: false }))];
     },
