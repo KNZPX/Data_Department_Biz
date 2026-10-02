@@ -33,6 +33,7 @@ export interface PlanNode {
   locked: boolean; // set by a person; kept when siblings are rebalanced
   custom?: boolean; // a CoE sub someone added
   months?: number[]; // 12 revenue-phasing weights (sum 1), inherited from the unit
+  targetMonths?: number[]; // 12 weights for the target year when someone set months by hand (else `months`)
   actual?: number; // THB actual so far this year, typed by a person (CoE / sub-unit only)
   dataBase26?: number; // the base26 from the data, kept when an actual overrides it
   priorTyped?: number; // THB prior-year actual typed by a person (CoE / sub-unit only)
@@ -342,6 +343,45 @@ export function monthsOf(plan: Plan, id: string): number[] {
     n = n.parentId ? plan.nodes[n.parentId] : undefined;
   }
   return new Array(12).fill(1 / 12);
+}
+
+/** 12 weights for this node's target year: typed by month, else the base year's pattern. */
+export function targetMonthsOf(plan: Plan, id: string): number[] {
+  let n: PlanNode | undefined = plan.nodes[id];
+  while (n) {
+    if (n.targetMonths?.length === 12) return n.targetMonths;
+    n = n.parentId ? plan.nodes[n.parentId] : undefined;
+  }
+  return monthsOf(plan, id);
+}
+
+/** Target (or base year) month by month; a unit with units below is the sum of theirs, so months always add up. */
+export function monthlyOf(plan: Plan, id: string, field: "target" | "base26" = "target"): number[] {
+  const n = plan.nodes[id];
+  const kids = childrenOf(plan, id);
+  if (!kids.length) {
+    const w = field === "target" ? targetMonthsOf(plan, id) : monthsOf(plan, id);
+    return w.map((x) => x * n[field]);
+  }
+  const out = new Array(12).fill(0);
+  for (const k of kids) monthlyOf(plan, k.id, field).forEach((v, i) => (out[i] += v));
+  return out;
+}
+
+/**
+ * Set one month of a unit's target. The year becomes the sum of its months
+ * (delegated like any target change), and the unit and everything under it
+ * take the new month-by-month pattern.
+ */
+export function setMonthTarget(input: Plan, id: string, month: number, value: number): { plan: Plan; report: ChangeReport } {
+  const cur = monthlyOf(input, id);
+  cur[month] = Math.max(0, value);
+  const total = sum(cur);
+  const weights = total > 0 ? cur.map((x) => x / total) : targetMonthsOf(input, id);
+  const r = setTarget(input, id, total);
+  const plan = r.plan;
+  walk(plan, id, (n) => (plan.nodes[n.id] = { ...plan.nodes[n.id], targetMonths: weights }));
+  return { plan, report: r.report };
 }
 
 /** Share of the year covered by the first `n` months, by this node's phasing. */
@@ -677,6 +717,7 @@ export interface PlanSnapshot {
   targets: Record<string, number>; // THB per node id
   locked: string[];
   subs: { coeId: string; name: string }[];
+  phasing?: Record<string, number[]>; // target-year month weights set by hand
 }
 
 export function toSnapshot(plan: Plan): PlanSnapshot {
@@ -689,7 +730,9 @@ export function toSnapshot(plan: Plan): PlanSnapshot {
   const bases: Record<string, number> = {};
   const priors: Record<string, number> = {};
   const visits: Record<string, number> = {};
+  const phasing: Record<string, number[]> = {};
   for (const n of Object.values(plan.nodes)) {
+    if (n.targetMonths?.length === 12) phasing[n.id] = n.targetMonths.map((x) => Math.round(x * 1e6) / 1e6);
     if (n.actual !== undefined) actuals[n.id] = Math.round(n.actual);
     if (n.priorTyped !== undefined) priorTyped[n.id] = Math.round(n.priorTyped);
     if (rolled) {
@@ -714,6 +757,7 @@ export function toSnapshot(plan: Plan): PlanSnapshot {
     targets,
     locked,
     subs,
+    ...(Object.keys(phasing).length ? { phasing } : {}),
   };
 }
 
@@ -768,6 +812,7 @@ export function fromSnapshot(base: Plan, snap: PlanSnapshot): Plan {
   const root = plan.nodes[plan.rootId];
   plan.nodes[root.id] = { ...root, target: roundTo(t[root.id] ?? root.target, plan.step) };
   apply(root.id);
+  for (const [id, w] of Object.entries(snap.phasing || {})) if (plan.nodes[id] && w.length === 12) plan.nodes[id] = { ...plan.nodes[id], targetMonths: w };
   return plan;
 }
 
