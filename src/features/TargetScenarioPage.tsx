@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   AlertTriangle,
   CalendarRange,
@@ -106,6 +107,17 @@ const STEPS = [
 ];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const SEGMENTS = ["Thai", "Expat", "Fly-in"] as const;
+/** The app's motion setting or the OS asks for less movement. */
+function calmMotion() {
+  const m = document.documentElement.dataset.motion;
+  return m === "off" || m === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+/** Position and size of the fixed full-page panel: at `r` (its spot in the page), or the whole window. */
+function boxFrame(r?: DOMRect): Keyframe {
+  const b = r ?? { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
+  return { top: `${b.top}px`, left: `${b.left}px`, width: `${b.width}px`, height: `${b.height}px`, right: "auto", bottom: "auto", borderRadius: r ? "12px" : "0px" };
+}
+
 /** Levels shown in the Plan tree: network → hospital → CoE / SBU (→ sub-unit). */
 function inTree(n: PlanNode) {
   return n.level !== "setting" && n.level !== "market";
@@ -216,17 +228,56 @@ export function TargetScenarioPage() {
   const dec = unitDecimals(unit, plan.step);
   const [tab, setTab] = useState<Tab>("plan");
   const [fullPage, setFullPage] = useState(false);
+  // Full page grows out of the panel's spot and shrinks back into it; the table
+  // re-flows as it goes. A placeholder keeps the spot in the page meanwhile.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const growFrom = useRef<DOMRect | null>(null);
+  const leaving = useRef(false);
+  const enterFull = useCallback(() => {
+    growFrom.current = panelRef.current?.getBoundingClientRect() ?? null;
+    setFullPage(true);
+  }, []);
+  const exitFull = useCallback(() => {
+    const el = panelRef.current;
+    const slot = slotRef.current;
+    if (leaving.current) return;
+    if (!el || !slot || calmMotion()) {
+      setFullPage(false);
+      return;
+    }
+    leaving.current = true;
+    const a = el.animate([boxFrame(), boxFrame(slot.getBoundingClientRect())], {
+      duration: 340,
+      easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+      fill: "forwards",
+    });
+    a.onfinish = () => {
+      flushSync(() => setFullPage(false));
+      a.cancel();
+      leaving.current = false;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const from = growFrom.current;
+    growFrom.current = null;
+    if (!fullPage || !from || !panelRef.current || calmMotion()) return;
+    panelRef.current.animate([boxFrame(from), boxFrame()], {
+      duration: 440,
+      easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+    });
+  }, [fullPage]);
   // Esc leaves full page (unless it's closing a cell edit or a dialog).
   useEffect(() => {
     if (!fullPage) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.key !== "Escape" || e.defaultPrevented || el?.closest("input, textarea, select, [role=dialog], [role=alertdialog]")) return;
-      setFullPage(false);
+      exitFull();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fullPage]);
+  }, [fullPage, exitFull]);
   const [siteFilter, setSiteFilter] = useState<string>("ALL");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["PKT", ...blankFromOrg(defaultOrgStructure()).sites.map((s) => s.code)]));
@@ -893,11 +944,13 @@ export function TargetScenarioPage() {
       </div>
 
       {/* Body */}
+      {fullPage && <div ref={slotRef} aria-hidden className="min-h-[560px] flex-1 rounded-xl border border-dashed border-slate-200 lg:min-h-0" />}
       <div
+        ref={panelRef}
         className={clsx(
           "flex flex-col overflow-hidden border-slate-200/80 bg-white",
           fullPage
-            ? "pop-in fixed inset-0 z-[60] rounded-none border-0"
+            ? "fixed inset-0 z-[60] rounded-none border-0 shadow-[0_24px_64px_-12px_rgb(16_24_40/0.35)]"
             : "min-h-[560px] flex-1 rounded-xl border shadow-[0_1px_2px_rgb(16_24_40/0.04)] lg:min-h-0"
         )}
       >
@@ -955,7 +1008,7 @@ export function TargetScenarioPage() {
           )}
           <button
             type="button"
-            onClick={() => setFullPage((v) => !v)}
+            onClick={() => (fullPage ? exitFull() : enterFull())}
             aria-pressed={fullPage}
             title={fullPage ? `${t("Exit full page")} (Esc)` : t("Full page")}
             className={clsx(
