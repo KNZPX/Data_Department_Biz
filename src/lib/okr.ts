@@ -4,7 +4,14 @@
 //    initiatives (the work that moves the key results).
 
 export type Status = "not_started" | "on_track" | "at_risk" | "off_track" | "done";
-export type Ebo = { id: string; outcome: string; measure: string; unit: string; baseline: number | null; target: number | null; actual: number | null; owner: string; note?: string };
+export type Horizon = "H1" | "H2" | "H3";
+/** Three horizons: today's core business, emerging growth, and future options. */
+export const HORIZONS: { id: Horizon; label: string; hint: string; tone: string }[] = [
+  { id: "H1", label: "Core business", hint: "Defend and grow today's business", tone: "bg-blue-50 text-blue-700 ring-blue-200" },
+  { id: "H2", label: "Emerging growth", hint: "Build the next growth engines (1–3 years)", tone: "bg-violet-50 text-violet-700 ring-violet-200" },
+  { id: "H3", label: "Future options", hint: "Seed new opportunities (3+ years)", tone: "bg-amber-50 text-amber-800 ring-amber-200" },
+];
+export type Ebo = { id: string; horizon?: Horizon; outcome: string; measure: string; unit: string; baseline: number | null; target: number | null; actual: number | null; owner: string; note?: string };
 export type KeyResult = { id: string; text: string; unit: string; start: number | null; target: number | null; current: number | null; owner: string; due: string; status: Status };
 export type Initiative = { id: string; text: string; owner: string; due: string; status: Status };
 export type Objective = { id: string; title: string; owner: string; keyResults: KeyResult[]; initiatives: Initiative[] };
@@ -46,7 +53,7 @@ export function planProgress(d: OkrPlanData): number {
 export function normalizePlan(raw: unknown): OkrPlanData {
   const r = raw as Partial<OkrPlanData> | null;
   return {
-    ebos: Array.isArray(r?.ebos) ? r!.ebos : [],
+    ebos: Array.isArray(r?.ebos) ? r!.ebos.map((e) => ({ ...e, horizon: e.horizon === "H2" || e.horizon === "H3" ? e.horizon : "H1" })) : [],
     objectives: Array.isArray(r?.objectives) ? r!.objectives.map((o) => ({ ...o, keyResults: o.keyResults || [], initiatives: o.initiatives || [] })) : [],
     notes: r?.notes,
   };
