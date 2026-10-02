@@ -31,7 +31,7 @@ import {
 import { clsx } from "clsx";
 import { TokenModal } from "@/components/TokenModal";
 import { LoginGate, useAccess, useAuth } from "@/components/auth/LoginGate";
-import { pageForPath } from "@/lib/access";
+import { isHidden, pageForPath } from "@/lib/access";
 import { useTheme } from "@/context/ThemeContext";
 import { PresenceStack, usePresence } from "@/components/layout/Presence";
 import { ConfirmHost, Toaster } from "@/components/feedback";
@@ -110,7 +110,6 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, logout, refreshAuth, isGuest } = useAuth();
   const { canPage, access } = useAccess();
-  const hiddenPages = new Set(access?.hidden || []);
   const { appearance, setAppearance, loadFor } = useTheme();
   const t = useT();
   const visibleGroups = NAV_GROUPS.map((g) => ({
@@ -364,11 +363,6 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         strokeWidth={active ? 2.1 : 1.8}
                       />
                       {!narrow && <span className="truncate transition-transform duration-300 group-hover:translate-x-0.5">{t(item.label)}</span>}
-                      {!narrow && hiddenPages.has(pageForPath(item.href)?.id || "") && (
-                        <span className="ml-auto rounded bg-slate-100 px-1.5 text-[10px] font-medium text-slate-500" title="Switched off for the team — only admins see it">
-                          off
-                        </span>
-                      )}
                     </Link>
                   </li>
                 );
@@ -467,7 +461,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
             <NotificationsButton />
 
-            {/* Recent publishes and changes */}
+            {/* Recent publishes and changes (part of the activity log, so it goes when that page is off) */}
+            {canPage("changelog") && (
             <div className="relative" ref={popupRef}>
               <button
                 type="button"
@@ -594,6 +589,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
+            )}
 
             {/* User menu */}
             <div className="relative" ref={userMenuRef}>
@@ -668,8 +664,19 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           ) : (
             <div className="grid h-full place-items-center">
               <div className="max-w-sm text-center">
-                <p className="text-lg font-semibold text-slate-900">{t("You don't have access to this page")}</p>
-                <p className="mt-2 text-sm text-slate-500">{t("Ask an admin to add it under People & access.")}</p>
+                {currentPage && isHidden(access, currentPage.id) ? (
+                  <>
+                    <p className="text-lg font-semibold text-slate-900">{t("This page is switched off")}</p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {access?.role === "admin" ? t("Turn it back on in Settings → Pages & access.") : t("An admin switched it off for the team.")}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-lg font-semibold text-slate-900">{t("You don't have access to this page")}</p>
+                    <p className="mt-2 text-sm text-slate-500">{t("Ask an admin to add it under People & access.")}</p>
+                  </>
+                )}
                 <Link href="/" className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
                   {t("Go to Home")}
                 </Link>

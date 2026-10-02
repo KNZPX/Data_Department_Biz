@@ -176,9 +176,11 @@ export function HomePage() {
               <h3 id="sem-h" className="text-[17px] font-semibold tracking-tight text-slate-900">
                 Semantic models <span className="text-sm font-normal text-slate-500">since {since(s?.startedAt)}</span>
               </h3>
-              <Link href="/dax" className="text-sm text-blue-600 hover:underline">
-                Open DAX dictionary
-              </Link>
+              {canPage("dax") && (
+                <Link href="/dax" className="text-sm text-blue-600 hover:underline">
+                  Open DAX dictionary
+                </Link>
+              )}
             </div>
             <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Kpi label="Model measures" value={s?.totals.measures || 0}>{s && <Change now={s.totals.measures} start={s.totals.measuresStart} />}</Kpi>
@@ -248,9 +250,11 @@ export function HomePage() {
               <h3 id="lic-h" className="text-[17px] font-semibold tracking-tight text-slate-900">
                 Power BI licenses <span className="text-sm font-normal text-slate-500">since {since(l?.startedAt)}</span>
               </h3>
-              <Link href="/licenses" className="text-sm text-blue-600 hover:underline">
-                Open licenses
-              </Link>
+              {canPage("licenses") && (
+                <Link href="/licenses" className="text-sm text-blue-600 hover:underline">
+                  Open licenses
+                </Link>
+              )}
             </div>
             <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Kpi label="Active licenses" value={l?.totals.active || 0}>{l && <Change now={l.totals.active} start={l.totals.activeStart} />}</Kpi>
@@ -293,9 +297,11 @@ export function HomePage() {
           <section className={clsx(CARD, "p-5")}>
             <div className="mb-2 flex items-end justify-between">
               <h3 className="text-[17px] font-semibold tracking-tight text-slate-900">Recent activity</h3>
-              <Link href="/changelog" className="text-sm text-blue-600 hover:underline">
-                Full activity log
-              </Link>
+              {canPage("changelog") && (
+                <Link href="/changelog" className="text-sm text-blue-600 hover:underline">
+                  Full activity log
+                </Link>
+              )}
             </div>
             <ol className="grid md:grid-cols-2 md:gap-x-8">
               {!loading && !(data?.activity || []).length && <li className="py-4 text-sm text-slate-400">Nothing has changed yet.</li>}

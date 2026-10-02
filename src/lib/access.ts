@@ -77,7 +77,7 @@ export type Access = { role: Role; pages: string[]; modules: string[]; hidden?: 
 
 /**
  * Team-wide page policy set by admins in Settings → Pages & access:
- * pages switched off for everyone (admins still see them), and what each
+ * pages switched off for everyone (admins included — Settings stays), and what each
  * role gets by default. People with their own permissions keep those.
  */
 export type AccessPolicy = {
@@ -116,16 +116,37 @@ export function resolveAccess(role: Role | string | null | undefined, perms: Per
   return { role: r, pages, modules, hidden };
 }
 
+/**
+ * Parts of one page that show another page's content. When that page is
+ * switched off, they go too (e.g. the licence trend on Home).
+ */
+const RELATED: Record<string, string[]> = {
+  "home.semantic": ["dax"],
+  "home.license": ["licenses"],
+  "home.activity": ["changelog"],
+};
+
+function pageOfModule(moduleId: string) {
+  const p = moduleId.split(".")[0];
+  return p === "target" ? "target-scenario" : p;
+}
+
+/** A page switched off for the team in Settings → Pages & access. */
+export function isHidden(access: Access | null, pageId: string) {
+  return pageId !== "settings" && Boolean(access?.hidden?.includes(pageId));
+}
+
 export function canPage(access: Access | null, pageId: string) {
-  if (!access) return false;
+  if (!access || isHidden(access, pageId)) return false;
   if (access.role === "admin") return true;
   return access.pages.includes(pageId);
 }
 
 export function canModule(access: Access | null, moduleId: string) {
   if (!access) return false;
+  const page = pageOfModule(moduleId);
+  if (isHidden(access, page) || (RELATED[moduleId] || []).some((p) => isHidden(access, p))) return false;
   if (access.role === "admin") return true;
-  const page = moduleId.split(".")[0] === "target" ? "target-scenario" : moduleId.split(".")[0];
   return access.pages.includes(page) && access.modules.includes(moduleId);
 }
 
