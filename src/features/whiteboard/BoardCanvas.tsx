@@ -211,6 +211,7 @@ export function BoardCanvas({
   const [menu, setMenu] = useState<{ x: number; y: number; world: { x: number; y: number }; onElement: boolean } | null>(null);
   const [connectHover, setConnectHover] = useState<string | null>(null);
   const [editSeed, setEditSeed] = useState<string | null>(null);
+  const [labelEditId, setLabelEditId] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const elRef = useRef(elements);
@@ -221,6 +222,9 @@ export function BoardCanvas({
   const clipboard = useRef<El[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interRef = useRef<Interaction | null>(null);
+  // Magnet target while dragging a connector or endpoint.
+  const snapRef = useRef<{ id: string; side: Side; x: number; y: number } | null>(null);
+  const [snap, setSnap] = useState<{ id: string; side: Side } | null>(null);
   const escIdleRef = useRef(onEscapeIdle);
   escIdleRef.current = onEscapeIdle;
   const openUi = useRef(false);
@@ -251,6 +255,16 @@ export function BoardCanvas({
     });
   }, []);
   const rt = useBoardRealtime(meta.id, applyRemote);
+  // Other tabs signed in as the same person aren't "someone else" — hide them.
+  const peers = useMemo(() => {
+    const seen = new Set<string>();
+    return rt.peers.filter((p) => {
+      if (rt.me && p.email.toLowerCase() === rt.me.email.toLowerCase()) return false;
+      if (seen.has(p.email)) return false;
+      seen.add(p.email);
+      return true;
+    });
+  }, [rt.peers, rt.me]);
 
   // ---------------------------------------------------------------- persistence
   const save = useCallback(
@@ -537,6 +551,9 @@ export function BoardCanvas({
         const el = elRef.current.find((x) => x.id === selRef.current[0])!;
         setEditSeed(textOf(el) + e.key);
         setEditingId(el.id);
+      } else if (k === "enter" && selRef.current.length === 1 && elRef.current.find((x) => x.id === selRef.current[0])?.kind === "connector") {
+        e.preventDefault();
+        setLabelEditId(selRef.current[0]);
       } else if (k === "enter" && selRef.current.length === 1) {
         const el = elRef.current.find((x) => x.id === selRef.current[0]);
         if (el && isBox(el) && el.kind !== "draw" && !el.locked) {
@@ -584,6 +601,33 @@ export function BoardCanvas({
       }
     }
     return null;
+  }
+
+  /** Nearest connection point within ~32px on screen; inside a node, its nearest side. */
+  function magnetAt(p: { x: number; y: number }, clientX: number, clientY: number, exclude?: string) {
+    const radius = 32 / camRef.current.zoom;
+    let best: { id: string; side: Side; x: number; y: number; d: number } | null = null;
+    for (const el of elRef.current) {
+      if (!isBox(el) || el.kind === "draw" || el.kind === "frame" || el.id === exclude) continue;
+      for (const side of ["top", "right", "bottom", "left"] as Side[]) {
+        const a = anchor(el, side);
+        const d = Math.hypot(a.x - p.x, a.y - p.y);
+        if (d < radius && (!best || d < best.d)) best = { id: el.id, side, ...a, d };
+      }
+    }
+    if (best) return best;
+    const hit = hitBoxAt(clientX, clientY, exclude ? new Set([exclude]) : undefined);
+    if (hit) {
+      const side = nearestSide(hit, p);
+      return { id: hit.id, side, ...anchor(hit, side), d: 0 };
+    }
+    return null;
+  }
+
+  function setMagnet(m: { id: string; side: Side; x: number; y: number } | null) {
+    snapRef.current = m;
+    setSnap((prev) => (prev?.id === m?.id && prev?.side === m?.side ? prev : m ? { id: m.id, side: m.side } : null));
+    setConnectHover(m ? m.id : null);
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -739,17 +783,22 @@ export function BoardCanvas({
         break;
       }
       case "endpoint": {
+        const cx = elRef.current.find((x) => x.id === it.id) as ConnectorEl | undefined;
+        const otherId = cx ? (it.end === "from" ? cx.to.id : cx.from.id) : undefined;
+        const m = magnetAt(p, e.clientX, e.clientY, otherId);
+        setMagnet(m);
+        const pt = m ? { x: m.x, y: m.y } : p;
         const next = elRef.current.map((el) =>
-          el.id === it.id && el.kind === "connector" ? { ...el, [it.end]: { x: p.x, y: p.y } } : el
+          el.id === it.id && el.kind === "connector" ? { ...el, [it.end]: { x: pt.x, y: pt.y } } : el
         );
         elRef.current = next;
         setElements(next);
         break;
       }
       case "connect": {
-        setInteraction({ ...it, cur: p });
-        const hit = hitBoxAt(e.clientX, e.clientY, it.from.id ? new Set([it.from.id]) : undefined);
-        setConnectHover(hit ? hit.id : null);
+        const m = magnetAt(p, e.clientX, e.clientY, it.from.id);
+        setMagnet(m);
+        setInteraction({ ...it, cur: m ? { x: m.x, y: m.y } : p });
         break;
       }
       case "marquee":
@@ -769,6 +818,9 @@ export function BoardCanvas({
     setInteraction(null);
     setGuides({ v: [], h: [] });
     setConnectHover(null);
+    const magnet = snapRef.current;
+    snapRef.current = null;
+    setSnap(null);
     if (!it) return;
     const p = toWorld(e.clientX, e.clientY);
 
@@ -778,10 +830,9 @@ export function BoardCanvas({
     } else if (it.type === "resize") {
       commit(elRef.current, { from: it.snapshot });
     } else if (it.type === "endpoint") {
-      const hit = hitBoxAt(e.clientX, e.clientY);
       const next = elRef.current.map((el) =>
         el.id === it.id && el.kind === "connector"
-          ? { ...el, [it.end]: hit ? { id: hit.id, side: nearestSide(hit, p), x: p.x, y: p.y } : { x: p.x, y: p.y } }
+          ? { ...el, [it.end]: magnet ? { id: magnet.id, side: magnet.side, x: magnet.x, y: magnet.y } : { x: p.x, y: p.y } }
           : el
       );
       commit(next, { from: it.snapshot });
@@ -806,13 +857,12 @@ export function BoardCanvas({
       }
     } else if (it.type === "connect") {
       const src = it.from.id ? (byId.get(it.from.id) as BoxEl | undefined) : undefined;
-      const hit = hitBoxAt(e.clientX, e.clientY, src ? new Set([src.id]) : undefined);
       const dist = Math.hypot(p.x - it.from.x, p.y - it.from.y);
-      if (dist < 12 && !hit) return;
+      if (dist < 12 && !magnet) return;
       const additions: El[] = [];
       let toEp: ConnectorEl["to"] = { x: p.x, y: p.y };
-      if (hit) {
-        toEp = { id: hit.id, side: nearestSide(hit, it.from), x: p.x, y: p.y };
+      if (magnet) {
+        toEp = { id: magnet.id, side: magnet.side, x: magnet.x, y: magnet.y };
       } else if (src && tool !== "connector") {
         // Miro-style: dragging a port into empty space creates a connected twin.
         const twin = { ...src, id: uid(), z: maxZ() + 1, x: p.x - src.w / 2, y: p.y - src.h / 2 } as BoxEl;
@@ -936,9 +986,8 @@ export function BoardCanvas({
     }
     const line = target.closest("[data-line]") as HTMLElement | null;
     if (line) {
-      const cx = byId.get(line.dataset.line!) as ConnectorEl;
-      const label = window.prompt("Label for this connector", cx.label || "");
-      if (label !== null) update([cx.id], (x) => ({ ...(x as ConnectorEl), label: label || undefined }));
+      setSelection([line.dataset.line!]);
+      setLabelEditId(line.dataset.line!);
       return;
     }
     const p = toWorld(e.clientX, e.clientY);
@@ -1238,7 +1287,7 @@ export function BoardCanvas({
                     strokeLinejoin="round"
                     style={{ pointerEvents: "none" }}
                   />
-                  {c.label && (
+                  {c.label && labelEditId !== c.id && (
                     <foreignObject x={pth.mid.x - 80} y={pth.mid.y - 14} width={160} height={28} style={{ overflow: "visible", pointerEvents: "none" }}>
                       <div className="flex justify-center">
                         <span className="rounded-md bg-white px-2 py-0.5 text-[12px] text-slate-700 ring-1 ring-slate-200">{c.label}</span>
@@ -1271,7 +1320,7 @@ export function BoardCanvas({
         {/* Screen-space overlays */}
         <div className="pointer-events-none absolute inset-0" style={{ zIndex: 5 }}>
           {/* remote selections */}
-          {rt.peers.map((peer) =>
+          {peers.map((peer) =>
             peer.selection.map((id) => {
               const el = byId.get(id);
               if (!el || !isBox(el)) return null;
@@ -1295,9 +1344,9 @@ export function BoardCanvas({
           ))}
 
           {/* every node you can connect to, while dragging a connector */}
-          {interaction?.type === "connect" &&
+          {(interaction?.type === "connect" || interaction?.type === "endpoint") &&
             elements
-              .filter((e): e is BoxEl => isBox(e) && e.kind !== "draw" && e.kind !== "frame" && e.id !== interaction.from.id)
+              .filter((e): e is BoxEl => isBox(e) && e.kind !== "draw" && e.kind !== "frame" && !(interaction.type === "connect" && e.id === interaction.from.id))
               .map((el) => {
                 const a = toScreen(el.x, el.y);
                 const w = el.w * camera.zoom;
@@ -1308,7 +1357,7 @@ export function BoardCanvas({
                     <div className={clsx("absolute -inset-1.5 rounded-lg border-2 border-dashed", hot ? "border-blue-600 bg-blue-500/5" : "border-blue-300/80")} />
                     {(["top", "right", "bottom", "left"] as Side[]).map((side) => {
                       const p = { top: [w / 2, 0], right: [w, h / 2], bottom: [w / 2, h], left: [0, h / 2] }[side];
-                      return <span key={side} className={clsx("absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white", hot ? "bg-blue-600" : "bg-blue-400")} style={{ left: p[0], top: p[1] }} />;
+                      return <span key={side} className={clsx("absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white", snap?.id === el.id && snap.side === side ? "h-4 w-4 bg-blue-600 ring-4 ring-blue-300/60" : hot ? "bg-blue-600" : "bg-blue-400")} style={{ left: p[0], top: p[1] }} />;
                     })}
                   </div>
                 );
@@ -1397,8 +1446,36 @@ export function BoardCanvas({
             })
           )}
 
+          {/* connector label editor */}
+          {labelEditId && (() => {
+            const cx = byId.get(labelEditId);
+            if (!cx || cx.kind !== "connector") return null;
+            const mid = connectorPath(cx, byId).mid;
+            const sp = toScreen(mid.x, mid.y);
+            return (
+              <input
+                key={labelEditId}
+                autoFocus
+                defaultValue={cx.label || ""}
+                placeholder="Type a label"
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur();
+                }}
+                onBlur={(e) => {
+                  const v = e.target.value.trim();
+                  setLabelEditId(null);
+                  if (v !== (cx.label || "")) update([cx.id], (x) => ({ ...(x as ConnectorEl), label: v || undefined }));
+                }}
+                className="pointer-events-auto absolute w-44 -translate-x-1/2 -translate-y-1/2 rounded-md bg-white px-2 py-1 text-center text-[13px] text-slate-800 shadow-md outline-none ring-2 ring-blue-500"
+                style={{ left: sp.x, top: sp.y }}
+              />
+            );
+          })()}
+
           {/* remote cursors */}
-          {rt.peers
+          {peers
             .filter((p) => p.cursor)
             .map((peer) => {
               const s = toScreen(peer.cursor!.x, peer.cursor!.y);
@@ -1449,7 +1526,7 @@ export function BoardCanvas({
               {initialsOf(rt.me.name)}
             </span>
           )}
-          {rt.peers.map((p) => (
+          {peers.map((p) => (
             <span key={p.key} title={p.name} className="grid h-8 w-8 place-items-center rounded-full text-[11px] font-semibold text-white ring-2 ring-white" style={{ background: p.color }}>
               {initialsOf(p.name)}
             </span>
@@ -1614,13 +1691,50 @@ export function BoardCanvas({
           data-ui
           role="menu"
           className="absolute z-40 w-56 rounded-xl bg-white p-1 text-sm shadow-xl ring-1 ring-slate-200"
-          style={{ left: Math.min(menu.x, (rootRef.current?.clientWidth || 800) - 232), top: Math.min(menu.y, (rootRef.current?.clientHeight || 600) - 320) }}
+          style={{ left: Math.min(menu.x, (rootRef.current?.clientWidth || 800) - 232), top: Math.max(8, Math.min(menu.y, (rootRef.current?.clientHeight || 600) - 380)) }}
           onPointerDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
+          {!menu.onElement && (
+            <div className="border-b border-slate-100 px-2 pb-2 pt-1">
+              <p className="px-1 pb-1.5 text-xs text-slate-400">Add shape here</p>
+              <div className="grid grid-cols-5 gap-1">
+                {SHAPES.map((sh) => (
+                  <button
+                    key={sh.kind}
+                    type="button"
+                    title={sh.label}
+                    aria-label={`Add ${sh.label}`}
+                    onClick={() => {
+                      const z = maxZ() + 1;
+                      const w = sh.kind === "diamond" ? 180 : 200;
+                      const h = sh.kind === "diamond" || sh.kind === "cylinder" ? 120 : 100;
+                      const el: BoxEl = { id: uid(), kind: "shape", shape: sh.kind, x: menu.world.x - w / 2, y: menu.world.y - h / 2, w, h, z, text: "", fill: "#FFFFFF", stroke: "#1F5FD6", textColor: "#0E1B2E", fontSize: 16 };
+                      setMenu(null);
+                      commit([...elRef.current, el]);
+                      setSelection([el.id]);
+                      setEditingId(el.id);
+                    }}
+                    className="grid h-9 place-items-center rounded-lg text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+                  >
+                    <svg width="22" height="16" viewBox="0 0 110 80">
+                      <path d={shapePath(sh.kind, 110, 80)} fill="none" stroke="currentColor" strokeWidth={7} />
+                    </svg>
+                  </button>
+                ))}
+                <button type="button" title="Sticky note" aria-label="Add sticky note" onClick={() => { setMenu(null); addBlock("n-sticky", menu.world); }} className="grid h-9 place-items-center rounded-lg hover:bg-blue-50">
+                  <span className="h-4 w-4 rounded-sm bg-[#FFF1A8] ring-1 ring-black/10" />
+                </button>
+                <button type="button" title="Process card" aria-label="Add process card" onClick={() => { setMenu(null); addBlock("process", menu.world); }} className="grid h-9 place-items-center rounded-lg hover:bg-blue-50">
+                  <span className="h-4 w-5 overflow-hidden rounded-sm bg-white ring-1 ring-slate-300"><span className="block h-1 bg-[#7C4DDB]" /></span>
+                </button>
+              </div>
+            </div>
+          )}
           {(menu.onElement
             ? [
                 ...(single && isBox(single) && single.kind !== "draw" && !single.locked ? [["Edit text", "Enter", () => setEditingId(single.id)]] : []),
+                ...(single && single.kind === "connector" && !single.locked ? [[single.label ? "Edit line text" : "Add text to line", "Enter", () => setLabelEditId(single.id)]] : []),
                 ["Duplicate", "Ctrl+D", () => duplicate(selected)],
                 ["Copy", "Ctrl+C", () => {
                   clipboard.current = selected;
@@ -1640,10 +1754,6 @@ export function BoardCanvas({
               ]
             : [
                 ["Paste here", "Ctrl+V", () => pasteAt(menu.world)],
-                ["Add sticky note", "N", () => addBlock("n-sticky", menu.world)],
-                ["Add process card", "", () => addBlock("process", menu.world)],
-                ["Add rounded shape", "", () => addBlock("s-round", menu.world)],
-                ["Add decision", "", () => addBlock("s-diamond", menu.world)],
                 ["Add text", "T", () => addBlock("n-text", menu.world)],
                 ["More blocks…", "B", () => setLibraryOpen(true)],
                 ["Select all", "Ctrl+A", () => setSelection(elRef.current.map((x) => x.id))],
@@ -1697,7 +1807,11 @@ export function BoardCanvas({
           }}
           onDuplicate={() => duplicate(selected)}
           onEdit={
-            single && isBox(single) && single.kind !== "draw" && !single.locked ? () => setEditingId(single.id) : undefined
+            single && isBox(single) && single.kind !== "draw" && !single.locked
+              ? () => setEditingId(single.id)
+              : single && single.kind === "connector" && !single.locked
+                ? () => setLabelEditId(single.id)
+                : undefined
           }
           onDelete={deleteSelection}
           onAlign={align}
@@ -1835,9 +1949,12 @@ function ContextBar({
     const nw = ref.current?.offsetWidth || 0;
     setW((old) => (Math.abs(old - nw) > 1 ? nw : old));
   }, [sig, containerW]);
-  // Keep the bar fully on screen; flip below the selection if there's no room above.
-  const left = clamp(x - w / 2, 64, Math.max(64, containerW - w - 12));
-  const top = y < 64 ? below : y;
+  // Docked at the top of the canvas so it never covers what you're working on.
+  void x;
+  void y;
+  void below;
+  const left = clamp(containerW / 2 - w / 2, 12, Math.max(12, containerW - w - 12));
+  const top = 64;
 
   return (
     <div
@@ -1849,9 +1966,9 @@ function ContextBar({
     >
       {onEdit && (
         <>
-          <Btn title="Edit text (Enter or double-click)" onClick={onEdit}>
+          <Btn title={only?.kind === "connector" ? "Add or edit the line's text (double-click the line)" : "Edit text (Enter or double-click)"} onClick={onEdit}>
             <span className="flex items-center gap-1 px-1 text-xs">
-              <Pencil className="h-3.5 w-3.5" /> Edit
+              <Pencil className="h-3.5 w-3.5" /> {only?.kind === "connector" ? (only.label ? "Edit text" : "Add text") : "Edit"}
             </span>
           </Btn>
           <span className="mx-1 h-5 w-px bg-slate-200" />
