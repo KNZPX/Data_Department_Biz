@@ -50,7 +50,8 @@ import {
   type MixField,
   applyGrowth,
   maxFor,
-  monthsOf,
+  monthlyOf,
+  setMonthTarget,
   removeSub,
   renameSub,
   rollForward,
@@ -604,8 +605,8 @@ export function TargetScenarioPage() {
       const monthLevels: number[] = [];
       walk(plan, start, (n, d) => {
         if (n.level === "setting" || n.level === "market") return;
-        const w = monthsOf(plan, n.id);
-        monthRows.push({ unit: n.name, ...Object.fromEntries(MONTHS.map((m, i) => [m, v(w[i] * n.target)])), year: v(n.target) });
+        const mt = monthlyOf(plan, n.id);
+        monthRows.push({ unit: n.name, ...Object.fromEntries(MONTHS.map((m, i) => [m, v(mt[i])])), year: v(n.target) });
         monthLevels.push(d);
       });
       const monthCols = [{ header: `${Y} target (${u})`, key: "unit", width: 34 }, ...MONTHS.map((m) => ({ header: m, key: m, width: 11, numFmt: nf })), { header: "Year", key: "year", width: 13, numFmt: nf }];
@@ -1338,7 +1339,21 @@ export function TargetScenarioPage() {
               }}
             />
           )}
-          {tab === "months" && <MonthsView plan={plan} node={selected} onPick={setSelectedId} />}
+          {tab === "months" && (
+            <MonthsView
+              plan={plan}
+              node={selected}
+              onPick={setSelectedId}
+              canEdit={canEdit}
+              onMonth={(id, month, value) => {
+                if (!canEdit) return;
+                const n = plan.nodes[id];
+                const { plan: next, report: r } = setMonthTarget(plan, id, month, value);
+                commit(next, { ...r, label: `${n.name}: ${MONTHS[month]} ${Y} target set to ${fmtU(value, plan.step, unit)} ${unitLabel(unit)}` });
+                if (r.clamped) toast.info("Capped at what's left", { body: `${n.name} can't go over what ${plan.nodes[n.parentId!].name} has left, so the year was capped.` });
+              }}
+            />
+          )}
           {tab === "coe" && <CoeView plan={plan} siteFilter={siteFilter} />}
         </div>
 
@@ -1777,10 +1792,7 @@ function MixView({
   return (
     <div className="p-4">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <p className="max-w-3xl text-[12.5px] text-slate-500">
-        OPD/IPD and segments are two more ways to cut each hospital&rsquo;s total, next to the CoE / SBU split in the Plan tab. Set the totals there, then
-        distribute them here: change one part and the others share what&rsquo;s left, while every CoE / SBU keeps its own total.
-      </p>
+<span />
         <div className="flex shrink-0 items-center gap-2 text-[12.5px] text-slate-500">
           Enter as
           <div className="flex rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="Enter as">
@@ -1811,27 +1823,68 @@ function MixView({
   );
 }
 
-function MonthsView({ plan, node, onPick }: { plan: Plan; node: PlanNode; onPick: (id: string) => void }) {
+function MonthsView({
+  plan,
+  node,
+  onPick,
+  canEdit,
+  onMonth,
+}: {
+  plan: Plan;
+  node: PlanNode;
+  onPick: (id: string) => void;
+  canEdit: boolean;
+  onMonth: (id: string, month: number, value: number) => void;
+}) {
   const unit = useContext(UnitContext);
-  const w = monthsOf(plan, node.id);
-  const target = w.map((x) => x * node.target);
-  const base = w.map((x) => x * node.base26);
+  const div = unitDiv(unit);
+  const dec = unitDecimals(unit, plan.step);
+  const [asGrowth, setAsGrowth] = useState(false);
+  const Y = plan.targetYear;
+  const B = Y - 1;
+  const target = monthlyOf(plan, node.id);
+  const base = monthlyOf(plan, node.id, "base26");
   const max = Math.max(...target, ...base, 1);
-  const kids = childrenOf(plan, node.id);
+  const kids = childrenOf(plan, node.id).filter(inTree);
   return (
     <div className="p-4">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <h3 className="text-[15px] font-semibold text-slate-900">{node.name}</h3>
         <span className="text-[12.5px] text-slate-500">
-          {fmtU(node.target, plan.step, unit)} {unitLabel(unit)} for {plan.targetYear}, phased like {plan.targetYear - 1}&rsquo;s monthly revenue
+          {fmtU(node.target, plan.step, unit)} {unitLabel(unit)} for {Y}
         </span>
+        <div className="ml-auto flex items-center gap-2 text-[12.5px] text-slate-500">
+          Enter as
+          <div className="flex rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="Enter as">
+            {(
+              [
+                [false, unitLabel(unit)],
+                [true, "Growth % YoY"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={String(v)}
+                type="button"
+                role="radio"
+                aria-checked={asGrowth === v}
+                onClick={() => setAsGrowth(v)}
+                className={clsx(
+                  "rounded-md px-2.5 py-1 font-medium transition",
+                  asGrowth === v ? "bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.1)]" : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-12 items-end gap-1.5 rounded-xl border border-slate-100 p-3" style={{ height: 180 }}>
         {target.map((t, i) => (
-          <div key={i} className="flex h-full flex-col justify-end gap-1" title={`${MONTHS[i]}: ${fmtU(t, plan.step, unit)} ${unitLabel(unit)} (${plan.targetYear - 1} ${fmtU(base[i], plan.step, unit)})`}>
+          <div key={i} className="flex h-full flex-col justify-end gap-1" title={`${MONTHS[i]}: ${fmtU(t, plan.step, unit)} ${unitLabel(unit)} (${B} ${fmtU(base[i], plan.step, unit)})`}>
             <div className="flex flex-1 items-end gap-0.5">
-              <div className="w-1/2 rounded-t bg-slate-200" style={{ height: `${(base[i] / max) * 100}%` }} />
-              <div className="w-1/2 origin-bottom rounded-t bg-blue-600 [animation:grow-y_var(--dur-3)_var(--ease-out-soft)_backwards]" style={{ height: `${(t / max) * 100}%` }} />
+              <div className="w-1/2 rounded-t bg-slate-200 transition-[height] duration-300" style={{ height: `${(base[i] / max) * 100}%` }} />
+              <div className="w-1/2 origin-bottom rounded-t bg-blue-600 transition-[height] duration-300 [animation:grow-y_var(--dur-3)_var(--ease-out-soft)_backwards]" style={{ height: `${(t / max) * 100}%` }} />
             </div>
             <span className="text-center text-[10.5px] text-slate-400">{MONTHS[i]}</span>
           </div>
@@ -1839,19 +1892,19 @@ function MonthsView({ plan, node, onPick }: { plan: Plan; node: PlanNode; onPick
       </div>
       <div className="mt-1.5 flex gap-4 text-[11.5px] text-slate-500">
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-slate-200" /> {plan.targetYear - 1}
+          <span className="h-2 w-2 rounded-sm bg-slate-200" /> {B}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-blue-600" /> {plan.targetYear} target
+          <span className="h-2 w-2 rounded-sm bg-blue-600" /> {Y} target
         </span>
       </div>
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[900px] border-separate border-spacing-0 text-[12.5px]">
+        <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-[12.5px]">
           <thead>
             <tr className="text-[11.5px] text-slate-500">
-              <th className="border-b border-slate-200 px-2 py-2 text-left font-medium">{unitLabel(unit)}</th>
+              <th className="border-b border-slate-200 px-2 py-2 text-left font-medium">{asGrowth ? "Growth % vs " + B : unitLabel(unit)}</th>
               {MONTHS.map((m) => (
-                <th key={m} className="border-b border-slate-200 px-2 py-2 text-right font-medium">
+                <th key={m} className="border-b border-slate-200 px-1 py-2 text-right font-medium">
                   {m}
                 </th>
               ))}
@@ -1860,13 +1913,11 @@ function MonthsView({ plan, node, onPick }: { plan: Plan; node: PlanNode; onPick
           </thead>
           <tbody>
             {[node, ...kids].map((n, idx) => {
-              const ww = monthsOf(plan, n.id);
+              const t = idx === 0 ? target : monthlyOf(plan, n.id);
+              const b = idx === 0 ? base : monthlyOf(plan, n.id, "base26");
+              const yearG = n.base26 > 0 ? ((n.target - n.base26) / n.base26) * 100 : null;
               return (
-                <tr
-                  key={n.id}
-                  onClick={idx > 0 && n.children.length ? () => onPick(n.id) : undefined}
-                  className={clsx(idx === 0 ? "font-semibold" : n.children.length ? "cursor-pointer hover:bg-slate-50" : "")}
-                >
+                <tr key={n.id} className={clsx(idx === 0 && "bg-slate-50/70 font-semibold")}>
                   <td className="border-b border-slate-100 px-2 py-1.5 text-slate-800">
                     {idx === 0 ? (
                       <span className="flex items-center gap-2">
@@ -1877,22 +1928,62 @@ function MonthsView({ plan, node, onPick }: { plan: Plan; node: PlanNode; onPick
                           </button>
                         )}
                       </span>
+                    ) : hasTreeKids(plan, n) || n.level === "coe" || n.level === "sub" ? (
+                      <button type="button" onClick={() => onPick(n.id)} className="text-left text-blue-700 underline-offset-2 hover:underline">
+                        {n.name}
+                      </button>
                     ) : (
-                      <span className={clsx(n.children.length && "text-blue-700 underline-offset-2 hover:underline")}>{n.name}</span>
+                      n.name
                     )}
                   </td>
-                  {ww.map((x, i) => (
-                    <td key={i} className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-700">
-                      {fmtU(x * n.target, plan.step, unit)}
-                    </td>
-                  ))}
-                  <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-900">{fmtU(n.target, plan.step, unit)}</td>
+                  {t.map((x, i) => {
+                    const g = b[i] > 0 ? ((x - b[i]) / b[i]) * 100 : null;
+                    return (
+                      <td key={i} className="border-b border-slate-100 px-0.5 py-1">
+                        {asGrowth ? (
+                          b[i] > 0 ? (
+                            <NumberCell
+                              value={g ?? 0}
+                              decimals={1}
+                              suffix="%"
+                              tone={(g ?? 0) >= 0 ? "pos" : "neg"}
+                              disabled={!canEdit}
+                              title={`${n.name} ${MONTHS[i]}: growth on ${B} (${fmtU(b[i], plan.step, unit)} ${unitLabel(unit)})`}
+                              onCommit={(pct) => onMonth(n.id, i, b[i] * (1 + pct / 100))}
+                            />
+                          ) : (
+                            <span className="block px-2 py-1 text-right text-slate-300" title={`No ${B} figure for ${MONTHS[i]} — type an amount instead`}>
+                              —
+                            </span>
+                          )
+                        ) : (
+                          <NumberCell
+                            value={x / div}
+                            decimals={dec}
+                            disabled={!canEdit}
+                            title={`${n.name} ${MONTHS[i]} ${Y} target`}
+                            onCommit={(v) => onMonth(n.id, i, v * div)}
+                          />
+                        )}
+                        <span className="block px-2 text-right text-[10.5px] font-normal tabular-nums text-slate-400">
+                          {asGrowth ? fmtU(x, plan.step, unit) : g === null ? "—" : fmtPct(g)}
+                        </span>
+                      </td>
+                    );
+                  })}
+                  <td className="border-b border-slate-100 px-2 py-1 text-right tabular-nums text-slate-900">
+                    {fmtU(n.target, plan.step, unit)}
+                    <span className="block text-[10.5px] font-normal text-slate-400">{yearG === null ? "—" : fmtPct(yearG)}</span>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      <p className="mt-2 text-[11.5px] text-slate-400">
+        Type a month and the year becomes the sum of its months; the units below take the same monthly pattern. Small figures show {asGrowth ? "the amount" : `growth vs the same month of ${B}`}.
+      </p>
     </div>
   );
 }
