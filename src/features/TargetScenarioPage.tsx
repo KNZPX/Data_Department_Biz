@@ -11,6 +11,7 @@ import {
   ChevronsUpDown,
   Download,
   FolderOpen,
+  Layers,
   Lock,
   MoreHorizontal,
   Network,
@@ -43,8 +44,10 @@ import {
   monthsOf,
   removeSub,
   renameSub,
+  rollForward,
   setActual,
   setActualMonths,
+  setPrior,
   setLocked,
   setTarget,
   spreadEvenGrowth,
@@ -74,7 +77,7 @@ type SavedScenario = {
   saved_at_label?: string | null;
   snapshot: { revTgt?: number; plan?: PlanSnapshot; snap?: unknown } & Record<string, unknown>;
 };
-type Tab = "plan" | "months" | "segments";
+type Tab = "plan" | "coe" | "months" | "segments";
 
 const LEVEL_LABEL: Record<PlanNode["level"], string> = {
   network: "Network",
@@ -127,6 +130,38 @@ function pathOf(plan: Plan, id: string): string {
   return parts.join(" › ");
 }
 
+type Agg = { prior: number; base: number; target: number; visits: number; bySite: Record<string, number> };
+
+/** CoE / SBU totals across hospitals (in the site filter), grouped by CoE / SBU / Hospital Focus / Usual Business. */
+function coeTotals(plan: Plan, siteFilter: string) {
+  const sites = siteFilter === "ALL" ? plan.nodes[plan.rootId].children : [siteFilter];
+  const map = new Map<string, Agg & { name: string; group: string; units: string[] }>();
+  for (const s of sites)
+    for (const c of plan.nodes[s].children) {
+      const n = plan.nodes[c];
+      const key = n.name;
+      const a = map.get(key) || { name: n.name, group: n.group || "Other", prior: 0, base: 0, target: 0, visits: 0, bySite: {}, units: [] };
+      a.prior += n.prior25;
+      a.base += n.base26;
+      a.target += n.target;
+      a.visits += targetVisits(n);
+      a.bySite[s] = (a.bySite[s] || 0) + n.target;
+      a.units.push(n.id);
+      map.set(key, a);
+    }
+  const order = ["CoE", "SBU", "Hospital Focus", "Usual Business"];
+  return { sites, rows: Array.from(map.values()).sort((a, b) => (order.indexOf(a.group) + 1 || 9) - (order.indexOf(b.group) + 1 || 9) || b.target - a.target) };
+}
+
+/** The node the By-month view follows: the selected row when it's inside the filter, else the filter itself. */
+function monthScope(plan: Plan, siteFilter: string, selectedId: string): PlanNode {
+  const scopeId = siteFilter === "ALL" ? plan.rootId : siteFilter;
+  const n: PlanNode | undefined = plan.nodes[selectedId];
+  let inside = false;
+  for (let p: PlanNode | undefined = n; p; p = p.parentId ? plan.nodes[p.parentId] : undefined) if (p.id === scopeId) inside = true;
+  return n && inside ? n : plan.nodes[scopeId];
+}
+
 function emptyReport(n: PlanNode): ChangeReport {
   return { nodeId: n.id, from: n.target, to: n.target, requested: n.target, clamped: false, siblings: [], scaledLocked: [], autoUnlocked: null };
 }
@@ -174,6 +209,10 @@ export function TargetScenarioPage() {
   const [saving, setSaving] = useState(false);
 
   const issues = useMemo(() => findIssues(plan), [plan]);
+  // The three years on screen: actual two years back, the base year, the year being planned.
+  const Y = plan.targetYear;
+  const B = Y - 1;
+  const P = Y - 2;
   const dirty = useMemo(() => JSON.stringify(toSnapshot(plan)) !== savedSig, [plan, savedSig]);
   const root = plan.nodes[plan.rootId];
 
@@ -275,7 +314,7 @@ export function TargetScenarioPage() {
     commit(next);
     setExpanded((s) => new Set([...s, coeId]));
     setSelectedId(subId);
-    toast(`${name} added`, { body: "Click its 2027 target to give it a share of the CoE." });
+    toast(`${name} added`, { body: `Click its ${plan.targetYear} target to give it a share of the CoE.` });
   }
   async function renameSubUnit(id: string) {
     const name = await promptDialog({ title: "Rename sub-unit", defaultValue: plan.nodes[id].name, confirmLabel: "Rename" });
@@ -318,7 +357,7 @@ export function TargetScenarioPage() {
       const n = await promptDialog({
         title: asNew && current.id ? "Save as a new scenario" : "Save scenario",
         label: "Scenario name",
-        defaultValue: current.id ? `${current.name} (copy)` : `2027 plan · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`,
+        defaultValue: current.id ? `${current.name} (copy)` : `${plan.targetYear} plan · ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`,
         confirmLabel: "Save",
       });
       if (!n) return;
@@ -341,7 +380,7 @@ export function TargetScenarioPage() {
           id: asNew ? undefined : current.id || undefined,
           name,
           store_key: "targetPlan_v2",
-          store_label: "2027 plan",
+          store_label: `${plan.targetYear} plan`,
           snapshot,
           baseUpdatedAt: asNew ? null : current.updatedAt,
           force,
@@ -383,27 +422,150 @@ export function TargetScenarioPage() {
     toast(`Deleted ${s.name}`);
   }
 
-  function exportCsv() {
-    const rows = [["Path", "Level", "2025 actual (MB)", "2026 base (MB)", "2027 target (MB)", "Growth vs 2026 %", "Visits 2027", "Pinned"]];
-    walk(plan, plan.rootId, (n) =>
-      rows.push([
-        pathOf(plan, n.id) || n.name,
-        LEVEL_LABEL[n.level],
-        (n.prior25 / MB).toFixed(2),
-        (n.base26 / MB).toFixed(2),
-        (n.target / MB).toFixed(2),
-        growthPct(n).toFixed(2),
-        Math.round(targetVisits(n)).toString(),
-        n.locked ? "yes" : "",
-      ])
-    );
-    const csv = "﻿" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `target-2027-${current.name.replace(/[^\w-]+/g, "_")}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const [exporting, setExporting] = useState(false);
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      const v = (thb: number) => (unit === "MB" ? Math.round((thb / MB) * 100) / 100 : Math.round(thb));
+      const nf = unit === "MB" ? "#,##0.00" : "#,##0";
+      const u = unitLabel(unit) === "฿" ? "Baht" : "MB";
+      const hasAct = plan.actualMonths > 0;
+      // 1. Plan tree
+      const planRows: Record<string, string | number | null>[] = [];
+      const levels: number[] = [];
+      const bold: boolean[] = [];
+      const start = siteFilter === "ALL" ? plan.rootId : siteFilter;
+      walk(plan, start, (n, d) => {
+        planRows.push({
+          unit: n.name,
+          level: LEVEL_LABEL[n.level],
+          group: n.group || "",
+          site: n.site === "PKT" ? "Network" : n.site,
+          prior: v(n.prior25),
+          ...(hasAct ? { actual: v(actualOf(plan, n.id)) } : {}),
+          base: v(n.base26),
+          target: v(n.target),
+          growth: Math.round(growthPct(n) * 10) / 10,
+          plus: v(n.target - n.base26),
+          share: n.parentId && plan.nodes[n.parentId].target > 0 ? Math.round((n.target / plan.nodes[n.parentId].target) * 1000) / 10 : 100,
+          visits: Math.round(targetVisits(n)),
+          pinned: n.locked ? "pinned" : "",
+        });
+        levels.push(d);
+        bold.push(d <= 1);
+      });
+      const planCols = [
+        { header: "Unit", key: "unit", width: 38 },
+        { header: "Level", key: "level", width: 12 },
+        { header: "Group", key: "group", width: 14 },
+        { header: "Hospital", key: "site", width: 14 },
+        { header: `${P} actual (${u})`, key: "prior", width: 16, numFmt: nf },
+        ...(hasAct ? [{ header: `${B} actual ${MONTHS[0]}–${MONTHS[plan.actualMonths - 1]} (${u})`, key: "actual", width: 18, numFmt: nf }] : []),
+        { header: `${B} full year (${u})`, key: "base", width: 16, numFmt: nf },
+        { header: `${Y} target (${u})`, key: "target", width: 16, numFmt: nf },
+        { header: "Growth %", key: "growth", width: 10, numFmt: "0.0" },
+        { header: `+ vs ${B} (${u})`, key: "plus", width: 16, numFmt: nf },
+        { header: "Share of parent %", key: "share", width: 12, numFmt: "0.0" },
+        { header: `Visits ${Y}`, key: "visits", width: 12, numFmt: "#,##0" },
+        { header: "Pinned", key: "pinned", width: 9 },
+      ];
+      // 2. By CoE / SBU
+      const ct = coeTotals(plan, siteFilter);
+      const coeCols = [
+        { header: "CoE / SBU", key: "name", width: 30 },
+        { header: "Group", key: "group", width: 16 },
+        { header: `${P} actual (${u})`, key: "prior", width: 16, numFmt: nf },
+        { header: `${B} full year (${u})`, key: "base", width: 16, numFmt: nf },
+        { header: `${Y} target (${u})`, key: "target", width: 16, numFmt: nf },
+        { header: "Growth %", key: "growth", width: 10, numFmt: "0.0" },
+        ...ct.sites.map((sid) => ({ header: `${plan.nodes[sid].name} (${u})`, key: `s_${sid}`, width: 16, numFmt: nf })),
+      ];
+      const coeRows = ct.rows.map((r) => ({
+        name: r.name,
+        group: r.group,
+        prior: v(r.prior),
+        base: v(r.base),
+        target: v(r.target),
+        growth: r.base > 0 ? Math.round(((r.target - r.base) / r.base) * 1000) / 10 : 0,
+        ...Object.fromEntries(ct.sites.map((sid) => [`s_${sid}`, v(r.bySite[sid] || 0)])),
+      }));
+      // 3. By month: every hospital and unit in the filter
+      const monthRows: Record<string, string | number | null>[] = [];
+      const monthLevels: number[] = [];
+      walk(plan, start, (n, d) => {
+        if (n.level === "setting" || n.level === "market") return;
+        const w = monthsOf(plan, n.id);
+        monthRows.push({ unit: n.name, ...Object.fromEntries(MONTHS.map((m, i) => [m, v(w[i] * n.target)])), year: v(n.target) });
+        monthLevels.push(d);
+      });
+      const monthCols = [{ header: `${Y} target (${u})`, key: "unit", width: 34 }, ...MONTHS.map((m) => ({ header: m, key: m, width: 11, numFmt: nf })), { header: "Year", key: "year", width: 13, numFmt: nf }];
+      // 4. By segment
+      const segRows: Record<string, string | number | null>[] = [];
+      for (const sid of siteFilter === "ALL" ? plan.nodes[plan.rootId].children : [siteFilter]) {
+        const acc: Record<string, { t: number; b: number }> = {};
+        walk(plan, sid, (n) => {
+          if (n.level === "market" || n.level === "setting") {
+            const k = n.name;
+            acc[k] = acc[k] || { t: 0, b: 0 };
+            acc[k].t += n.target;
+            acc[k].b += n.base26;
+          }
+        });
+        for (const k of [...SEGMENTS, "OPD", "IPD"]) if (acc[k]) segRows.push({ site: plan.nodes[sid].name, segment: k, base: v(acc[k].b), target: v(acc[k].t), growth: acc[k].b > 0 ? Math.round(((acc[k].t - acc[k].b) / acc[k].b) * 1000) / 10 : 0 });
+      }
+      const segCols = [
+        { header: "Hospital", key: "site", width: 20 },
+        { header: "Segment / setting", key: "segment", width: 18 },
+        { header: `${B} full year (${u})`, key: "base", width: 16, numFmt: nf },
+        { header: `${Y} target (${u})`, key: "target", width: 16, numFmt: nf },
+        { header: "Growth %", key: "growth", width: 10, numFmt: "0.0" },
+      ];
+      const res = await fetch("/api/target-scenario/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: `target-${Y}-${current.name}`,
+          sheets: [
+            { name: "Plan", columns: planCols, rows: planRows, levels, bold },
+            { name: "By CoE-SBU", columns: coeCols, rows: coeRows },
+            { name: "By segment", columns: segCols, rows: segRows },
+            { name: "By month", columns: monthCols, rows: monthRows, levels: monthLevels },
+          ],
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Export failed");
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `target-${Y}-${current.name.replace(/[^\w-]+/g, "_")}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error("Couldn't export to Excel", { body: e instanceof Error ? e.message : undefined });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // ---- new plan for any year ----------------------------------------------------
+  const [newPlanOpen, setNewPlanOpen] = useState(false);
+  async function createPlan(year: number, from: "current" | "agreed", growth: number) {
+    if (dirty) {
+      const ok = await confirmDialog({ title: "Discard unsaved changes?", body: `You have changes to “${current.name}” that aren't saved.`, confirmLabel: "Discard", danger: true });
+      if (!ok) return;
+    }
+    let next = from === "agreed" ? basePlan : plan;
+    if (year < next.targetYear) return void toast.error(`Pick ${next.targetYear} or later`);
+    while (next.targetYear < year) next = rollForward(next, growth);
+    setPlan(next);
+    setPast([]);
+    setFuture([]);
+    setReport(null);
+    setSavedSig("");
+    setCurrent({ id: null, name: `${year} plan`, updatedAt: null, savedBy: null });
+    setNewPlanOpen(false);
+    setScenarioMenu(false);
+    toast(`${year} plan ready`, { body: `${year - 2} and ${year - 1} come from ${from === "agreed" ? "the agreed data" : `“${current.name}”`}. Save it to share with the team.` });
   }
 
   // ---- visible rows ------------------------------------------------------------
@@ -449,7 +611,7 @@ export function TargetScenarioPage() {
     setExpanded(s);
   }
 
-  const selected = plan.nodes[selectedId] || root;
+  const selected = monthScope(plan, siteFilter, selectedId);
 
   // ---- render --------------------------------------------------------------------
   return (
@@ -470,7 +632,7 @@ export function TargetScenarioPage() {
             </span>
             <span className="min-w-0 leading-tight">
               <span className="block text-[11px] text-slate-400">
-                {TARGET_META.target_year} target scenario
+                {Y} {t("target plan")}
                 {dirty && <span className="ml-1.5 text-amber-600">· unsaved</span>}
               </span>
               <span className="block truncate text-[13.5px] font-semibold text-slate-900">{current.name}</span>
@@ -486,13 +648,25 @@ export function TargetScenarioPage() {
                   <span className="block text-[12px] text-slate-500">Revise 2027 (V2): 7,550 MB · BPK 5,140 · BSI 2,035 · DBK 375</span>
                 </span>
               </button>
+              {canEdit && (
+                <button type="button" onClick={() => setNewPlanOpen(true)} className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50">
+                  <Plus className="mt-0.5 h-4 w-4 text-blue-600" />
+                  <span>
+                    <span className="block text-[13px] font-medium text-slate-900">{t("New plan for another year…")}</span>
+                    <span className="block text-[12px] text-slate-500">{t("Roll this plan forward, or start again from the agreed data")}</span>
+                  </span>
+                </button>
+              )}
               <p className="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.06em] text-slate-400">{t("Saved by the team")}</p>
               <div className="max-h-72 overflow-y-auto">
                 {scenarios.length === 0 && <p className="px-2.5 py-3 text-[12.5px] text-slate-400">{t("Nothing saved yet.")}</p>}
                 {scenarios.map((s) => (
                   <div key={s.id} className={clsx("group flex items-center gap-1 rounded-lg", current.id === s.id ? "bg-blue-50" : "hover:bg-slate-50")}>
                     <button type="button" onClick={() => void switchTo(s)} className="min-w-0 flex-1 px-2.5 py-2 text-left">
-                      <span className="block truncate text-[13px] font-medium text-slate-900">{s.name}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="shrink-0 rounded bg-blue-50 px-1.5 text-[10.5px] font-semibold tabular-nums text-blue-700">{s.snapshot?.plan?.targetYear ?? TARGET_META.target_year}</span>
+                        <span className="truncate text-[13px] font-medium text-slate-900">{s.name}</span>
+                      </span>
                       <span className="block truncate text-[11.5px] text-slate-500">
                         {s.snapshot?.revTgt ? `${fmtU(s.snapshot.revTgt, 0.1 * MB, unit)} ${unitLabel(unit)} · ` : ""}
                         {s.created_by ? `${s.created_by} · ` : ""}
@@ -555,8 +729,8 @@ export function TargetScenarioPage() {
               </button>
             ))}
           </div>
-          <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] text-slate-600" title="How many months of 2026 are actual. The rest of the year is estimated from each unit's usual monthly pattern.">
-            {t("2026 actual")}
+          <label className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] text-slate-600" title="How many months of the base year are actual. The rest of the year is estimated from each unit's usual monthly pattern.">
+            {t("{y} actual", { y: B })}
             <select
               value={plan.actualMonths}
               disabled={!canEdit}
@@ -585,8 +759,8 @@ export function TargetScenarioPage() {
               ))}
             </select>
           </label>
-          <button type="button" onClick={exportCsv} className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50">
-            <Download className="h-4 w-4" /> CSV
+          <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            <Download className={clsx("h-4 w-4", exporting && "animate-bounce")} /> Excel
           </button>
           {canEdit && (
             <>
@@ -619,6 +793,7 @@ export function TargetScenarioPage() {
           editable={canEdit}
           onCommit={(v) => applyTarget(root.id, v, `Network target set to ${fmtU(v, plan.step, unit)} ${unitLabel(unit)}`)}
           color="#2563eb"
+          baseYear={B}
           icon={<Network className="h-4 w-4" />}
         />
         {root.children.map((sid) => (
@@ -634,6 +809,7 @@ export function TargetScenarioPage() {
             max={maxFor(plan, sid)}
             onCommit={(v) => applyTarget(sid, v)}
             color={siteColor(sid)}
+            baseYear={B}
           />
         ))}
       </div>
@@ -645,6 +821,7 @@ export function TargetScenarioPage() {
             {(
               [
                 ["plan", t("Plan"), Network],
+                ["coe", t("By CoE / SBU"), Layers],
                 ["segments", t("By segment"), Users],
                 ["months", t("By month"), CalendarRange],
               ] as const
@@ -693,7 +870,7 @@ export function TargetScenarioPage() {
           )}
           {tab === "months" && (
             <span className="text-[12.5px] text-slate-500">
-              Showing <span className="font-medium text-slate-800">{pathOf(plan, selected.id) || selected.name}</span> — pick a row in Plan to change
+              {t("Showing")} <span className="font-medium text-slate-800">{pathOf(plan, selected.id) || selected.name}</span> — {t("follows the hospital filter; click a row below to go deeper")}
             </span>
           )}
         </div>
@@ -748,20 +925,20 @@ export function TargetScenarioPage() {
               <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
                 <tr className="text-left text-[11.5px] font-medium text-slate-500">
                   <th className="border-b border-slate-200 py-2 pl-4 pr-2 font-medium">{t("Unit")}</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("2025 actual")}</th>
+                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title="Typed values on a CoE / sub-unit replace the data">{t("{y} actual", { y: P })}</th>
                   {plan.actualMonths > 0 && (
-                    <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title="Typed actuals for a CoE / sub-unit set its 2026 full year">
-                      {t("2026 actual")} <span className="font-normal text-slate-400">{MONTHS[0]}–{MONTHS[plan.actualMonths - 1]}</span>
+                    <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title={`Typed actuals for a CoE / sub-unit set its ${B} full year`}>
+                      {t("{y} actual", { y: B })} <span className="font-normal text-slate-400">{MONTHS[0]}–{MONTHS[plan.actualMonths - 1]}</span>
                     </th>
                   )}
                   <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title={plan.actualMonths > 0 ? `${plan.actualMonths} months actual + ${12 - plan.actualMonths} estimated` : "Estimate"}>
-                    {t("2026 full year")}
+                    {t("{y} full year", { y: B })}
                   </th>
-                  <th className="w-[170px] border-b border-slate-200 px-2 py-2 text-right font-medium text-slate-800">{t("2027 target")} ({unitLabel(unit)})</th>
+                  <th className="w-[170px] border-b border-slate-200 px-2 py-2 text-right font-medium text-slate-800">{t("{y} target", { y: Y })} ({unitLabel(unit)})</th>
                   <th className="w-[100px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Growth")} %</th>
-                  <th className="w-[140px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("+ vs 2026")}</th>
+                  <th className="w-[140px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("+ vs {y}", { y: B })}</th>
                   <th className="w-[150px] border-b border-slate-200 px-2 py-2 font-medium">{t("Share of parent")}</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Visits 2027")}</th>
+                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Visits {y}", { y: Y })}</th>
                   <th className="w-[76px] border-b border-slate-200 py-2 pl-2 pr-4" />
                 </tr>
               </thead>
@@ -800,7 +977,22 @@ export function TargetScenarioPage() {
                           {n.custom && <span className="shrink-0 rounded bg-violet-50 px-1.5 py-px text-[10.5px] font-medium text-violet-700">added</span>}
                         </div>
                       </td>
-                      <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-400">{n.prior25 ? fmtU(n.prior25, plan.step, unit) : "—"}</td>
+                      <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                        {n.level === "coe" || n.level === "sub" ? (
+                          <NumberCell
+                            value={n.prior25 / div}
+                            decimals={dec}
+                            disabled={!canEdit}
+                            pinned={n.priorTyped !== undefined}
+                            muted={n.priorTyped === undefined}
+                            title={n.priorTyped === undefined ? `${P} actual from the data — click to type your own` : "Typed — clear it to go back to the data"}
+                            onCommit={(v) => commit(setPrior(plan, n.id, v * div), { ...emptyReport(n), label: `${n.name}: ${P} actual set to ${fmtU(v * div, plan.step, unit)} ${unitLabel(unit)}` })}
+                            onClear={n.priorTyped !== undefined ? () => commit(setPrior(plan, n.id, null)) : undefined}
+                          />
+                        ) : (
+                          <span className="block px-2 text-right tabular-nums text-slate-400">{n.prior25 ? fmtU(n.prior25, plan.step, unit) : "—"}</span>
+                        )}
+                      </td>
                       {plan.actualMonths > 0 && (
                         <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
                           {n.level === "coe" || n.level === "sub" ? (
@@ -810,8 +1002,8 @@ export function TargetScenarioPage() {
                               disabled={!canEdit}
                               pinned={n.actual !== undefined}
                               muted={n.actual === undefined}
-                              title={n.actual === undefined ? "Estimated from the 2026 base — click to type the real actual" : "Typed actual — clear it to go back to the data"}
-                              onCommit={(v) => commit(setActual(plan, n.id, v * div), { ...emptyReport(n), label: `${n.name}: 2026 actual set to ${fmtU(v * div, plan.step, unit)} ${unitLabel(unit)}` })}
+                              title={n.actual === undefined ? `Estimated from the ${B} full year — click to type the real actual` : "Typed actual — clear it to go back to the data"}
+                              onCommit={(v) => commit(setActual(plan, n.id, v * div), { ...emptyReport(n), label: `${n.name}: ${B} actual set to ${fmtU(v * div, plan.step, unit)} ${unitLabel(unit)}` })}
                               onClear={n.actual !== undefined ? () => commit(setActual(plan, n.id, null)) : undefined}
                             />
                           ) : (
@@ -855,8 +1047,8 @@ export function TargetScenarioPage() {
                           signed
                           tone={n.target >= n.base26 ? "pos" : "neg"}
                           disabled={!canEdit}
-                          title="Add this much on top of the 2026 full year"
-                          onCommit={(v) => applyTarget(n.id, n.base26 + v * div, `${n.name} set to 2026 ${v >= 0 ? "+" : "−"}${fmtU(Math.abs(v * div), plan.step, unit)} ${unitLabel(unit)}`)}
+                          title={`Add this much on top of the ${B} full year`}
+                          onCommit={(v) => applyTarget(n.id, n.base26 + v * div, `${n.name} set to ${B} ${v >= 0 ? "+" : "−"}${fmtU(Math.abs(v * div), plan.step, unit)} ${unitLabel(unit)}`)}
                         />
                       </td>
                       <td className="border-b border-slate-100 px-2 py-1.5">
@@ -946,17 +1138,19 @@ export function TargetScenarioPage() {
           )}
 
           {tab === "segments" && <SegmentsView plan={plan} siteFilter={siteFilter} />}
-          {tab === "months" && <MonthsView plan={plan} node={selected} />}
+          {tab === "months" && <MonthsView plan={plan} node={selected} onPick={setSelectedId} />}
+          {tab === "coe" && <CoeView plan={plan} siteFilter={siteFilter} />}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-[11.5px] text-slate-500">
           <span className="flex items-center gap-1">
             <Lock className="h-3 w-3 text-blue-600" /> {t("Pinned: kept when other units are rebalanced")}
           </span>
-          <span>Set a target three ways — an amount, a growth %, or + on top of 2026 — in Baht or million Baht. The level above never changes; the rest of its units share what&rsquo;s left.</span>
+          <span>Set a target three ways — an amount, a growth %, or + on top of {B} — in Baht or million Baht. The level above never changes; the rest of its units share what&rsquo;s left.</span>
           {!canEdit && <span className="ml-auto font-medium text-slate-600">View only — ask an admin for “Save scenarios” to edit.</span>}
         </div>
       </div>
+      {newPlanOpen && <NewPlanDialog fromYear={plan.targetYear} currentName={current.name} onCreate={(y, f, g) => void createPlan(y, f, g)} onClose={() => setNewPlanOpen(false)} />}
     </div>
     </UnitContext.Provider>
   );
@@ -976,7 +1170,9 @@ function KpiCard({
   onCommit,
   color,
   icon,
+  baseYear,
 }: {
+  baseYear: number;
   title: string;
   node: PlanNode;
   step: number;
@@ -1021,7 +1217,9 @@ function KpiCard({
         <span className="text-[12px] text-slate-400">{unitLabel(unit)}</span>
       </div>
       <div className="mt-1.5 flex items-center gap-2 text-[11.5px] text-slate-400">
-        <span className="tabular-nums">2026 {fmtU(node.base26, step, unit)}</span>
+        <span className="tabular-nums">
+          {baseYear} {fmtU(node.base26, step, unit)}
+        </span>
         {share !== undefined && (
           <>
             <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-100">
@@ -1269,7 +1467,9 @@ function SegmentsView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) 
   const rowsData = [...sites.map((s) => ({ id: s, label: plan.nodes[s].name, d: bySite[s] })), ...(sites.length > 1 ? [{ id: "total", label: "Network", d: total }] : [])];
   return (
     <div className="p-4">
-      <p className="mb-3 text-[12.5px] text-slate-500">2027 target in MB and growth vs the 2026 base, added up from every unit&rsquo;s segments. Change them in the Plan tab.</p>
+      <p className="mb-3 text-[12.5px] text-slate-500">
+        {plan.targetYear} target ({unitLabel(unit)}) and growth vs {plan.targetYear - 1}, added up from every unit&rsquo;s segments. Change them in the Plan tab.
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] border-separate border-spacing-0 text-[13px]">
           <thead>
@@ -1307,7 +1507,7 @@ function SegmentsView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) 
   );
 }
 
-function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
+function MonthsView({ plan, node, onPick }: { plan: Plan; node: PlanNode; onPick: (id: string) => void }) {
   const unit = useContext(UnitContext);
   const w = monthsOf(plan, node.id);
   const target = w.map((x) => x * node.target);
@@ -1319,12 +1519,12 @@ function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
       <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h3 className="text-[15px] font-semibold text-slate-900">{node.name}</h3>
         <span className="text-[12.5px] text-slate-500">
-          {fmtU(node.target, plan.step, unit)} {unitLabel(unit)} for {TARGET_META.target_year}, phased like {TARGET_META.base_year}&rsquo;s monthly revenue
+          {fmtU(node.target, plan.step, unit)} {unitLabel(unit)} for {plan.targetYear}, phased like {plan.targetYear - 1}&rsquo;s monthly revenue
         </span>
       </div>
       <div className="grid grid-cols-12 items-end gap-1.5 rounded-xl border border-slate-100 p-3" style={{ height: 180 }}>
         {target.map((t, i) => (
-          <div key={i} className="flex h-full flex-col justify-end gap-1" title={`${MONTHS[i]}: ${fmtU(t, plan.step, unit)} ${unitLabel(unit)} (2026 base ${fmtU(base[i], plan.step, unit)})`}>
+          <div key={i} className="flex h-full flex-col justify-end gap-1" title={`${MONTHS[i]}: ${fmtU(t, plan.step, unit)} ${unitLabel(unit)} (${plan.targetYear - 1} ${fmtU(base[i], plan.step, unit)})`}>
             <div className="flex flex-1 items-end gap-0.5">
               <div className="w-1/2 rounded-t bg-slate-200" style={{ height: `${(base[i] / max) * 100}%` }} />
               <div className="w-1/2 origin-bottom rounded-t bg-blue-600 [animation:grow-y_var(--dur-3)_var(--ease-out-soft)_backwards]" style={{ height: `${(t / max) * 100}%` }} />
@@ -1335,10 +1535,10 @@ function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
       </div>
       <div className="mt-1.5 flex gap-4 text-[11.5px] text-slate-500">
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-slate-200" /> 2026 base
+          <span className="h-2 w-2 rounded-sm bg-slate-200" /> {plan.targetYear - 1}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-blue-600" /> 2027 target
+          <span className="h-2 w-2 rounded-sm bg-blue-600" /> {plan.targetYear} target
         </span>
       </div>
       <div className="mt-4 overflow-x-auto">
@@ -1358,8 +1558,25 @@ function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
             {[node, ...kids].map((n, idx) => {
               const ww = monthsOf(plan, n.id);
               return (
-                <tr key={n.id} className={idx === 0 ? "font-semibold" : ""}>
-                  <td className="border-b border-slate-100 px-2 py-1.5 text-slate-800">{idx === 0 ? "Total" : n.name}</td>
+                <tr
+                  key={n.id}
+                  onClick={idx > 0 && n.children.length ? () => onPick(n.id) : undefined}
+                  className={clsx(idx === 0 ? "font-semibold" : n.children.length ? "cursor-pointer hover:bg-slate-50" : "")}
+                >
+                  <td className="border-b border-slate-100 px-2 py-1.5 text-slate-800">
+                    {idx === 0 ? (
+                      <span className="flex items-center gap-2">
+                        Total
+                        {node.parentId && (
+                          <button type="button" onClick={() => onPick(node.parentId!)} className="rounded px-1.5 text-[11.5px] font-normal text-blue-600 hover:bg-blue-50">
+                            ↑ {plan.nodes[node.parentId].name}
+                          </button>
+                        )}
+                      </span>
+                    ) : (
+                      <span className={clsx(n.children.length && "text-blue-700 underline-offset-2 hover:underline")}>{n.name}</span>
+                    )}
+                  </td>
                   {ww.map((x, i) => (
                     <td key={i} className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-700">
                       {fmtU(x * n.target, plan.step, unit)}
@@ -1372,6 +1589,187 @@ function MonthsView({ plan, node }: { plan: Plan; node: PlanNode }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function CoeView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) {
+  const unit = useContext(UnitContext);
+  const t = useT();
+  const { sites, rows } = coeTotals(plan, siteFilter);
+  const Y = plan.targetYear;
+  const groups = Array.from(new Set(rows.map((r) => r.group)));
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const total = { prior: sum(rows.map((r) => r.prior)), base: sum(rows.map((r) => r.base)), target: sum(rows.map((r) => r.target)) };
+  const g = (b: number, tg: number) => (b > 0 ? ((tg - b) / b) * 100 : 0);
+  const max = Math.max(...rows.map((r) => r.target), 1);
+  return (
+    <div className="p-4">
+      <p className="mb-3 text-[12.5px] text-slate-500">
+        {t("Each CoE / SBU added up across hospitals")} ({sites.map((s) => plan.nodes[s].name).join(", ")}). {t("Change targets in the Plan tab.")}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] border-separate border-spacing-0 text-[13px]">
+          <thead>
+            <tr className="text-[11.5px] text-slate-500">
+              <th className="border-b border-slate-200 px-3 py-2 text-left font-medium">CoE / SBU</th>
+              <th className="border-b border-slate-200 px-3 py-2 text-right font-medium">{t("{y} actual", { y: Y - 2 })}</th>
+              <th className="border-b border-slate-200 px-3 py-2 text-right font-medium">{t("{y} full year", { y: Y - 1 })}</th>
+              <th className="border-b border-slate-200 px-3 py-2 text-right font-medium text-slate-800">
+                {t("{y} target", { y: Y })} ({unitLabel(unit)})
+              </th>
+              <th className="border-b border-slate-200 px-3 py-2 text-right font-medium">{t("Growth")} %</th>
+              {sites.length > 1 &&
+                sites.map((sid) => (
+                  <th key={sid} className="border-b border-slate-200 px-3 py-2 text-right font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full" style={{ background: siteColor(sid) }} />
+                      {sid.replace(" (Premium)", "")}
+                    </span>
+                  </th>
+                ))}
+              <th className="w-[160px] border-b border-slate-200 px-3 py-2 font-medium">{t("Share of total")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((grp) => {
+              const list = rows.filter((r) => r.group === grp);
+              const gt = { prior: sum(list.map((r) => r.prior)), base: sum(list.map((r) => r.base)), target: sum(list.map((r) => r.target)) };
+              return (
+                <Fragment key={grp}>
+                  <tr className="bg-slate-50 font-semibold">
+                    <td className="border-b border-slate-100 px-3 py-2 text-slate-900">{grp}</td>
+                    <td className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-500">{fmtU(gt.prior, plan.step, unit)}</td>
+                    <td className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-600">{fmtU(gt.base, plan.step, unit)}</td>
+                    <td className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-900">{fmtU(gt.target, plan.step, unit)}</td>
+                    <td className={clsx("border-b border-slate-100 px-3 py-2 text-right tabular-nums", gt.target >= gt.base ? "text-emerald-700" : "text-rose-600")}>{fmtPct(g(gt.base, gt.target))}</td>
+                    {sites.length > 1 &&
+                      sites.map((sid) => (
+                        <td key={sid} className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-600">
+                          {fmtU(sum(list.map((r) => r.bySite[sid] || 0)), plan.step, unit)}
+                        </td>
+                      ))}
+                    <td className="border-b border-slate-100 px-3 py-2 text-[12px] tabular-nums text-slate-500">{total.target > 0 ? ((gt.target / total.target) * 100).toFixed(1) : "0"}%</td>
+                  </tr>
+                  {list.map((r) => (
+                    <tr key={r.name} className="hover:bg-slate-50">
+                      <td className="border-b border-slate-100 py-2 pl-7 pr-3 text-slate-800">{r.name}</td>
+                      <td className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-400">{fmtU(r.prior, plan.step, unit)}</td>
+                      <td className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-500">{fmtU(r.base, plan.step, unit)}</td>
+                      <td className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-900">{fmtU(r.target, plan.step, unit)}</td>
+                      <td className={clsx("border-b border-slate-100 px-3 py-2 text-right tabular-nums", r.target >= r.base ? "text-emerald-700" : "text-rose-600")}>{fmtPct(g(r.base, r.target))}</td>
+                      {sites.length > 1 &&
+                        sites.map((sid) => (
+                          <td key={sid} className="border-b border-slate-100 px-3 py-2 text-right tabular-nums text-slate-600">
+                            {r.bySite[sid] ? fmtU(r.bySite[sid], plan.step, unit) : <span className="text-slate-300">—</span>}
+                          </td>
+                        ))}
+                      <td className="border-b border-slate-100 px-3 py-2">
+                        <div className="flex h-2 overflow-hidden rounded-full bg-slate-100" title={sites.map((sid) => `${sid}: ${fmtU(r.bySite[sid] || 0, plan.step, unit)}`).join(" · ")}>
+                          {sites.map((sid) => (
+                            <div key={sid} className="h-full transition-[width] duration-300" style={{ width: `${((r.bySite[sid] || 0) / max) * 100}%`, background: siteColor(sid) }} />
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
+            <tr className="font-semibold">
+              <td className="px-3 py-2.5 text-slate-900">{t("Total")}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{fmtU(total.prior, plan.step, unit)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">{fmtU(total.base, plan.step, unit)}</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-slate-900">{fmtU(total.target, plan.step, unit)}</td>
+              <td className={clsx("px-3 py-2.5 text-right tabular-nums", total.target >= total.base ? "text-emerald-700" : "text-rose-600")}>{fmtPct(g(total.base, total.target))}</td>
+              {sites.length > 1 &&
+                sites.map((sid) => (
+                  <td key={sid} className="px-3 py-2.5 text-right tabular-nums text-slate-600">
+                    {fmtU(sum(rows.map((r) => r.bySite[sid] || 0)), plan.step, unit)}
+                  </td>
+                ))}
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function NewPlanDialog({ fromYear, currentName, onCreate, onClose }: { fromYear: number; currentName: string; onCreate: (year: number, from: "current" | "agreed", growth: number) => void; onClose: () => void }) {
+  const t = useT();
+  const agreedYear = TARGET_META.target_year;
+  const [year, setYear] = useState(String(fromYear + 1));
+  const [from, setFrom] = useState<"current" | "agreed">("current");
+  const [growth, setGrowth] = useState("0");
+  const y = parseInt(year, 10);
+  const minYear = from === "agreed" ? agreedYear : fromYear;
+  const ok = Number.isFinite(y) && y >= minYear && y <= minYear + 20;
+  return (
+    <div className="fade-enter fixed inset-0 z-[70] grid place-items-center bg-slate-900/35 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="newplan-title"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (ok) onCreate(y, from, parseFloat(growth) || 0);
+        }}
+        className="pop-in w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl"
+      >
+        <h3 id="newplan-title" className="text-[15px] font-semibold text-slate-900">
+          {t("New plan")}
+        </h3>
+        <p className="mt-1 text-[13px] text-slate-500">{t("Every plan shows three years: the actual two years back, the year before, and the year you plan.")}</p>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-[12.5px] font-medium text-slate-700">{t("Plan for year")}</span>
+          <input
+            autoFocus
+            inputMode="numeric"
+            value={year}
+            onChange={(e) => setYear(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+            className="no-focus-outline h-10 w-32 rounded-lg border border-slate-200 bg-white px-3 text-[15px] font-semibold tabular-nums text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          />
+          {Number.isFinite(y) && <span className="ml-3 text-[12.5px] text-slate-500">{`${y - 2} actual · ${y - 1} full year · ${y} target`}</span>}
+        </label>
+        <fieldset className="mt-4">
+          <legend className="mb-1 text-[12.5px] font-medium text-slate-700">{t("Start from")}</legend>
+          {(
+            [
+              ["current", `“${currentName}” (${fromYear})`, `Its ${fromYear} targets become the base year; units and sub-units carry over.`],
+              ["agreed", `Agreed data (${agreedYear})`, `The original ${agreedYear - 2}/${agreedYear - 1} data and Revise ${agreedYear} (V2) targets.`],
+            ] as const
+          ).map(([id, label, hint]) => (
+            <label key={id} className={clsx("mb-1.5 flex cursor-pointer gap-2.5 rounded-lg border p-2.5", from === id ? "border-blue-300 bg-blue-50/50" : "border-slate-200 hover:bg-slate-50")}>
+              <input type="radio" name="from" checked={from === id} onChange={() => setFrom(id)} className="mt-1 accent-blue-600" />
+              <span>
+                <span className="block text-[13px] font-medium text-slate-900">{label}</span>
+                <span className="block text-[12px] text-slate-500">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <label className="mt-3 block">
+          <span className="mb-1 block text-[12.5px] font-medium text-slate-700">{t("Starting growth per year %")}</span>
+          <input
+            inputMode="decimal"
+            value={growth}
+            onChange={(e) => setGrowth(e.target.value)}
+            className="no-focus-outline h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-[14px] tabular-nums text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          />
+          <span className="ml-3 text-[12px] text-slate-500">{t("Every unit starts with this growth; adjust afterwards.")}</span>
+        </label>
+        {!ok && <p className="mt-2 text-[12.5px] text-rose-600">{`Pick a year from ${minYear} to ${minYear + 20}.`}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-9 rounded-lg border border-slate-200 px-4 text-[13.5px] font-medium text-slate-700 hover:bg-slate-50">
+            {t("Cancel")}
+          </button>
+          <button type="submit" disabled={!ok} className="h-9 rounded-lg bg-blue-600 px-4 text-[13.5px] font-medium text-white transition hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50">
+            {t("Create plan")}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

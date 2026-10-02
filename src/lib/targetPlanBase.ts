@@ -46,7 +46,7 @@ export function buildBasePlan(): Plan {
   const nodes: Record<string, PlanNode> = {};
   // Months of the base year that are actual: everything before the data's as-of month.
   const asOf = new Date(TARGET_META.as_of_date);
-  const plan: Plan = { rootId: "PKT", step: DEFAULT_STEP, actualMonths: Number.isNaN(asOf.getTime()) ? 8 : asOf.getMonth(), nodes };
+  const plan: Plan = { rootId: "PKT", targetYear: TARGET_META.target_year, step: DEFAULT_STEP, actualMonths: Number.isNaN(asOf.getTime()) ? 8 : asOf.getMonth(), nodes };
   const snap = (VERIFIED_BASE_CASE?.snap || {}) as { siteCfg?: Record<string, Cfg>; rev?: { unit?: Record<string, Cfg> } };
 
   nodes.PKT = {
