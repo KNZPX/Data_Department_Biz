@@ -35,10 +35,16 @@ export interface PlanNode {
   months?: number[]; // 12 revenue-phasing weights (sum 1), inherited from the unit
   actual?: number; // THB actual so far this year, typed by a person (CoE / sub-unit only)
   dataBase26?: number; // the base26 from the data, kept when an actual overrides it
+  priorTyped?: number; // THB prior-year actual typed by a person (CoE / sub-unit only)
+  dataPrior25?: number; // the prior25 from the data, kept when a typed value overrides it
 }
 
+// Field names keep the first plan's years (prior25 / base26), but they mean
+// "two years before the target" and "the year before the target" for any plan.
 export interface Plan {
   rootId: string;
+  targetYear: number; // the year being planned; prior = targetYear − 2, base = targetYear − 1
+  rolled?: boolean; // base / prior come from an earlier plan, not the data
   step: number; // THB rounding step
   actualMonths: number; // how many months of the base year are actual (0–12); the rest is estimate
   nodes: Record<string, PlanNode>;
@@ -325,24 +331,69 @@ function hasActualBelow(plan: Plan, id: string): boolean {
   return n.children.some((c) => hasActualBelow(plan, c));
 }
 
-function rollUpBase(plan: Plan, id: string | null) {
+type Amount = "base26" | "prior25";
+
+function rollUpBase(plan: Plan, id: string | null, field: Amount = "base26") {
   while (id) {
     const n = plan.nodes[id];
-    const b = sum(childrenOf(plan, id).map((k) => k.base26));
-    plan.nodes[id] = { ...n, base26: b };
+    const b = sum(childrenOf(plan, id).map((k) => k[field]));
+    plan.nodes[id] = { ...n, [field]: b };
     id = n.parentId;
   }
 }
 
-function rescaleBase(plan: Plan, id: string, newBase: number) {
+function rescaleBase(plan: Plan, id: string, newValue: number, field: Amount = "base26") {
   const n = plan.nodes[id];
   const kids = childrenOf(plan, id);
-  plan.nodes[id] = { ...n, base26: newBase };
+  plan.nodes[id] = { ...n, [field]: newValue };
   if (!kids.length) return;
-  const old = sum(kids.map((k) => k.base26));
-  const weights = old > 0 ? kids.map((k) => k.base26) : kids.map((k) => k.target || 1);
+  const old = sum(kids.map((k) => k[field]));
+  const weights = old > 0 ? kids.map((k) => k[field]) : kids.map((k) => k.base26 || k.target || 1);
   const W = sum(weights);
-  kids.forEach((k, i) => rescaleBase(plan, k.id, W > 0 ? (newBase * weights[i]) / W : newBase / kids.length));
+  kids.forEach((k, i) => rescaleBase(plan, k.id, W > 0 ? (newValue * weights[i]) / W : newValue / kids.length, field));
+}
+
+/** Type the prior-year actual for a CoE / sub-unit (null = back to the data); totals above add up again. */
+export function setPrior(input: Plan, id: string, priorTHB: number | null): Plan {
+  const plan = clonePlan(input);
+  const n = plan.nodes[id];
+  const dataPrior = n.dataPrior25 ?? n.prior25;
+  rescaleBase(plan, id, priorTHB === null ? dataPrior : Math.max(0, priorTHB), "prior25");
+  plan.nodes[id] = {
+    ...plan.nodes[id],
+    priorTyped: priorTHB === null ? undefined : Math.max(0, priorTHB),
+    dataPrior25: priorTHB === null ? undefined : dataPrior,
+  };
+  rollUpBase(plan, n.parentId, "prior25");
+  return plan;
+}
+
+/**
+ * Start next year's plan from this one: this year's full year becomes the
+ * prior year, this plan's targets become the base, and every unit starts at
+ * `growth` % on top (pins, typed actuals and actual months reset).
+ */
+export function rollForward(input: Plan, growth = 0): Plan {
+  const plan = clonePlan(input);
+  for (const n of Object.values(plan.nodes)) {
+    plan.nodes[n.id] = {
+      ...n,
+      prior25: n.base26,
+      base26: n.target,
+      baseVisits26: targetVisits(n),
+      locked: false,
+      actual: undefined,
+      dataBase26: undefined,
+      priorTyped: undefined,
+      dataPrior25: undefined,
+    };
+  }
+  plan.targetYear = input.targetYear + 1;
+  plan.actualMonths = 0;
+  plan.rolled = true;
+  const root = plan.nodes[plan.rootId];
+  plan.nodes[root.id] = { ...root, target: roundTo(root.base26 * (1 + growth / 100), plan.step) };
+  return spreadEvenGrowth(plan, root.id);
 }
 
 /**
@@ -543,6 +594,12 @@ export function removeSub(input: Plan, subId: string): Plan {
 export interface PlanSnapshot {
   version: 2;
   step: number;
+  targetYear?: number;
+  // Plans rolled forward from another plan carry their own base / prior years.
+  bases?: Record<string, number>;
+  priors?: Record<string, number>;
+  visits?: Record<string, number>;
+  priorTyped?: Record<string, number>;
   actualMonths?: number;
   actuals?: Record<string, number>; // THB actual so far, per CoE / sub-unit
   targets: Record<string, number>; // THB per node id
@@ -555,13 +612,35 @@ export function toSnapshot(plan: Plan): PlanSnapshot {
   const locked: string[] = [];
   const subs: PlanSnapshot["subs"] = [];
   const actuals: Record<string, number> = {};
+  const priorTyped: Record<string, number> = {};
+  const rolled = plan.rolled;
+  const bases: Record<string, number> = {};
+  const priors: Record<string, number> = {};
+  const visits: Record<string, number> = {};
   for (const n of Object.values(plan.nodes)) {
     if (n.actual !== undefined) actuals[n.id] = Math.round(n.actual);
+    if (n.priorTyped !== undefined) priorTyped[n.id] = Math.round(n.priorTyped);
+    if (rolled) {
+      bases[n.id] = Math.round(n.dataBase26 ?? n.base26);
+      priors[n.id] = Math.round(n.dataPrior25 ?? n.prior25);
+      visits[n.id] = Math.round(n.baseVisits26);
+    }
     targets[n.id] = Math.round(n.target);
     if (n.locked) locked.push(n.id);
     if (n.custom && n.level === "sub") subs.push({ coeId: n.parentId!, name: n.name });
   }
-  return { version: 2, step: plan.step, actualMonths: plan.actualMonths, actuals, targets, locked, subs };
+  return {
+    version: 2,
+    step: plan.step,
+    targetYear: plan.targetYear,
+    actualMonths: plan.actualMonths,
+    actuals,
+    priorTyped,
+    ...(rolled ? { bases, priors, visits } : {}),
+    targets,
+    locked,
+    subs,
+  };
 }
 
 /**
@@ -573,7 +652,21 @@ export function fromSnapshot(base: Plan, snap: PlanSnapshot): Plan {
   let plan = clonePlan(base);
   if (snap.step) plan.step = snap.step;
   for (const s of snap.subs || []) if (plan.nodes[s.coeId]) plan = addSub(plan, s.coeId, s.name).plan;
+  if (typeof snap.targetYear === "number") plan.targetYear = snap.targetYear;
+  if (snap.bases) {
+    // A rolled-forward plan: its own base and prior years replace the data's.
+    plan.rolled = true;
+    for (const n of Object.values(plan.nodes)) {
+      plan.nodes[n.id] = {
+        ...n,
+        base26: snap.bases[n.id] ?? n.base26,
+        prior25: snap.priors?.[n.id] ?? n.prior25,
+        baseVisits26: snap.visits?.[n.id] ?? n.baseVisits26,
+      };
+    }
+  }
   if (typeof snap.actualMonths === "number") plan.actualMonths = snap.actualMonths;
+  for (const [id, v] of Object.entries(snap.priorTyped || {})) if (plan.nodes[id]) plan = setPrior(plan, id, v);
   for (const [id, a] of Object.entries(snap.actuals || {})) if (plan.nodes[id]) plan = setActual(plan, id, a);
   const locked = new Set(snap.locked || []);
   const t = snap.targets || {};
