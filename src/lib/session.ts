@@ -10,7 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import type { NextResponse } from "next/server";
 import { getSupabaseClient } from "./db";
-import { resolveAccess, type Access, type Permissions } from "./access";
+import { resolveAccess, type Access, type AccessPolicy, type Permissions } from "./access";
 
 export const SESSION_COOKIE = "biz_sid";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days (refresh token keeps access alive)
@@ -155,6 +155,21 @@ export async function getOnlineUsers(minutes = 10): Promise<{ email: string; nam
 export type CurrentUser = SessionUser & { access: Access; isGuest: boolean };
 
 /** Who is calling, with their resolved page/module access (null when signed out or disabled). */
+// The team's page policy changes rarely; keep it for a short while per server instance.
+let policyCache: { at: number; value: AccessPolicy | null } | null = null;
+export async function getAccessPolicy(): Promise<AccessPolicy | null> {
+  if (policyCache && Date.now() - policyCache.at < 30_000) return policyCache.value;
+  const secret = await readSessionSecret().catch(() => null);
+  if (!secret) return policyCache?.value ?? null;
+  const { data } = await getSupabaseClient().rpc("app_settings_get", { p_session: hashSecret(secret), p_key: "access_policy" });
+  const value = (data && (data as { value?: AccessPolicy }).value) || null;
+  policyCache = { at: Date.now(), value };
+  return value;
+}
+export function clearAccessPolicyCache() {
+  policyCache = null;
+}
+
 export async function getCurrentAccess(): Promise<CurrentUser | null> {
   const s = await getCurrentSession().catch(() => null);
   if (!s) return null;
@@ -165,7 +180,7 @@ export async function getCurrentAccess(): Promise<CurrentUser | null> {
     .eq("email", s.userEmail.toLowerCase())
     .maybeSingle();
   if (data && data.is_active === false) return null;
-  const access = resolveAccess(data?.role || "member", (data?.permissions as Permissions) || null);
+  const access = resolveAccess(data?.role || "member", (data?.permissions as Permissions) || null, await getAccessPolicy());
   return { email: s.userEmail, name: data?.name || s.userName, access, isGuest: Boolean(data?.is_guest) };
 }
 

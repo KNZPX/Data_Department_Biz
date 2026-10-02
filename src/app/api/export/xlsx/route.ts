@@ -1,17 +1,18 @@
 import { NextRequest } from "next/server";
 import ExcelJS from "exceljs";
-import { requirePage } from "@/lib/guard";
+import { getCurrentAccess } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 type Col = { header: string; key: string; width?: number; numFmt?: string };
 type Sheet = { name: string; columns: Col[]; rows: Record<string, string | number | null>[]; levels?: number[]; bold?: boolean[] };
 
-// POST { fileName, sheets } → .xlsx. The planner sends the numbers it shows
-// (already in the person's unit), so the file matches the screen.
+// POST { fileName, sheets } → .xlsx. Pages send the rows they show (already
+// formatted the way the person sees them), so the file matches the screen.
 export async function POST(request: NextRequest) {
-  const g = await requirePage("target-scenario");
-  if (g.deny) return g.deny;
+  const me = await getCurrentAccess();
+  if (!me) return Response.json({ error: "Sign in first." }, { status: 401 });
+  const g = { user: me };
   let body: { fileName?: string; title?: string; sheets?: Sheet[] };
   try {
     body = await request.json();

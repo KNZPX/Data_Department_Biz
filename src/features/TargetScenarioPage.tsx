@@ -47,6 +47,8 @@ import {
   rollForward,
   setActual,
   setActualMonths,
+  setBase,
+  setBottomUp,
   setPrior,
   setLocked,
   setTarget,
@@ -59,7 +61,9 @@ import {
   type PlanNode,
   type PlanSnapshot,
 } from "@/lib/targetPlan";
-import { DEFAULT_STEP, buildBasePlan, legacyToTargets } from "@/lib/targetPlanBase";
+import { DEFAULT_STEP, blankFromOrg, buildBasePlan, buildBlankPlan, legacyToTargets } from "@/lib/targetPlanBase";
+import { defaultOrgStructure } from "@/lib/orgStructure";
+import { useOrgStructure } from "@/lib/useOrgStructure";
 import { HOSPITAL_PROFILES, TARGET_META } from "@/data/targetScenarioData";
 import { useT } from "@/lib/i18n";
 import { usePersonalPref } from "@/lib/usePersonalPref";
@@ -168,6 +172,8 @@ function emptyReport(n: PlanNode): ChangeReport {
 
 function loadScenario(base: Plan, s: SavedScenario): Plan {
   const snap = s.snapshot || {};
+  // Plans typed from scratch carry their own organisation.
+  if (snap.plan?.version === 2 && snap.plan.blank) return fromSnapshot(buildBlankPlan(snap.plan.blank, snap.plan.targetYear || base.targetYear), snap.plan as PlanSnapshot);
   if (snap.plan?.version === 2) return fromSnapshot(base, snap.plan as PlanSnapshot);
   const targets = legacyToTargets(base, snap);
   if (!targets) return base;
@@ -178,9 +184,11 @@ export function TargetScenarioPage() {
   const { can } = useAccess();
   const t = useT();
   const canEdit = can("target.edit");
+  // Older saved scenarios were built on the 2027 planning file; new plans start blank.
   const basePlan = useMemo(() => buildBasePlan(), []);
-
-  const [plan, setPlan] = useState<Plan>(basePlan);
+  const { org, meta: orgMeta } = useOrgStructure();
+  const firstYear = new Date().getFullYear() + 1;
+  const [plan, setPlan] = useState<Plan>(() => buildBlankPlan(blankFromOrg(defaultOrgStructure()), firstYear));
   const [past, setPast] = useState<Plan[]>([]);
   const [future, setFuture] = useState<Plan[]>([]);
   const [report, setReport] = useState<(ChangeReport & { label: string }) | null>(null);
@@ -193,20 +201,31 @@ export function TargetScenarioPage() {
   const [tab, setTab] = useState<Tab>("plan");
   const [siteFilter, setSiteFilter] = useState<string>("ALL");
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["PKT", ...basePlan.nodes.PKT.children]));
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["PKT", ...blankFromOrg(defaultOrgStructure()).sites.map((s) => s.code)]));
   const [selectedId, setSelectedId] = useState<string>("PKT");
   const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
   const [current, setCurrent] = useState<{ id: string | null; name: string; updatedAt: string | null; savedBy: string | null }>({
     id: null,
-    name: "Agreed plan · Revise 2027 (V2)",
+    name: `New ${firstYear} plan`,
     updatedAt: null,
     savedBy: null,
   });
-  const [savedSig, setSavedSig] = useState(() => JSON.stringify(toSnapshot(basePlan)));
+  const [savedSig, setSavedSig] = useState(() => JSON.stringify(toSnapshot(buildBlankPlan(blankFromOrg(defaultOrgStructure()), firstYear))));
   const [scenarioMenu, setScenarioMenu] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // When the team's organisation finishes loading, rebuild the untouched starting plan on it.
+  useEffect(() => {
+    if (!orgMeta.saved || current.id || past.length || !plan.blank) return;
+    const next = buildBlankPlan(blankFromOrg(org), plan.targetYear);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPlan(next);
+    setSavedSig(JSON.stringify(toSnapshot(next)));
+    setExpanded(new Set(["PKT", ...next.nodes.PKT.children]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org, orgMeta.saved]);
 
   const issues = useMemo(() => findIssues(plan), [plan]);
   // The three years on screen: actual two years back, the base year, the year being planned.
@@ -332,13 +351,14 @@ export function TargetScenarioPage() {
 
   // ---- scenarios ---------------------------------------------------------------
   function open(s: SavedScenario | null) {
-    const next = s ? loadScenario(basePlan, s) : basePlan;
+    const next = s ? loadScenario(basePlan, s) : buildBlankPlan(blankFromOrg(org), plan.targetYear);
     setPlan(next);
     setPast([]);
     setFuture([]);
     setReport(null);
     setSavedSig(JSON.stringify(toSnapshot(next)));
-    setCurrent(s ? { id: s.id, name: s.name, updatedAt: s.updated_at, savedBy: s.created_by || null } : { id: null, name: "Agreed plan · Revise 2027 (V2)", updatedAt: null, savedBy: null });
+    setCurrent(s ? { id: s.id, name: s.name, updatedAt: s.updated_at, savedBy: s.created_by || null } : { id: null, name: `New ${next.targetYear} plan`, updatedAt: null, savedBy: null });
+    setExpanded(new Set(["PKT", ...next.nodes.PKT.children]));
     setScenarioMenu(false);
     if (s && findIssues(next).length === 0 && !s.snapshot?.plan) toast.info("Opened an older scenario", { body: "Its numbers were re-split so every level adds up." });
   }
@@ -520,7 +540,7 @@ export function TargetScenarioPage() {
         { header: `${Y} target (${u})`, key: "target", width: 16, numFmt: nf },
         { header: "Growth %", key: "growth", width: 10, numFmt: "0.0" },
       ];
-      const res = await fetch("/api/target-scenario/export", {
+      const res = await fetch("/api/export/xlsx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -549,14 +569,15 @@ export function TargetScenarioPage() {
 
   // ---- new plan for any year ----------------------------------------------------
   const [newPlanOpen, setNewPlanOpen] = useState(false);
-  async function createPlan(year: number, from: "current" | "agreed", growth: number) {
+  async function createPlan(year: number, from: "current" | "blank", growth: number) {
     if (dirty) {
       const ok = await confirmDialog({ title: "Discard unsaved changes?", body: `You have changes to “${current.name}” that aren't saved.`, confirmLabel: "Discard", danger: true });
       if (!ok) return;
     }
-    let next = from === "agreed" ? basePlan : plan;
+    let next = from === "blank" ? buildBlankPlan(blankFromOrg(org), year) : plan;
     if (year < next.targetYear) return void toast.error(`Pick ${next.targetYear} or later`);
     while (next.targetYear < year) next = rollForward(next, growth);
+    setExpanded(new Set(["PKT", ...next.nodes.PKT.children]));
     setPlan(next);
     setPast([]);
     setFuture([]);
@@ -565,7 +586,9 @@ export function TargetScenarioPage() {
     setCurrent({ id: null, name: `${year} plan`, updatedAt: null, savedBy: null });
     setNewPlanOpen(false);
     setScenarioMenu(false);
-    toast(`${year} plan ready`, { body: `${year - 2} and ${year - 1} come from ${from === "agreed" ? "the agreed data" : `“${current.name}”`}. Save it to share with the team.` });
+    toast(`${year} plan ready`, {
+      body: from === "blank" ? `Type ${year - 2}, ${year - 1} and ${year} numbers for each unit. Save it to share with the team.` : `${year - 2} and ${year - 1} come from “${current.name}”. Save it to share with the team.`,
+    });
   }
 
   // ---- visible rows ------------------------------------------------------------
@@ -641,13 +664,6 @@ export function TargetScenarioPage() {
           </button>
           {scenarioMenu && (
             <div role="menu" className="pop-in absolute left-0 top-12 z-30 w-[min(92vw,380px)] rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_12px_32px_-8px_rgb(16_24_40/0.2)]">
-              <button type="button" onClick={() => void switchTo(null)} className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50">
-                <Sparkles className="mt-0.5 h-4 w-4 text-blue-600" />
-                <span>
-                  <span className="block text-[13px] font-medium text-slate-900">{t("Start from the agreed plan")}</span>
-                  <span className="block text-[12px] text-slate-500">Revise 2027 (V2): 7,550 MB · BPK 5,140 · BSI 2,035 · DBK 375</span>
-                </span>
-              </button>
               {canEdit && (
                 <button type="button" onClick={() => setNewPlanOpen(true)} className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-slate-50">
                   <Plus className="mt-0.5 h-4 w-4 text-blue-600" />
@@ -714,6 +730,27 @@ export function TargetScenarioPage() {
             <button type="button" onClick={redo} disabled={!future.length} className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="Redo (Ctrl Y)" aria-label="Redo">
               <Redo2 className="h-4 w-4" />
             </button>
+          </div>
+          <div className="flex h-9 items-center rounded-lg border border-slate-200 p-0.5 text-[12.5px]" role="radiogroup" aria-label="How totals work">
+            {(
+              [
+                [false, t("From the top"), "Totals are fixed; changing a unit moves its siblings"],
+                [true, t("Add up from units"), "Totals are the sum of the units below them"],
+              ] as const
+            ).map(([v, label, hint]) => (
+              <button
+                key={String(v)}
+                type="button"
+                role="radio"
+                aria-checked={!!plan.bottomUp === v}
+                disabled={!canEdit}
+                title={hint}
+                onClick={() => commit(setBottomUp(plan, v), undefined)}
+                className={clsx("h-full rounded-md px-2.5 font-medium transition", !!plan.bottomUp === v ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800")}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <div className="flex h-9 items-center rounded-lg border border-slate-200 p-0.5 text-[12.5px]" role="radiogroup" aria-label="Unit">
             {(["MB", "THB"] as const).map((u) => (
@@ -1011,7 +1048,20 @@ export function TargetScenarioPage() {
                           )}
                         </td>
                       )}
-                      <td className="border-b border-slate-100 px-2 py-1.5 text-right tabular-nums text-slate-500">{n.base26 ? fmtU(n.base26, plan.step, unit) : "—"}</td>
+                      <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
+                        {n.level === "coe" || n.level === "sub" ? (
+                          <NumberCell
+                            value={n.base26 / div}
+                            decimals={dec}
+                            disabled={!canEdit}
+                            muted={n.actual !== undefined}
+                            title={n.actual !== undefined ? `Worked out from the typed ${B} actual — type here to set the full year yourself` : `Type the ${B} full year`}
+                            onCommit={(v) => commit(setBase(plan, n.id, v * div), { ...emptyReport(n), label: `${n.name}: ${B} full year set to ${fmtU(v * div, plan.step, unit)} ${unitLabel(unit)}` })}
+                          />
+                        ) : (
+                          <span className="block px-2 text-right tabular-nums text-slate-500">{n.base26 ? fmtU(n.base26, plan.step, unit) : "—"}</span>
+                        )}
+                      </td>
                       <td className="border-b border-slate-100 px-2 py-1" onClick={(e) => e.stopPropagation()}>
                         <NumberCell
                           value={n.target / div}
@@ -1150,7 +1200,7 @@ export function TargetScenarioPage() {
           {!canEdit && <span className="ml-auto font-medium text-slate-600">View only — ask an admin for “Save scenarios” to edit.</span>}
         </div>
       </div>
-      {newPlanOpen && <NewPlanDialog fromYear={plan.targetYear} currentName={current.name} onCreate={(y, f, g) => void createPlan(y, f, g)} onClose={() => setNewPlanOpen(false)} />}
+      {newPlanOpen && <NewPlanDialog fromYear={plan.targetYear} orgUnits={blankFromOrg(org).units.length} currentName={current.name} onCreate={(y, f, g) => void createPlan(y, f, g)} onClose={() => setNewPlanOpen(false)} />}
     </div>
     </UnitContext.Provider>
   );
@@ -1697,14 +1747,25 @@ function CoeView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) {
   );
 }
 
-function NewPlanDialog({ fromYear, currentName, onCreate, onClose }: { fromYear: number; currentName: string; onCreate: (year: number, from: "current" | "agreed", growth: number) => void; onClose: () => void }) {
+function NewPlanDialog({
+  fromYear,
+  orgUnits,
+  currentName,
+  onCreate,
+  onClose,
+}: {
+  fromYear: number;
+  orgUnits: number;
+  currentName: string;
+  onCreate: (year: number, from: "current" | "blank", growth: number) => void;
+  onClose: () => void;
+}) {
   const t = useT();
-  const agreedYear = TARGET_META.target_year;
   const [year, setYear] = useState(String(fromYear + 1));
-  const [from, setFrom] = useState<"current" | "agreed">("current");
+  const [from, setFrom] = useState<"current" | "blank">("blank");
   const [growth, setGrowth] = useState("0");
   const y = parseInt(year, 10);
-  const minYear = from === "agreed" ? agreedYear : fromYear;
+  const minYear = from === "blank" ? 2000 : fromYear;
   const ok = Number.isFinite(y) && y >= minYear && y <= minYear + 20;
   return (
     <div className="fade-enter fixed inset-0 z-[70] grid place-items-center bg-slate-900/35 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -1737,8 +1798,8 @@ function NewPlanDialog({ fromYear, currentName, onCreate, onClose }: { fromYear:
           <legend className="mb-1 text-[12.5px] font-medium text-slate-700">{t("Start from")}</legend>
           {(
             [
-              ["current", `“${currentName}” (${fromYear})`, `Its ${fromYear} targets become the base year; units and sub-units carry over.`],
-              ["agreed", `Agreed data (${agreedYear})`, `The original ${agreedYear - 2}/${agreedYear - 1} data and Revise ${agreedYear} (V2) targets.`],
+              ["blank", t("Blank — type every number"), `All ${orgUnits} active CoE / SBU units from Settings → Organisation, every number at zero.`],
+              ["current", `${t("Roll forward")} “${currentName}” (${fromYear})`, `Its ${fromYear} targets become the base year; units and sub-units carry over.`],
             ] as const
           ).map(([id, label, hint]) => (
             <label key={id} className={clsx("mb-1.5 flex cursor-pointer gap-2.5 rounded-lg border p-2.5", from === id ? "border-blue-300 bg-blue-50/50" : "border-slate-200 hover:bg-slate-50")}>
@@ -1750,6 +1811,7 @@ function NewPlanDialog({ fromYear, currentName, onCreate, onClose }: { fromYear:
             </label>
           ))}
         </fieldset>
+        {from === "current" && (
         <label className="mt-3 block">
           <span className="mb-1 block text-[12.5px] font-medium text-slate-700">{t("Starting growth per year %")}</span>
           <input
@@ -1760,6 +1822,7 @@ function NewPlanDialog({ fromYear, currentName, onCreate, onClose }: { fromYear:
           />
           <span className="ml-3 text-[12px] text-slate-500">{t("Every unit starts with this growth; adjust afterwards.")}</span>
         </label>
+        )}
         {!ok && <p className="mt-2 text-[12.5px] text-rose-600">{`Pick a year from ${minYear} to ${minYear + 20}.`}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-slate-200 px-4 text-[13.5px] font-medium text-slate-700 hover:bg-slate-50">

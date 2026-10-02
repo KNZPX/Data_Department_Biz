@@ -83,3 +83,18 @@ begin
     execute format('grant select, insert, update, delete on public.%I to anon, authenticated', t);
   end loop;
 end $$;
+
+-- EBO & OKR plans: one row per CoE / SBU (and hospital, or ALL) per year.
+create table if not exists public.okr_plans (
+  id text primary key,
+  year int not null,
+  unit text not null,
+  site text not null default 'ALL',
+  data jsonb not null default '{}'::jsonb,
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists okr_plans_year_idx on public.okr_plans (year);
+alter table public.okr_plans enable row level security;
+create policy "signed-in sessions" on public.okr_plans for all to anon, authenticated using ((select public._request_session_ok())) with check ((select public._request_session_ok()));

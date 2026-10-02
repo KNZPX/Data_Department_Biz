@@ -61,13 +61,29 @@ export const PAGES: PageDef[] = [
     href: "/target-scenario",
     modules: [{ id: "target.edit", label: "Save scenarios" }],
   },
+  {
+    id: "okr",
+    label: "EBO & OKR",
+    href: "/okr",
+    modules: [{ id: "okr.edit", label: "Edit EBOs and OKRs" }],
+  },
   { id: "users", label: "People & access", href: "/users", adminOnly: true, modules: [] },
   { id: "changelog", label: "Activity log", href: "/changelog", modules: [] },
   { id: "settings", label: "Settings", href: "/settings", modules: [] },
 ];
 
 export type Permissions = { pages?: string[]; modules?: string[] } | null;
-export type Access = { role: Role; pages: string[]; modules: string[] };
+export type Access = { role: Role; pages: string[]; modules: string[]; hidden?: string[] };
+
+/**
+ * Team-wide page policy set by admins in Settings → Pages & access:
+ * pages switched off for everyone (admins still see them), and what each
+ * role gets by default. People with their own permissions keep those.
+ */
+export type AccessPolicy = {
+  hidden?: string[];
+  roles?: Partial<Record<"member" | "guest", { pages: string[]; modules: string[] }>>;
+};
 
 const ALL_PAGES = PAGES.map((p) => p.id);
 const ALL_MODULES = PAGES.flatMap((p) => p.modules.map((m) => m.id));
@@ -83,13 +99,21 @@ export function defaultPermissions(role: Role): { pages: string[]; modules: stri
   };
 }
 
-export function resolveAccess(role: Role | string | null | undefined, perms: Permissions): Access {
+/** What a role gets by default: the admin's policy if set, else the built-in defaults. */
+export function roleDefaults(role: Role, policy?: AccessPolicy | null) {
+  if (role === "admin") return defaultPermissions("admin");
+  const set = policy?.roles?.[role];
+  return set ? { pages: set.pages.filter((p) => ALL_PAGES.includes(p)), modules: set.modules.filter((m) => ALL_MODULES.includes(m)) } : defaultPermissions(role);
+}
+
+export function resolveAccess(role: Role | string | null | undefined, perms: Permissions, policy?: AccessPolicy | null): Access {
   const r: Role = role === "admin" || role === "guest" ? role : "member";
-  if (r === "admin") return { role: r, ...defaultPermissions("admin") };
-  const d = defaultPermissions(r);
-  const pages = (perms?.pages ?? d.pages).filter((p) => p !== "users");
+  const hidden = (policy?.hidden || []).filter((p) => ALL_PAGES.includes(p) && p !== "settings");
+  if (r === "admin") return { role: r, ...defaultPermissions("admin"), hidden };
+  const d = roleDefaults(r, policy);
+  const pages = (perms?.pages ?? d.pages).filter((p) => p !== "users" && !hidden.includes(p));
   const modules = perms?.modules ?? d.modules;
-  return { role: r, pages, modules };
+  return { role: r, pages, modules, hidden };
 }
 
 export function canPage(access: Access | null, pageId: string) {
@@ -107,5 +131,7 @@ export function canModule(access: Access | null, moduleId: string) {
 
 export function pageForPath(pathname: string): PageDef | undefined {
   if (pathname === "/") return PAGES[0];
-  return PAGES.find((p) => p.href !== "/" && pathname.startsWith(p.href));
+  // DAX diagrams are part of the DAX dictionary, so they follow its access.
+  const path = pathname === "/dax-diagrams" || pathname.startsWith("/dax-diagrams/") ? "/dax" : pathname;
+  return PAGES.find((p) => p.href !== "/" && (path === p.href || path.startsWith(p.href + "/")));
 }

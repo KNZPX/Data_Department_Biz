@@ -96,7 +96,7 @@ export function DaxDiagramBoard({
 
   async function openFull() {
     await persist(latest.current);
-    window.open(`/whiteboard?boardId=${encodeURIComponent(boardId)}`, "_blank");
+    window.open(`/dax-diagrams?boardId=${encodeURIComponent(boardId)}`, "_blank");
   }
 
   return (

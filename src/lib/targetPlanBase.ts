@@ -2,7 +2,7 @@
 // agreed "Revise 2027 (V2)" numbers: network 7,550 MB, sites 5,140 / 2,035 / 375 MB,
 // and each CoE/SBU's MB where it was set. Everything below is split by base.
 import { HOSPITAL_PROFILES, TARGET_META, TARGET_SITES, TARGET_UNITS, VERIFIED_BASE_CASE } from "../data/targetScenarioData";
-import { MB, allocate, buildSettingBranch, type Plan, type PlanNode } from "./targetPlan";
+import { MB, allocate, buildSettingBranch, type BlankStructure, type Plan, type PlanNode } from "./targetPlan";
 
 // Share of a unit's revenue that is OPD (the rest IPD), by specialty.
 const OPD_RATIO: Record<string, number> = {
@@ -177,4 +177,40 @@ export function legacyToTargets(base: Plan, snapshot: unknown): Record<string, n
   }
   if (total > 0) out.PKT = typeof s.revTgt === "number" && s.revTgt > 0 ? s.revTgt : total;
   return Object.keys(out).length ? out : null;
+}
+
+/** The organisation in the shape a blank plan keeps with itself. */
+export function blankFromOrg(org: { sites: { code: string; name: string; color?: string; active?: boolean }[]; units: { name: string; group: string; sites: string[]; opdShare?: number; active?: boolean }[] }): BlankStructure {
+  const sites = org.sites.filter((s) => s.active !== false).map((s) => ({ code: s.code, name: s.name, color: s.color }));
+  const codes = new Set(sites.map((s) => s.code));
+  return {
+    sites,
+    units: org.units
+      .filter((u) => u.active !== false)
+      .map((u) => ({ name: u.name, group: u.group, sites: u.sites.filter((c) => codes.has(c)), opdShare: u.opdShare }))
+      .filter((u) => u.sites.length),
+  };
+}
+
+/**
+ * A plan with every number at zero, on the team's organisation, for any year.
+ * People type the actuals, the base year and the targets themselves; totals
+ * add up from the units (bottom-up) until someone switches to top-down.
+ */
+export function buildBlankPlan(structure: BlankStructure, targetYear: number): Plan {
+  const nodes: Record<string, PlanNode> = {};
+  const plan: Plan = { rootId: "PKT", targetYear, step: DEFAULT_STEP, actualMonths: 0, nodes, rolled: true, bottomUp: true, blank: structure };
+  const zero = { base26: 0, prior25: 0, baseVisits26: 0, target: 0, locked: false };
+  nodes.PKT = { id: "PKT", parentId: null, level: "network", name: "Phuket network", site: "PKT", children: [], ...zero };
+  for (const s of structure.sites) {
+    nodes[s.code] = { id: s.code, parentId: "PKT", level: "site", name: s.name || s.code, site: s.code, children: [], ...zero };
+    nodes.PKT.children.push(s.code);
+    for (const u of structure.units.filter((x) => x.sites.includes(s.code))) {
+      const id = `${s.code}||${u.name}`;
+      nodes[id] = { id, parentId: s.code, level: "coe", name: u.name, site: s.code, group: u.group, children: [], ...zero };
+      nodes[s.code].children.push(id);
+      buildSettingBranch(plan, id, { opd: u.opdShare ?? 0.55, market: SEGMENT_MIX[s.code] || { Thai: 0.5, Expat: 0.25, "Fly-in": 0.25 } });
+    }
+  }
+  return plan;
 }

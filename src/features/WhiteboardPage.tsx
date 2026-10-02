@@ -86,7 +86,9 @@ async function saveBoard(b: GalleryBoard) {
   });
 }
 
-export function WhiteboardPage() {
+export const isDaxBoard = (b: { id: string; folder_id?: string }) => b.id.startsWith("dax_") || b.folder_id === "folder_dax_diagrams";
+
+export function WhiteboardPage({ kind = "plan" }: { kind?: "plan" | "dax" }) {
   const { can } = useAccess();
   const { user } = useAuth();
   const canEdit = can("whiteboard.edit");
@@ -97,8 +99,9 @@ export function WhiteboardPage() {
   const load = useCallback(async () => {
     const res = await fetch("/api/whiteboard", { cache: "no-store" });
     const json = res.ok ? await res.json() : { boards: [] };
-    return ((json.boards || []) as ApiBoard[]).map(toGallery);
-  }, []);
+    // Planning boards and DAX formula diagrams are listed on separate pages.
+    return ((json.boards || []) as ApiBoard[]).map(toGallery).filter((b) => (kind === "dax" ? isDaxBoard(b) : !isDaxBoard(b)));
+  }, [kind]);
 
   useEffect(() => {
     let alive = true;
@@ -206,6 +209,7 @@ export function WhiteboardPage() {
 
   return (
     <BoardGallery
+      kind={kind}
       canEdit={canEdit}
       boards={boards}
       loading={loading}

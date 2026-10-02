@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     if (body.action === "delete" && body.id) {
-      await deleteDbWhiteboardBoard(body.id);
+      await deleteDbWhiteboardBoard(body.id, _g.user.name || _g.user.email);
       return NextResponse.json({ success: true, message: "Deleted board" });
     }
 
@@ -78,7 +78,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Missing board id" }, { status: 400 });
     }
 
-    await deleteDbWhiteboardBoard(id);
+    await deleteDbWhiteboardBoard(id, _g.user.name || _g.user.email);
     return NextResponse.json({ success: true, message: `Deleted board #${id}` });
   } catch (error: any) {
     console.error("DELETE /api/whiteboard error:", error);

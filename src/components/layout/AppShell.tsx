@@ -23,6 +23,8 @@ import {
   TrendingUp,
   Users,
   Workflow,
+  GitFork,
+  Flag,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -57,12 +59,16 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Modeling",
     items: [
       { href: "/dax", label: "DAX dictionary", hint: "Measures and columns of each semantic model", icon: FunctionSquare },
-      { href: "/whiteboard", label: "Whiteboard", hint: "Workflow and data-flow canvases", icon: Workflow },
+      { href: "/dax-diagrams", label: "DAX diagrams", hint: "How each measure is calculated", icon: GitFork },
     ],
   },
   {
     title: "Planning",
-    items: [{ href: "/target-scenario", label: "Target scenario", hint: "BDMS Phuket 2027 target simulator", icon: TrendingUp }],
+    items: [
+      { href: "/target-scenario", label: "Target scenario", hint: "Yearly revenue targets, delegated down to every unit", icon: TrendingUp },
+      { href: "/okr", label: "EBO & OKR", hint: "Business outcomes and key results for each CoE / SBU", icon: Flag },
+      { href: "/whiteboard", label: "Whiteboard", hint: "Plan work together on a canvas", icon: Workflow },
+    ],
   },
   {
     title: "Admin",
@@ -77,7 +83,7 @@ export const NAV_GROUPS: NavGroup[] = [
 const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
 
 function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
 }
 
 function initials(name?: string | null) {
@@ -103,7 +109,8 @@ function PageFrame({ children }: { children: React.ReactNode }) {
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, logout, refreshAuth, isGuest } = useAuth();
-  const { canPage } = useAccess();
+  const { canPage, access } = useAccess();
+  const hiddenPages = new Set(access?.hidden || []);
   const { appearance, setAppearance, loadFor } = useTheme();
   const t = useT();
   const visibleGroups = NAV_GROUPS.map((g) => ({
@@ -357,6 +364,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                         strokeWidth={active ? 2.1 : 1.8}
                       />
                       {!narrow && <span className="truncate transition-transform duration-300 group-hover:translate-x-0.5">{t(item.label)}</span>}
+                      {!narrow && hiddenPages.has(pageForPath(item.href)?.id || "") && (
+                        <span className="ml-auto rounded bg-slate-100 px-1.5 text-[10px] font-medium text-slate-500" title="Switched off for the team — only admins see it">
+                          off
+                        </span>
+                      )}
                     </Link>
                   </li>
                 );

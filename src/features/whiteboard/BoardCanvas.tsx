@@ -141,9 +141,16 @@ const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 // Miro look: grey canvas, floating white panels, #4262FF accent, near-black ink.
 const INK = "#1A1A1A";
+/** The app's motion setting (Settings → Appearance) or the OS asks for less movement. */
+function reducedMotion() {
+  if (typeof window === "undefined") return true;
+  const m = document.documentElement.dataset.motion;
+  return m === "off" || m === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 const PANEL = "rounded-lg bg-white shadow-[0_0_0_1px_rgba(34,36,40,.05),0_2px_8px_rgba(34,36,40,.14)]";
-const POPOVER = "rounded-lg bg-white shadow-[0_0_0_1px_rgba(34,36,40,.06),0_6px_24px_rgba(34,36,40,.18)]";
-const ICON_BTN = "grid h-10 w-10 place-items-center rounded-md text-[#1C1C1E] transition-colors hover:bg-[#F1F2F5]";
+const POPOVER = "wb-pop rounded-lg bg-white shadow-[0_0_0_1px_rgba(34,36,40,.06),0_6px_24px_rgba(34,36,40,.18)]";
+const ICON_BTN = "wb-btn grid h-10 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]";
 const ACTIVE_BTN = "bg-[#E6EAFF] text-[#4262FF] hover:bg-[#E6EAFF]";
 const PEN_COLORS = ["#1A1A1A", "#F24726", "#FAC710", "#8FD14F", "#2D9BF0", "#652CB3", "#808080", "#FFFFFF"];
 const PEN_WIDTHS = [2, 4, 8];
@@ -500,33 +507,132 @@ export function BoardCanvas({
     return { x: (sx - r.left - c.x) / c.zoom, y: (sy - r.top - c.y) / c.zoom };
   }, []);
 
-  const zoomAt = useCallback((factor: number, sx?: number, sy?: number) => {
-    const r = rootRef.current!.getBoundingClientRect();
-    const px = sx ?? r.left + r.width / 2;
-    const py = sy ?? r.top + r.height / 2;
-    setCamera((c) => {
-      const zoom = clamp(c.zoom * factor, MIN_ZOOM, MAX_ZOOM);
-      const wx = (px - r.left - c.x) / c.zoom;
-      const wy = (py - r.top - c.y) / c.zoom;
-      return { zoom, x: px - r.left - wx * zoom, y: py - r.top - wy * zoom };
-    });
-  }, []);
-
-  const fitTo = useCallback((els: El[]) => {
-    const r = rootRef.current?.getBoundingClientRect();
-    if (!r) return;
-    const b = boundsOf(els, new Map(elRef.current.map((e) => [e.id, e])));
-    if (!b) {
-      setCamera({ x: r.width / 2, y: r.height / 2, zoom: 1 });
-      return;
+  // Items pop in when they appear (added, pasted, undone, or from a teammate)
+  // and fade out when they go. On first open they arrive in a quick stagger.
+  const worldRef = useRef<HTMLDivElement>(null);
+  const animNodes = useRef<Map<string, Element> | null>(null);
+  useLayoutEffect(() => {
+    const world = worldRef.current;
+    if (!world) return;
+    const now = new Map<string, Element>();
+    world.querySelectorAll("[data-anim]").forEach((n) => now.set(n.getAttribute("data-anim")!, n));
+    const prev = animNodes.current;
+    animNodes.current = now;
+    if (reducedMotion()) return;
+    let i = 0;
+    for (const [id, n] of now) {
+      if (prev?.get(id) === n) continue;
+      const svg = n instanceof SVGElement;
+      n.animate(svg ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, scale: "0.85" }, { opacity: 1, scale: "1" }], {
+        duration: svg ? 220 : 300,
+        delay: prev ? 0 : 80 + Math.min(i++, 30) * 16,
+        easing: svg ? "ease-out" : "cubic-bezier(0.34, 1.4, 0.64, 1)",
+        fill: "backwards",
+      });
     }
-    const pad = 120;
-    const zoom = clamp(Math.min((r.width - pad) / Math.max(b.w, 1), (r.height - pad) / Math.max(b.h, 1)), MIN_ZOOM, 1.2);
-    setCamera({ zoom, x: r.width / 2 - (b.x + b.w / 2) * zoom, y: r.height / 2 - (b.y + b.h / 2) * zoom });
+    if (!prev) return;
+    for (const [id, n] of prev) {
+      if (now.has(id)) continue;
+      const parent = n instanceof SVGElement ? world.querySelector("svg") : world.querySelector("[data-leave]");
+      if (!parent) continue;
+      const ghost = n.cloneNode(true) as HTMLElement | SVGElement;
+      ghost.removeAttribute("data-anim");
+      ghost.removeAttribute("data-box");
+      ghost.querySelectorAll("[data-box],[data-anim]").forEach((c) => {
+        c.removeAttribute("data-box");
+        c.removeAttribute("data-anim");
+      });
+      ghost.style.pointerEvents = "none";
+      parent.appendChild(ghost);
+      const svg = ghost instanceof SVGElement;
+      ghost.animate(svg ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 1, scale: "1" }, { opacity: 0, scale: "0.9" }], {
+        duration: 180,
+        easing: "ease-in",
+        fill: "forwards",
+      }).onfinish = () => ghost.remove();
+    }
+  }, [elements]);
+
+  // Glide: button, keyboard and minimap moves ease the camera instead of
+  // jumping. Wheel and drag stay direct (they cancel a glide in progress).
+  const glideRef = useRef<{ raf: number; to: Camera } | null>(null);
+  const stopGlide = useCallback(() => {
+    if (glideRef.current) cancelAnimationFrame(glideRef.current.raf);
+    glideRef.current = null;
   }, []);
+  const glideTo = useCallback(
+    (to: Camera) => {
+      stopGlide();
+      const r = rootRef.current?.getBoundingClientRect();
+      if (!r || reducedMotion()) {
+        setCamera(to);
+        return;
+      }
+      const from = camRef.current;
+      // Ease the world point at the centre of the view and the zoom (in log
+      // space), so zooming feels even and the view doesn't swing sideways.
+      const cx = r.width / 2;
+      const cy = r.height / 2;
+      const a = { x: (cx - from.x) / from.zoom, y: (cy - from.y) / from.zoom, z: Math.log(from.zoom) };
+      const b = { x: (cx - to.x) / to.zoom, y: (cy - to.y) / to.zoom, z: Math.log(to.zoom) };
+      const t0 = performance.now();
+      const duration = 320;
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - t0) / duration);
+        const e = 1 - Math.pow(1 - t, 3);
+        if (t >= 1) {
+          glideRef.current = null;
+          setCamera(to);
+          return;
+        }
+        const zoom = Math.exp(a.z + (b.z - a.z) * e);
+        setCamera({ zoom, x: cx - (a.x + (b.x - a.x) * e) * zoom, y: cy - (a.y + (b.y - a.y) * e) * zoom });
+        glideRef.current = { raf: requestAnimationFrame(tick), to };
+      };
+      glideRef.current = { raf: requestAnimationFrame(tick), to };
+    },
+    [stopGlide]
+  );
+  useEffect(() => stopGlide, [stopGlide]);
+
+  const zoomAt = useCallback(
+    (factor: number, sx?: number, sy?: number, smooth = false) => {
+      const r = rootRef.current!.getBoundingClientRect();
+      const px = sx ?? r.left + r.width / 2;
+      const py = sy ?? r.top + r.height / 2;
+      const next = (c: Camera): Camera => {
+        const zoom = clamp(c.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+        const wx = (px - r.left - c.x) / c.zoom;
+        const wy = (py - r.top - c.y) / c.zoom;
+        return { zoom, x: px - r.left - wx * zoom, y: py - r.top - wy * zoom };
+      };
+      if (smooth) {
+        // Repeated clicks build on where the glide is heading.
+        glideTo(next(glideRef.current?.to ?? camRef.current));
+        return;
+      }
+      stopGlide();
+      setCamera(next);
+    },
+    [glideTo, stopGlide]
+  );
+
+  const fitTo = useCallback(
+    (els: El[], instant = false) => {
+      const r = rootRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const b = boundsOf(els, new Map(elRef.current.map((e) => [e.id, e])));
+      const pad = 120;
+      const zoom = b ? clamp(Math.min((r.width - pad) / Math.max(b.w, 1), (r.height - pad) / Math.max(b.h, 1)), MIN_ZOOM, 1.2) : 1;
+      const to = b ? { zoom, x: r.width / 2 - (b.x + b.w / 2) * zoom, y: r.height / 2 - (b.y + b.h / 2) * zoom } : { x: r.width / 2, y: r.height / 2, zoom: 1 };
+      if (instant) setCamera(to);
+      else glideTo(to);
+    },
+    [glideTo]
+  );
 
   useEffect(() => {
-    fitTo(initial);
+    fitTo(initial, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -542,12 +648,13 @@ export function BoardCanvas({
         const intensity = e.ctrlKey ? 0.012 : 0.0015;
         zoomAt(Math.exp(-e.deltaY * intensity), e.clientX, e.clientY);
       } else {
+        stopGlide();
         setCamera((c) => ({ ...c, x: c.x - e.deltaX, y: c.y - e.deltaY }));
       }
     }
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
-  }, [zoomAt]);
+  }, [zoomAt, stopGlide]);
 
   // ------------------------------------------------------------------ helpers
   const maxZ = () => elRef.current.reduce((m, e) => Math.max(m, e.z), 0);
@@ -682,7 +789,7 @@ export function BoardCanvas({
   }
 
   function zoomTo(z: number) {
-    zoomAt(z / camRef.current.zoom);
+    zoomAt(z / (glideRef.current?.to ?? camRef.current).zoom, undefined, undefined, true);
   }
 
   /** An empty copy of `src` at (x, y): same kind, size and colours, no text. */
@@ -791,10 +898,10 @@ export function BoardCanvas({
         zoomTo(1);
       } else if (mod && (k === "=" || k === "+")) {
         e.preventDefault();
-        zoomAt(1.2);
+        zoomAt(1.2, undefined, undefined, true);
       } else if (mod && k === "-") {
         e.preventDefault();
-        zoomAt(1 / 1.2);
+        zoomAt(1 / 1.2, undefined, undefined, true);
       } else if (k.startsWith("arrow") && selRef.current.length) {
         e.preventDefault();
         const d = e.shiftKey ? 10 : 1;
@@ -1058,6 +1165,7 @@ export function BoardCanvas({
     }
     switch (it.type) {
       case "pan":
+        stopGlide();
         setCamera({ ...it.cam, x: it.cam.x + e.clientX - it.sx, y: it.cam.y + e.clientY - it.sy });
         break;
       case "rpan": {
@@ -1065,6 +1173,7 @@ export function BoardCanvas({
         const dy = e.clientY - it.sy;
         if (!it.moved && Math.hypot(dx, dy) < 4) break;
         it.moved = true;
+        stopGlide();
         setCamera({ ...it.cam, x: it.cam.x + dx, y: it.cam.y + dy });
         break;
       }
@@ -1525,6 +1634,7 @@ export function BoardCanvas({
     const editing = editingId === el.id;
     const common = {
       "data-box": el.id,
+      "data-anim": el.id,
       onPointerEnter: () => setHoverId(el.id),
       onPointerLeave: () => setHoverId((h) => (h === el.id ? null : h)),
       style: { left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z } as React.CSSProperties,
@@ -1594,7 +1704,7 @@ export function BoardCanvas({
     return (
       <div key={el.id} {...common} className={clsx("absolute", el.kind === "sticky" && "rounded-[2px]", isSel && "cursor-move")}>
         {inner}
-        {hovered && <div className="pointer-events-none absolute -inset-px rounded-[2px]" style={{ boxShadow: `0 0 0 ${1.5 / camera.zoom}px ${MIRO_BLUE}` }} />}
+        {hovered && <div className="wb-fade pointer-events-none absolute -inset-px rounded-[2px]" style={{ boxShadow: `0 0 0 ${1.5 / camera.zoom}px ${MIRO_BLUE}` }} />}
         {editing && el.kind === "card" && (
           <div
             className="absolute inset-0 z-10 flex min-h-full flex-col gap-1.5 rounded-xl bg-white p-3 pt-4 shadow-lg ring-2 ring-[#4262FF]"
@@ -1698,7 +1808,7 @@ export function BoardCanvas({
             : "crosshair";
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-xl bg-[#F2F2F2] text-[#1C1C1E] select-none">
+    <div className="wb-board-in relative h-full w-full overflow-hidden rounded-xl bg-[#F2F2F2] text-[#1C1C1E] select-none">
       <div
         ref={rootRef}
         className="absolute inset-0 touch-none"
@@ -1729,6 +1839,7 @@ export function BoardCanvas({
       >
         {/* World */}
         <div
+          ref={worldRef}
           className="absolute left-0 top-0 origin-top-left"
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
@@ -1736,6 +1847,7 @@ export function BoardCanvas({
             <div
               key={f.id}
               data-box={f.id}
+              data-anim={f.id}
               className="absolute"
               style={{ left: f.x, top: f.y, width: f.w, height: f.h, background: f.fill, boxShadow: `0 0 0 ${1 / camera.zoom}px rgba(0,0,0,.08)` }}
               onPointerEnter={() => setHoverId(f.id)}
@@ -1777,7 +1889,7 @@ export function BoardCanvas({
               ))}
             </defs>
             {drawings.map((d) => (
-              <g key={d.id} transform={`translate(${d.x},${d.y})`}>
+              <g key={d.id} data-anim={d.id} transform={`translate(${d.x},${d.y})`}>
                 <polyline
                   data-box={d.id}
                   points={d.points.map((q) => q.join(",")).join(" ")}
@@ -1796,7 +1908,7 @@ export function BoardCanvas({
               const pth = connectorPath(c, byId);
               const sel = selection.includes(c.id);
               return (
-                <g key={c.id}>
+                <g key={c.id} data-anim={c.id}>
                   {hoverLine === c.id && !sel && !interaction && (
                     <path d={pth.d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.35} strokeWidth={c.width + 6 / camera.zoom} strokeLinecap="round" style={{ pointerEvents: "none" }} />
                   )}
@@ -1846,6 +1958,7 @@ export function BoardCanvas({
             )}
           </svg>
 
+          <div data-leave className="pointer-events-none absolute left-0 top-0" style={{ zIndex: 2 }} />
           <div className="absolute left-0 top-0" style={{ zIndex: 2 }}>
             {boxes.map(renderBox)}
             {ghost && tool === "sticky" && !interaction && (
@@ -1927,7 +2040,7 @@ export function BoardCanvas({
             const h = selBounds.h * camera.zoom;
             const canResize = single && isBox(single) && single.kind !== "draw" && !single.locked;
             return (
-              <div className="absolute" style={{ left: a.x, top: a.y, width: w, height: h }}>
+              <div key={selection.join("|")} className="wb-sel absolute" style={{ left: a.x, top: a.y, width: w, height: h }}>
                 <div className="absolute -inset-px rounded-[2px] ring-2 ring-[#4262FF]" />
                 {selected.length > 1 &&
                   selected.filter(isBox).map((m) => {
@@ -2041,7 +2154,7 @@ export function BoardCanvas({
 
       {/* ---------------- Floating UI ---------------- */}
       {/* Top-left: board header */}
-      <div data-ui className={clsx("absolute left-3 top-3 z-20 flex h-12 items-center gap-0.5 px-1.5", PANEL)}>
+      <div data-ui className={clsx("wb-from-top absolute left-3 top-3 z-20 flex h-12 items-center gap-0.5 px-1.5", PANEL)}>
         <button type="button" onClick={onBack} className={clsx(ICON_BTN, "h-9 w-9")} title={backLabel} aria-label={backLabel}>
           <ChevronLeft className="h-5 w-5" />
         </button>
@@ -2113,7 +2226,7 @@ export function BoardCanvas({
       </div>
 
       {/* Top-right: collaborators + share */}
-      <div data-ui className="absolute right-3 top-3 z-20 flex items-center gap-2">
+      <div data-ui className="wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2">
         {extraActions && <div className={clsx("flex h-12 items-center gap-1 px-1.5", PANEL)}>{extraActions}</div>}
         <div className={clsx("flex h-12 items-center gap-2 pl-2.5 pr-1.5", PANEL)}>
           <div className="flex -space-x-1.5">
@@ -2153,7 +2266,7 @@ export function BoardCanvas({
       )}
 
       {/* Left: toolbar */}
-      <div data-ui style={readOnly ? { display: "none" } : undefined} className="absolute left-3 top-[72px] z-20 flex flex-col gap-2">
+      <div data-ui style={readOnly ? { display: "none" } : undefined} className="wb-from-left absolute left-3 top-[72px] z-20 flex flex-col gap-2">
         <div className={clsx("flex flex-col gap-0.5 p-1", PANEL)}>
           {(
             [
@@ -2514,9 +2627,10 @@ export function BoardCanvas({
 
       {/* Bottom-right: minimap + zoom */}
       {showMap && <Minimap elements={elements} camera={camera} size={view} onJump={(x, y) => {
-        setCamera((c) => ({ ...c, x: view.w / 2 - x * c.zoom, y: view.h / 2 - y * c.zoom }));
+        const c = camRef.current;
+        glideTo({ ...c, x: view.w / 2 - x * c.zoom, y: view.h / 2 - y * c.zoom });
       }} />}
-      <div data-ui className="absolute bottom-3 right-3 z-20 flex items-center gap-2">
+      <div data-ui className="wb-from-bottom absolute bottom-3 right-3 z-20 flex items-center gap-2">
         <div className={clsx("flex h-10 items-center gap-0.5 px-1", PANEL)}>
           <button
             type="button"
@@ -2534,7 +2648,8 @@ export function BoardCanvas({
               const r = rootRef.current?.getBoundingClientRect();
               const b = boundsOf(elRef.current, new Map(elRef.current.map((e) => [e.id, e])));
               if (!r || !b) return;
-              setCamera((c) => ({ ...c, x: r.width / 2 - (b.x + b.w / 2) * c.zoom, y: r.height / 2 - (b.y + b.h / 2) * c.zoom }));
+              const c = camRef.current;
+              glideTo({ ...c, x: r.width / 2 - (b.x + b.w / 2) * c.zoom, y: r.height / 2 - (b.y + b.h / 2) * c.zoom });
             }}
             className={clsx(ICON_BTN, "h-8 w-8")}
             title="Re-center (keep zoom)"
@@ -2546,7 +2661,7 @@ export function BoardCanvas({
             <Maximize className="h-[18px] w-[18px]" strokeWidth={1.75} />
           </button>
           <span className="mx-1 h-5 w-px bg-[#E9EAEF]" />
-          <button type="button" onClick={() => zoomAt(1 / 1.2)} className={clsx(ICON_BTN, "h-8 w-8")} title="Zoom out (Ctrl −)" aria-label="Zoom out">
+          <button type="button" onClick={() => zoomAt(1 / 1.2, undefined, undefined, true)} className={clsx(ICON_BTN, "h-8 w-8")} title="Zoom out (Ctrl −)" aria-label="Zoom out">
             <Minus className="h-[18px] w-[18px]" strokeWidth={1.75} />
           </button>
           <div className="relative">
@@ -2563,13 +2678,13 @@ export function BoardCanvas({
               <div className={clsx("absolute bottom-11 left-1/2 w-52 -translate-x-1/2 p-1.5 text-[14px]", POPOVER)}>
                 {(
                   [
-                    ["Zoom in", "Ctrl +", () => zoomAt(1.2)],
-                    ["Zoom out", "Ctrl −", () => zoomAt(1 / 1.2)],
+                    ["Zoom in", "Ctrl +", () => zoomAt(1.2, undefined, undefined, true)],
+                    ["Zoom out", "Ctrl −", () => zoomAt(1 / 1.2, undefined, undefined, true)],
                     ["Zoom to fit", "Shift+1", () => fitTo(elements)],
                     ["Zoom to selection", "Shift+2", () => fitTo(selected.length ? selected : elements)],
-                    ["50%", "", () => zoomAt(0.5 / camera.zoom)],
-                    ["100%", "Shift+0", () => zoomAt(1 / camera.zoom)],
-                    ["200%", "", () => zoomAt(2 / camera.zoom)],
+                    ["50%", "", () => zoomTo(0.5)],
+                    ["100%", "Shift+0", () => zoomTo(1)],
+                    ["200%", "", () => zoomTo(2)],
                   ] as [string, string, () => void][]
                 ).map(([label, hint, fn]) => (
                   <button
@@ -2588,7 +2703,7 @@ export function BoardCanvas({
               </div>
             )}
           </div>
-          <button type="button" onClick={() => zoomAt(1.2)} className={clsx(ICON_BTN, "h-8 w-8")} title="Zoom in (Ctrl +)" aria-label="Zoom in">
+          <button type="button" onClick={() => zoomAt(1.2, undefined, undefined, true)} className={clsx(ICON_BTN, "h-8 w-8")} title="Zoom in (Ctrl +)" aria-label="Zoom in">
             <Plus className="h-[18px] w-[18px]" strokeWidth={1.75} />
           </button>
         </div>
@@ -2643,7 +2758,7 @@ export function BoardCanvas({
 /** Dark tooltip to the right of a toolbar button (parent needs `group relative`). */
 function Tip({ label, hint }: { label: string; hint?: string }) {
   return (
-    <span className="pointer-events-none absolute left-[52px] top-1/2 z-30 hidden -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-md bg-[#1C1C1E] px-2 py-1.5 text-[12px] font-medium text-white shadow-lg group-hover:flex">
+    <span className="pointer-events-none absolute left-[52px] top-1/2 z-30 hidden -translate-y-1/2 items-center gap-2 whitespace-nowrap wb-tip rounded-md bg-[#1C1C1E] px-2 py-1.5 text-[12px] font-medium text-white shadow-lg group-hover:flex">
       {label}
       {hint && <span className="text-[#A5A7B5]">{hint}</span>}
     </span>
@@ -2771,7 +2886,7 @@ function ContextBar({
     <div
       ref={ref}
       data-ui
-      className={clsx("absolute z-30 flex h-11 items-center gap-0.5 px-1.5", PANEL)}
+      className={clsx("wb-pop absolute z-30 flex h-11 items-center gap-0.5 px-1.5", PANEL)}
       style={{ left, top, visibility: w ? "visible" : "hidden" }}
       onPointerDown={(e) => e.stopPropagation()}
     >

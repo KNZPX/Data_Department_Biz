@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { getSupabaseClient } from "@/lib/db";
-import { hashSecret, readSessionSecret } from "@/lib/session";
+import { clearAccessPolicyCache, hashSecret, readSessionSecret } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 // Team-wide settings (e.g. the announcement banner). Everyone signed in can
 // read them; the database only lets admins change them.
-const KEYS = new Set(["announcement"]);
+const KEYS = new Set(["announcement", "org_structure", "access_policy"]);
 
 export async function GET(request: NextRequest) {
   const secret = await readSessionSecret();
@@ -38,5 +38,6 @@ export async function PUT(request: NextRequest) {
     p_value: body.value,
   });
   if (error) return Response.json({ error: error.message }, { status: error.code === "42501" ? 403 : 400 });
+  if (body.key === "access_policy") clearAccessPolicyCache();
   return Response.json(data);
 }

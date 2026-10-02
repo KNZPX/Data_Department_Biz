@@ -452,3 +452,112 @@ html[data-motion="reduced"] .lift:hover { transform: none; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d6dae1; border-radius: 9999px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #a9b0bc; border: 2px solid transparent; background-clip: padding-box; }
+
+/* ---- Org-chart style tree (TreeDiagram) ---------------------------------- */
+.org-tree,
+.org-tree ul {
+  display: flex;
+  justify-content: center;
+  padding-top: 18px;
+  position: relative;
+}
+.org-tree { padding-top: 0; }
+.org-tree li {
+  list-style: none;
+  position: relative;
+  padding: 18px 6px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.org-tree > li { padding-top: 0; }
+.org-tree li::before,
+.org-tree li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 18px;
+  border-top: 1.5px solid var(--color-slate-300);
+}
+.org-tree li::after {
+  right: auto;
+  left: 50%;
+  border-left: 1.5px solid var(--color-slate-300);
+}
+.org-tree li:only-child::before,
+.org-tree li:only-child::after { display: none; }
+.org-tree li:only-child { padding-top: 18px; }
+.org-tree > li:only-child { padding-top: 0; }
+.org-tree li:first-child::before,
+.org-tree li:last-child::after { border: 0 none; }
+.org-tree li:last-child::before {
+  border-right: 1.5px solid var(--color-slate-300);
+  border-radius: 0 6px 0 0;
+}
+.org-tree li:first-child::after { border-radius: 6px 0 0 0; }
+.org-tree ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 18px;
+  border-left: 1.5px solid var(--color-slate-300);
+}
+.org-tree li:only-child > button::before {
+  content: "";
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  height: 18px;
+  border-left: 1.5px solid var(--color-slate-300);
+}
+.org-tree > li:only-child > button::before { display: none; }
+
+/* ==========================================================================
+   Whiteboard motion
+   Keyframes use the individual `scale` / `translate` properties so they
+   stack on top of Tailwind's transform utilities (e.g. -translate-x-1/2)
+   instead of replacing them mid-animation.
+   ========================================================================== */
+@keyframes wb-board-in {
+  from { opacity: 0; scale: 0.985; }
+  to { opacity: 1; scale: 1; }
+}
+@keyframes wb-pop-kf {
+  from { opacity: 0; scale: 0.96; translate: 0 4px; }
+  to { opacity: 1; scale: 1; translate: 0 0; }
+}
+@keyframes wb-from-left {
+  from { opacity: 0; translate: -14px 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes wb-from-top {
+  from { opacity: 0; translate: 0 -12px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes wb-from-bottom {
+  from { opacity: 0; translate: 0 12px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes wb-sel-kf {
+  from { opacity: 0; scale: 1.04; }
+  to { opacity: 1; scale: 1; }
+}
+@keyframes wb-handle-kf {
+  from { opacity: 0; scale: 0.3; }
+  to { opacity: 1; scale: 1; }
+}
+.wb-board-in { animation: wb-board-in 460ms var(--ease-out-soft) backwards; }
+.wb-pop { animation: wb-pop-kf 180ms var(--ease-out-soft) backwards; transform-origin: top left; }
+.wb-from-left { animation: wb-from-left 420ms var(--ease-out-soft) 140ms backwards; }
+.wb-from-top { animation: wb-from-top 420ms var(--ease-out-soft) 80ms backwards; }
+.wb-from-bottom { animation: wb-from-bottom 420ms var(--ease-out-soft) 200ms backwards; }
+.wb-fade { animation: fade-in-kf 160ms ease backwards; }
+.wb-sel { animation: wb-sel-kf 160ms var(--ease-out-soft) backwards; }
+.wb-sel [data-handle] { animation: wb-handle-kf 200ms cubic-bezier(0.34, 1.56, 0.64, 1) 40ms backwards; }
+.wb-tip { animation: wb-pop-kf 140ms var(--ease-out-soft) backwards; }
+.wb-btn { transition: background-color 140ms ease, color 140ms ease, scale 120ms ease; }
+.wb-btn:active { scale: 0.92; }
+html[data-motion="reduced"] .wb-btn:active { scale: 1; }
