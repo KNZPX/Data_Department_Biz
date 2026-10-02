@@ -540,7 +540,7 @@ export function TargetScenarioPage() {
         { header: `${Y} target (${u})`, key: "target", width: 16, numFmt: nf },
         { header: "Growth %", key: "growth", width: 10, numFmt: "0.0" },
       ];
-      const res = await fetch("/api/target-scenario/export", {
+      const res = await fetch("/api/export/xlsx", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

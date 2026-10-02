@@ -2,7 +2,7 @@
 
 // Everything the team changed, newest first — and a way to put a change back.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, FunctionSquare, History, KeyRound, LayoutGrid, Loader2, LogIn, RefreshCw, RotateCcw, Search, Target, Users, Workflow } from "lucide-react";
+import { ChevronDown, Flag, FunctionSquare, History, KeyRound, LayoutGrid, Loader2, LogIn, RefreshCw, RotateCcw, Search, Target, Users, Workflow } from "lucide-react";
 import { clsx } from "clsx";
 import { confirmDialog, toast } from "@/components/feedback";
 import { useT } from "@/lib/i18n";
@@ -29,6 +29,7 @@ const AREAS: { id: string; label: string; icon: typeof History; tables: string[]
   { id: "licenses", label: "Licenses", icon: Users, tables: ["powerbi_licenses"] },
   { id: "boards", label: "Whiteboard", icon: Workflow, tables: ["whiteboard_boards"] },
   { id: "targets", label: "Targets", icon: Target, tables: ["target_scenarios"] },
+  { id: "okr", label: "EBO & OKR", icon: Flag, tables: ["okr_plans"] },
   { id: "people", label: "Sign-ins & people", icon: LogIn, tables: ["app_users"] },
 ];
 const areaOf = (table: string) => AREAS.find((a) => a.tables.includes(table)) || { id: "other", label: "Other", icon: KeyRound, tables: [] };

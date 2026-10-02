@@ -14,6 +14,7 @@ const RESTORE_MODULE: Record<string, string> = {
   powerbi_licenses: "licenses.edit",
   whiteboard_boards: "whiteboard.edit",
   target_scenarios: "target.edit",
+  okr_plans: "okr.edit",
 };
 
 export async function GET(request: NextRequest) {

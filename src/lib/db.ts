@@ -1113,6 +1113,7 @@ export function isRestorable(log: { entity_table: string; action: string; before
   if (t === "powerbi_licenses") return log.action === "create" || ((log.action === "delete" || log.action === "update") && !!log.before);
   if (t === "whiteboard_boards") return log.action === "delete" && !!log.before;
   if (t === "target_scenarios") return log.action === "delete" || log.action === "create" || (log.action === "update" && !!log.before);
+  if (t === "okr_plans") return log.action === "update" && !!log.before;
   return false;
 }
 
@@ -1209,6 +1210,9 @@ export async function restoreChangeLog(
     if (action === "delete") await must(supabase.from("target_scenarios").update({ is_deleted: false, deleted_at: null, updated_at: now }).eq("id", entity_id));
     else if (action === "update" && beforeObj) await must(supabase.from("target_scenarios").update({ name: beforeObj.name, snapshot: beforeObj.snapshot, updated_at: now }).eq("id", entity_id));
     else if (action === "create") await must(supabase.from("target_scenarios").update({ is_deleted: true, deleted_at: now }).eq("id", entity_id));
+  } else if (entity_table === "okr_plans") {
+    if (!supabase) throw new Error("Restore needs the cloud database.");
+    if (action === "update" && beforeObj?.data) await must(supabase.from("okr_plans").update({ data: beforeObj.data, updated_by: restoredBy, updated_at: now }).eq("id", entity_id));
   } else {
     throw new Error(`Changes to ${entity_table} can't be restored automatically.`);
   }
