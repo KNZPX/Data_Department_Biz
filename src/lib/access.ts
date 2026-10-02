@@ -131,5 +131,7 @@ export function canModule(access: Access | null, moduleId: string) {
 
 export function pageForPath(pathname: string): PageDef | undefined {
   if (pathname === "/") return PAGES[0];
-  return PAGES.find((p) => p.href !== "/" && pathname.startsWith(p.href));
+  // DAX diagrams are part of the DAX dictionary, so they follow its access.
+  const path = pathname === "/dax-diagrams" || pathname.startsWith("/dax-diagrams/") ? "/dax" : pathname;
+  return PAGES.find((p) => p.href !== "/" && (path === p.href || path.startsWith(p.href + "/")));
 }

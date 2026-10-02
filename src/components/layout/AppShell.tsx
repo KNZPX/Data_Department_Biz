@@ -83,7 +83,7 @@ export const NAV_GROUPS: NavGroup[] = [
 const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
 
 function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
 }
 
 function initials(name?: string | null) {
