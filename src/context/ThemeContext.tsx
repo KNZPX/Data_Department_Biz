@@ -15,6 +15,7 @@ export type MotionId = "full" | "reduced" | "off";
 export type DensityId = "comfortable" | "compact";
 export type ThemeId = "light" | "dark" | "system";
 export type LanguageId = "en" | "th";
+export type PageSizeId = "auto" | "100" | "90" | "80";
 
 export type Appearance = {
   accent: string;
@@ -25,6 +26,7 @@ export type Appearance = {
   density: DensityId;
   theme: ThemeId;
   language: LanguageId;
+  pageSize: PageSizeId;
   sidebarCollapsed: boolean;
 };
 
@@ -37,6 +39,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   density: "comfortable",
   theme: "light",
   language: "en",
+  pageSize: "auto",
   sidebarCollapsed: false,
 };
 
@@ -74,6 +77,13 @@ export const MOTIONS: { id: MotionId; name: string; hint: string }[] = [
   { id: "full", name: "Full", hint: "Page, menu and number animations" },
   { id: "reduced", name: "Reduced", hint: "Quick fades only" },
   { id: "off", name: "Off", hint: "No animation" },
+];
+
+export const PAGE_SIZES: { id: PageSizeId; name: string; hint: string }[] = [
+  { id: "auto", name: "Auto", hint: "90% (85% on small laptops)" },
+  { id: "100", name: "100%", hint: "Full size" },
+  { id: "90", name: "90%", hint: "A little smaller" },
+  { id: "80", name: "80%", hint: "Fit the most" },
 ];
 
 export const DENSITIES: { id: DensityId; name: string; hint: string }[] = [
@@ -144,6 +154,7 @@ function sanitize(raw: unknown): Partial<Appearance> {
   if (FONTS.some((s) => s.id === r.font)) out.font = r.font as FontId;
   if (MOTIONS.some((s) => s.id === r.motion)) out.motion = r.motion as MotionId;
   if (DENSITIES.some((s) => s.id === r.density)) out.density = r.density as DensityId;
+  if (PAGE_SIZES.some((s) => s.id === r.pageSize)) out.pageSize = r.pageSize as PageSizeId;
   if (THEMES.some((s) => s.id === r.theme)) out.theme = r.theme as ThemeId;
   if (LANGUAGES.some((s) => s.id === r.language)) out.language = r.language as LanguageId;
   if (typeof r.sidebarCollapsed === "boolean") out.sidebarCollapsed = r.sidebarCollapsed;
@@ -181,6 +192,7 @@ function applyToDocument(a: Appearance) {
   root.dataset.font = a.font;
   root.dataset.motion = a.motion;
   root.dataset.density = a.density;
+  root.dataset.zoom = a.pageSize;
   const dark = a.theme === "dark" || (a.theme === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
   root.dataset.theme = dark ? "dark" : "light";
   root.style.colorScheme = dark ? "dark" : "light";

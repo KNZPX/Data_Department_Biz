@@ -261,13 +261,29 @@ html[data-motion="off"] *::after {
   }
 }
 
+/* Page zoom (Settings → Appearance → Page size). Auto draws the app a little
+   smaller on desktop and laptop screens so pages fit without scrolling;
+   phones keep 100% (they have their own layout). Heights/widths that fill the
+   window divide by the zoom so they still reach the edges. */
+:root { --app-zoom: 1; }
+@media (min-width: 768px) and (max-width: 2399.98px) { :root { --app-zoom: 0.9; } }
+@media (min-width: 768px) and (max-width: 1365.98px) { :root { --app-zoom: 0.85; } }
+html[data-zoom="100"] { --app-zoom: 1; }
+html[data-zoom="90"] { --app-zoom: 0.9; }
+html[data-zoom="80"] { --app-zoom: 0.8; }
+html { zoom: var(--app-zoom); }
+.app-viewport { height: calc(100dvh / var(--app-zoom)); width: calc(100vw / var(--app-zoom)); }
+.app-min-viewport { min-height: calc(100dvh / var(--app-zoom)); }
+/* Canvases do their own zooming and pointer maths in screen pixels. */
+.zoom-native { zoom: calc(1 / var(--app-zoom)); }
+
 html,
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-  height: 100vh;
-  width: 100vw;
+  height: calc(100dvh / var(--app-zoom));
+  width: calc(100vw / var(--app-zoom));
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "ss01", "tnum";

@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { clsx } from "clsx";
+import { appZoom } from "@/lib/zoom";
 
 /**
  * A thin drag handle on the edge of a pane. Dragging changes the pane's width
@@ -33,7 +34,7 @@ export function ResizeHandle({
   /** Largest width that still fits, given the width of the pane's container (e.g. leave room for a list). */
   fitParent?: (containerWidth: number) => number;
 }) {
-  const start = useRef<{ x: number; w: number; max: number } | null>(null);
+  const start = useRef<{ x: number; w: number; max: number; z: number } | null>(null);
   const last = useRef(width);
   const clampW = (w: number, hi = max) => Math.round(Math.max(min, Math.min(hi, w)));
   return (
@@ -52,15 +53,16 @@ export function ResizeHandle({
         el.setPointerCapture(e.pointerId);
         const container = el.parentElement?.parentElement;
         const hi = fitParent && container ? Math.max(min, Math.min(max, fitParent(container.clientWidth))) : max;
-        const shown = el.parentElement?.getBoundingClientRect().width ?? width;
-        start.current = { x: e.clientX, w: Math.min(width, shown), max: hi };
+        const z = appZoom();
+        const shown = (el.parentElement?.getBoundingClientRect().width ?? width * z) / z;
+        start.current = { x: e.clientX, w: Math.min(width, shown), max: hi, z };
         last.current = width;
         document.body.style.cursor = "col-resize";
         document.body.style.userSelect = "none";
       }}
       onPointerMove={(e) => {
         if (!start.current) return;
-        const dx = e.clientX - start.current.x;
+        const dx = (e.clientX - start.current.x) / start.current.z;
         last.current = clampW(start.current.w + (edge === "left" ? -dx : dx), start.current.max);
         onResize(last.current);
       }}

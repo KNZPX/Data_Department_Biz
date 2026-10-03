@@ -1,5 +1,6 @@
 "use client";
 
+import { appZoom } from "@/lib/zoom";
 import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -115,7 +116,9 @@ function calmMotion() {
 }
 /** Position and size of the fixed full-page panel: at `r` (its spot in the page), or the whole window. */
 function boxFrame(r?: DOMRect): Keyframe {
-  const b = r ?? { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
+  // Rects are in screen pixels; the panel's styles are in (zoomed) CSS pixels.
+  const z = appZoom();
+  const b = r ? { top: r.top / z, left: r.left / z, width: r.width / z, height: r.height / z } : { top: 0, left: 0, width: window.innerWidth / z, height: window.innerHeight / z };
   return { top: `${b.top}px`, left: `${b.left}px`, width: `${b.width}px`, height: `${b.height}px`, right: "auto", bottom: "auto", borderRadius: r ? "12px" : "0px" };
 }
 
@@ -1698,12 +1701,11 @@ function MixView({
     );
   };
   const rowIds = [...sites, ...(sites.length > 1 ? [plan.rootId] : [])];
-  const section = (dim: MixDim, title: string, blurb: string) => {
+  const section = (dim: MixDim, title: string) => {
     const members = MIX_MEMBERS[dim];
     return (
       <section className="mb-6">
-        <h3 className="text-[14px] font-semibold text-slate-900">{title}</h3>
-        <p className="mb-2 text-[12.5px] text-slate-500">{blurb}</p>
+        <h3 className="mb-2 text-[14px] font-semibold text-slate-900">{title}</h3>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[13px]">
             <thead>
@@ -1817,8 +1819,8 @@ function MixView({
           </div>
         </div>
       </div>
-      {section("setting", "OPD / IPD", `Each hospital's ${Y} target and ${B} full year by setting.`)}
-      {section("market", "Segment", `Each hospital's ${Y} target and ${B} full year by patient segment.`)}
+      {section("setting", "OPD / IPD")}
+      {section("market", "Segment")}
     </div>
   );
 }

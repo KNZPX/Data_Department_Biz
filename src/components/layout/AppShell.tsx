@@ -32,6 +32,7 @@ import { clsx } from "clsx";
 import { TokenModal } from "@/components/TokenModal";
 import { LoginGate, useAccess, useAuth } from "@/components/auth/LoginGate";
 import { isHidden, pageForPath } from "@/lib/access";
+import { appZoom } from "@/lib/zoom";
 import { useTheme } from "@/context/ThemeContext";
 import { PresenceStack, usePresence } from "@/components/layout/Presence";
 import { ConfirmHost, Toaster } from "@/components/feedback";
@@ -160,7 +161,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       const el = nav.querySelector<HTMLElement>('[aria-current="page"]');
       if (!el) return setPill(null);
       // Measured against the nav box (offsetTop would be relative to a group while it animates in).
-      const top = el.getBoundingClientRect().top - nav.getBoundingClientRect().top + nav.scrollTop;
+      const top = (el.getBoundingClientRect().top - nav.getBoundingClientRect().top) / appZoom() + nav.scrollTop;
       setPill({ top, height: el.offsetHeight });
     };
     const raf = requestAnimationFrame(measure);
@@ -427,7 +428,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-paper text-slate-800 flex font-sans">
+    <div className="app-viewport overflow-hidden bg-paper text-slate-800 flex font-sans">
       {mobileOpen && (
         <div className="fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-[2px] md:hidden fade-enter" onClick={() => setMobileOpen(false)} />
       )}
@@ -702,7 +703,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={<div className="h-screen w-screen bg-paper" />}>
+    <Suspense fallback={<div className="app-viewport bg-paper" />}>
       <LoginGate>
         <AppShellInner>{children}</AppShellInner>
       </LoginGate>

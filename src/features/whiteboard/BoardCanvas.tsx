@@ -1909,7 +1909,7 @@ export function BoardCanvas({
             : "crosshair";
 
   return (
-    <div className="wb-board-in relative h-full w-full overflow-hidden rounded-xl bg-[#F2F2F2] text-[#1C1C1E] select-none">
+    <div className="zoom-native wb-board-in relative h-full w-full overflow-hidden rounded-xl bg-[#F2F2F2] text-[#1C1C1E] select-none">
       <div
         ref={rootRef}
         className="absolute inset-0 touch-none"
