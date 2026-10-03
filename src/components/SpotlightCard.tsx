@@ -1,5 +1,6 @@
 "use client";
 
+import { appZoom } from "@/lib/zoom";
 import React, { useRef, useState } from "react";
 import { clsx } from "clsx";
 
@@ -22,10 +23,8 @@ export function SpotlightCard({
   function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
     if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
-    setPosition({
-      x: e.clientX - rect.left
-      ,y: e.clientY - rect.top
-    });
+    const z = appZoom();
+    setPosition({ x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z });
     setOpacity(1);
   }
 

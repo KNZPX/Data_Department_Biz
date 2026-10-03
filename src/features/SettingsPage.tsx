@@ -15,6 +15,7 @@ import { ANNOUNCEMENT_EVENT, type Announcement, type AnnouncementRecord } from "
 import {
   ACCENTS,
   DENSITIES,
+  PAGE_SIZES,
   LANGUAGES,
   THEMES,
   FONTS,
@@ -286,6 +287,17 @@ function AppearanceTab() {
                 <span className="block text-[12.5px] text-slate-600" style={{ fontFamily: f.family }}>
                   {f.name}
                 </span>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Page size" hint="Zoom the whole app in or out. Auto makes it a little smaller on laptop screens so pages fit.">
+          <div className="grid gap-2.5 sm:grid-cols-4">
+            {PAGE_SIZES.map((z) => (
+              <Choice key={z.id} active={appearance.pageSize === z.id} onClick={() => set({ pageSize: z.id })}>
+                <span className="block text-[13px] font-medium text-slate-900">{z.name}</span>
+                <span className="block text-[11.5px] text-slate-500">{z.hint}</span>
               </Choice>
             ))}
           </div>

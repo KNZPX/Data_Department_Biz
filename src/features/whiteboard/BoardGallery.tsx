@@ -295,14 +295,6 @@ export function BoardGallery({
   return (
     <div className="h-full overflow-y-auto rounded-xl border border-slate-200/80 bg-white text-slate-900" onClick={() => setMenu(null)}>
       <div className="mx-auto max-w-6xl px-4 pb-12 pt-6 md:px-8">
-        {kind === "dax" && (
-          <section className="rounded-xl bg-blue-50/60 px-5 py-4 text-[13.5px] text-slate-700">
-            <p className="font-medium text-slate-900">How each measure is calculated</p>
-            <p className="mt-0.5 text-slate-600">
-              One diagram per measure, drawn from its DAX formula. Open a measure in the DAX dictionary and click <span className="font-medium">Diagram</span> to make or update one. Planning boards live in Whiteboard.
-            </p>
-          </section>
-        )}
         {canEdit && kind === "plan" && (
           <section className="rounded-xl bg-slate-100/80 px-5 pb-5 pt-4">
             <button type="button" onClick={() => setTemplatesOpen((v) => !v)} className="mb-3 flex items-center gap-1.5 text-[16px] text-slate-800">

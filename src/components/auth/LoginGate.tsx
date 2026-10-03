@@ -179,7 +179,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="grid min-h-screen overflow-y-auto lg:grid-cols-[1.05fr_1fr] bg-white">
+    <div className="app-viewport grid overflow-y-auto lg:grid-cols-[1.05fr_1fr] bg-white">
       {/* Left: what this place is */}
       <section className="relative hidden flex-col justify-between overflow-hidden border-r border-slate-200/80 bg-slate-50 p-12 lg:flex">
         <div className="model-grid absolute inset-0" aria-hidden />
@@ -369,7 +369,7 @@ function BusyLabel({ text }: { text: string }) {
 /** Full-screen sign-in loader: the logo breathes inside a spinning ring, with a sliding progress bar. */
 function SigningIn({ label, note }: { label: string; note: string }) {
   return (
-    <div className="fade-enter flex min-h-screen items-center justify-center bg-paper" role="status" aria-live="polite">
+    <div className="app-viewport fade-enter flex items-center justify-center bg-paper" role="status" aria-live="polite">
       <div className="flex flex-col items-center">
         <div className="relative grid h-20 w-20 place-items-center">
           <span className="signin-ring absolute inset-0 rounded-full" aria-hidden />
