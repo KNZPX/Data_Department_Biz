@@ -1076,24 +1076,24 @@ export function TargetScenarioPage() {
 
         <div className="min-h-0 flex-1 overflow-auto">
           {tab === "plan" && (
-            <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-[13px]">
+            <table className="w-full min-w-[1180px] table-fixed border-separate border-spacing-0 text-[13px]">
               <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
                 <tr className="text-left text-[11.5px] font-medium text-slate-500">
                   <th className="border-b border-slate-200 py-2 pl-4 pr-2 font-medium">{t("Unit")}</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title="Typed values on a CoE / sub-unit replace the data">{t("{y} actual", { y: P })}</th>
+                  <th className="w-[110px] border-b border-slate-200 px-2 py-2 text-right font-medium" title="Typed values on a CoE / sub-unit replace the data">{t("{y} actual", { y: P })}</th>
                   {plan.actualMonths > 0 && (
-                    <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title={`Typed actuals for a CoE / sub-unit set its ${B} full year`}>
+                    <th className="w-[150px] border-b border-slate-200 px-2 py-2 text-right font-medium" title={`Typed actuals for a CoE / sub-unit set its ${B} full year`}>
                       {t("{y} actual", { y: B })} <span className="font-normal text-slate-400">{MONTHS[0]}–{MONTHS[plan.actualMonths - 1]}</span>
                     </th>
                   )}
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium" title={plan.actualMonths > 0 ? `${plan.actualMonths} months actual + ${12 - plan.actualMonths} estimated` : "Estimate"}>
+                  <th className="w-[120px] border-b border-slate-200 px-2 py-2 text-right font-medium" title={plan.actualMonths > 0 ? `${plan.actualMonths} months actual + ${12 - plan.actualMonths} estimated` : "Estimate"}>
                     {t("{y} full year", { y: B })}
                   </th>
                   <th className="w-[170px] border-b border-slate-200 px-2 py-2 text-right font-medium text-slate-800">{t("{y} target", { y: Y })} ({unitLabel(unit)})</th>
                   <th className="w-[100px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Growth")} %</th>
                   <th className="w-[140px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("+ vs {y}", { y: B })}</th>
                   <th className="w-[150px] border-b border-slate-200 px-2 py-2 font-medium">{t("Share of parent")}</th>
-                  <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Visits {y}", { y: Y })}</th>
+                  <th className="w-[100px] border-b border-slate-200 px-2 py-2 text-right font-medium">{t("Visits {y}", { y: Y })}</th>
                   <th className="w-[76px] border-b border-slate-200 py-2 pl-2 pr-4" />
                 </tr>
               </thead>
@@ -1522,6 +1522,7 @@ function NumberCell({
     <div className={clsx("relative", !big && "ml-auto w-full max-w-[9rem]")}>
       <input
         autoFocus
+        size={1}
         value={draft}
         inputMode="decimal"
         onFocus={(e) => e.currentTarget.select()}
@@ -1532,7 +1533,7 @@ function NumberCell({
           if (e.key === "Escape") setDraft(null);
         }}
         className={clsx(
-          "no-focus-outline block w-full rounded-md border bg-white text-right tabular-nums outline-none ring-2",
+          "no-focus-outline block w-full min-w-0 rounded-md border bg-white text-right tabular-nums outline-none ring-2",
           big ? "px-2 py-0.5 text-left text-[20px] font-semibold" : "px-2 py-1 text-[13px]",
           over ? "border-amber-400 ring-amber-100" : "border-blue-400 ring-blue-100"
         )}
@@ -1707,10 +1708,10 @@ function MixView({
       <section className="mb-6">
         <h3 className="mb-2 text-[14px] font-semibold text-slate-900">{title}</h3>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[13px]">
+          <table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0 text-[13px]">
             <thead>
               <tr className="text-[11.5px] text-slate-500">
-                <th rowSpan={2} className="border-b border-slate-200 px-3 py-2 text-left font-medium">
+                <th rowSpan={2} className="w-[190px] border-b border-slate-200 px-3 py-2 text-left font-medium">
                   Hospital
                 </th>
                 {members.map((m) => (
@@ -1718,7 +1719,7 @@ function MixView({
                     {m}
                   </th>
                 ))}
-                <th rowSpan={2} className="border-b border-l border-slate-200 px-3 py-2 text-right font-medium">
+                <th rowSpan={2} className="w-[110px] border-b border-l border-slate-200 px-3 py-2 text-right font-medium">
                   {Y} total
                 </th>
               </tr>
@@ -1901,16 +1902,16 @@ function MonthsView({
         </span>
       </div>
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-[12.5px]">
+        <table className="w-full min-w-[1100px] table-fixed border-separate border-spacing-0 text-[12.5px]">
           <thead>
             <tr className="text-[11.5px] text-slate-500">
-              <th className="border-b border-slate-200 px-2 py-2 text-left font-medium">{asGrowth ? "Growth % vs " + B : unitLabel(unit)}</th>
+              <th className="w-[180px] border-b border-slate-200 px-2 py-2 text-left font-medium">{asGrowth ? "Growth % vs " + B : unitLabel(unit)}</th>
               {MONTHS.map((m) => (
                 <th key={m} className="border-b border-slate-200 px-1 py-2 text-right font-medium">
                   {m}
                 </th>
               ))}
-              <th className="border-b border-slate-200 px-2 py-2 text-right font-medium">Year</th>
+              <th className="w-[100px] border-b border-slate-200 px-2 py-2 text-right font-medium">Year</th>
             </tr>
           </thead>
           <tbody>
