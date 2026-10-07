@@ -266,11 +266,15 @@ html[data-motion="off"] *::after {
    phones keep 100% (they have their own layout). Heights/widths that fill the
    window divide by the zoom so they still reach the edges. */
 :root { --app-zoom: 1; }
-@media (min-width: 768px) and (max-width: 2399.98px) { :root { --app-zoom: 0.9; } }
-@media (min-width: 768px) and (max-width: 1365.98px) { :root { --app-zoom: 0.85; } }
+/* Auto only shrinks for mouse/trackpad screens; tablets keep 100% so fingers get full-size targets. */
+@media (pointer: fine) and (min-width: 768px) and (max-width: 2399.98px) { :root { --app-zoom: 0.9; } }
+@media (pointer: fine) and (min-width: 768px) and (max-width: 1365.98px) { :root { --app-zoom: 0.85; } }
 html[data-zoom="100"] { --app-zoom: 1; }
 html[data-zoom="90"] { --app-zoom: 0.9; }
 html[data-zoom="80"] { --app-zoom: 0.8; }
+/* Browsers whose zoom doesn't scale rects and viewport units the standard way
+   (some Safari / iPad versions) would overflow the window: draw them at 100%. */
+html[data-nozoom] { --app-zoom: 1 !important; }
 html { zoom: var(--app-zoom); }
 .app-viewport { height: calc(100dvh / var(--app-zoom)); width: calc(100vw / var(--app-zoom)); }
 .app-min-viewport { min-height: calc(100dvh / var(--app-zoom)); }
@@ -632,3 +636,14 @@ html[data-motion="reduced"] .wb-wire, html[data-motion="reduced"] .wb-wire-dot {
   }
   [data-port] { scale: 1.25; }
 }
+@keyframes wb-from-right {
+  from { opacity: 0; translate: 14px 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+.wb-from-right { animation: wb-from-right 420ms var(--ease-out-soft) 140ms backwards; }
+/* A stroke held still snaps to a shape: the clean shape pops in. */
+@keyframes wb-snap-kf {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.wb-snap { animation: wb-snap-kf 160ms ease-out backwards; }
