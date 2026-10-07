@@ -134,3 +134,35 @@ export function recognizeShape(raw: Pt[]): Recognized | null {
   if (rectErr < 0.035) return { kind: "rect", x, y, w, h };
   return null;
 }
+
+/**
+ * For "Convert to shape" on a stroke that's already on the board: the clean
+ * shape if it's recognised, otherwise the closest fit — a closed stroke becomes
+ * whichever of rectangle / ellipse it hugs better, an open one a straight line
+ * between its ends. Only tiny strokes give null.
+ */
+export function fitShape(raw: Pt[]): Recognized | null {
+  const r = recognizeShape(raw);
+  if (r) return r;
+  if (raw.length < 2) return null;
+  const xs = raw.map((p) => p[0]);
+  const ys = raw.map((p) => p[1]);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  const w = Math.max(...xs) - x;
+  const h = Math.max(...ys) - y;
+  const diag = Math.hypot(w, h);
+  if (diag < 12) return null;
+  const first = raw[0];
+  const last = raw[raw.length - 1];
+  const len = pathLength(raw);
+  const closed = dist(first, last) <= Math.max(0.35 * diag, 0.2 * len) && Math.min(w, h) >= 0.08 * Math.max(w, h);
+  if (!closed) return { kind: "line", a: { x: first[0], y: first[1] }, b: { x: last[0], y: last[1] } };
+  const pts = resample(raw, 96);
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  // Both errors as an average distance (world units) from the candidate outline.
+  const ell = pts.reduce((s, p) => s + Math.abs(Math.hypot((p[0] - cx) / (w / 2), (p[1] - cy) / (h / 2)) - 1) * Math.min(w, h) / 2, 0) / pts.length;
+  const rect = pts.reduce((s, p) => s + Math.min(Math.abs(p[0] - x), Math.abs(p[0] - x - w), Math.abs(p[1] - y), Math.abs(p[1] - y - h)), 0) / pts.length;
+  return { kind: ell < rect ? "ellipse" : "rect", x, y, w, h };
+}
