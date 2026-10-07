@@ -35,6 +35,8 @@ import {
   MousePointer2,
   MoveUpRight,
   Pen,
+  Maximize2,
+  Minimize2,
   Pencil,
   Plus,
   Redo2,
@@ -86,6 +88,8 @@ type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 type Interaction =
   | { type: "pan"; sx: number; sy: number; cam: Camera }
+  // Two fingers on a touch screen: zoom and pan together.
+  | { type: "pinch" }
   // Right button: pans once dragged past a few px, otherwise opens the menu on release.
   | { type: "rpan"; sx: number; sy: number; cam: Camera; moved: boolean }
   | {
@@ -160,6 +164,41 @@ const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 // Miro look: grey canvas, floating white panels, #4262FF accent, near-black ink.
 const INK = "#1A1A1A";
+/** A pen stroke as a smooth curve through its points (midpoint quadratic smoothing). */
+function strokePath(pts: [number, number][]): string {
+  if (!pts.length) return "";
+  if (pts.length < 3) return `M${pts[0][0]},${pts[0][1]} ` + pts.slice(1).map((q) => `L${q[0]},${q[1]}`).join(" ") + (pts.length === 1 ? ` L${pts[0][0] + 0.01},${pts[0][1]}` : "");
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[i + 1];
+    d += ` Q${x1},${y1} ${(x1 + x2) / 2},${(y1 + y2) / 2}`;
+  }
+  const l = pts[pts.length - 1];
+  return d + ` L${l[0]},${l[1]}`;
+}
+
+/** Drop points closer together than `min` (world units) so long strokes stay light. */
+function thinPoints(pts: [number, number][], min: number): [number, number][] {
+  const out: [number, number][] = [];
+  for (const q of pts) {
+    const l = out[out.length - 1];
+    if (!l || Math.hypot(q[0] - l[0], q[1] - l[1]) >= min) out.push(q);
+  }
+  const last = pts[pts.length - 1];
+  if (last && out[out.length - 1] !== last) out.push(last);
+  return out;
+}
+
+const PENCIL_KEY = "wb_pencil_draws";
+function readPencilPref() {
+  try {
+    return localStorage.getItem(PENCIL_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 /** The app's motion setting (Settings → Appearance) or the OS asks for less movement. */
 function reducedMotion() {
   if (typeof window === "undefined") return true;
@@ -388,6 +427,22 @@ export function BoardCanvas({
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 });
   const [selection, setSelection] = useState<string[]>([]);
   const [tool, setTool] = useState<Tool>("select");
+  // iPad / touch: Apple Pencil draws, fingers move the board (Freeform-style).
+  const [pencilDraws, setPencilDrawsState] = useState(readPencilPref);
+  const setPencilDraws = (on: boolean) => {
+    setPencilDrawsState(on);
+    try {
+      localStorage.setItem(PENCIL_KEY, on ? "1" : "0");
+    } catch {}
+  };
+  const pointers = useRef(new Map<number, { x: number; y: number; type: string }>());
+  const pinch = useRef<{ d0: number; cam0: Camera; wx: number; wy: number } | null>(null);
+  const penDown = useRef(false);
+  const penSeen = useRef(false);
+  const longPress = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number; id: number } | null>(null);
+  // Board fills the whole screen (hides the app's menus) — handy on an iPad.
+  const [focusMode, setFocusMode] = useState(false);
+  const focusRef = useRef(false);
   const [shapeKind, setShapeKind] = useState<ShapeKind>("round");
   const [shapeMenu, setShapeMenu] = useState(false);
   const [stickyColor, setStickyColor] = useState(STICKY_COLORS[0]);
@@ -447,6 +502,7 @@ export function BoardCanvas({
   // elements also write elRef directly, so it's never stale mid-gesture.
   useLayoutEffect(() => {
     escIdleRef.current = onEscapeIdle;
+    focusRef.current = focusMode;
     elRef.current = elements;
     camRef.current = camera;
     selRef.current = selection;
@@ -980,6 +1036,10 @@ export function BoardCanvas({
       } else if (k === "escape") {
         // Esc peels back one layer at a time: menus, then selection/tool, then the view itself.
         if (!openUi.current && selRef.current.length === 0) {
+          if (focusRef.current) {
+            setFocusMode(false);
+            return;
+          }
           escIdleRef.current?.();
           return;
         }
@@ -1125,8 +1185,38 @@ export function BoardCanvas({
     setHelpOpen(false);
     setFramesOpen(false);
     setZoomMenu(false);
+    const pt = e.pointerType;
+    // Palm rejection: while the Pencil is on the glass, ignore the hand.
+    if (pt === "touch" && penDown.current) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: pt });
+    if (pt === "pen") penDown.current = penSeen.current = true;
     rootRef.current?.setPointerCapture(e.pointerId);
+    if (pt === "touch") {
+      const touches = [...pointers.current.values()].filter((q) => q.type === "touch");
+      if (touches.length >= 2) {
+        startPinch();
+        return;
+      }
+    }
     const p = toWorld(e.clientX, e.clientY);
+    if (pt === "touch") armLongPress(e);
+
+    // Apple Pencil: draws straight away (or erases with a stylus eraser button).
+    if (pt === "pen" && !readOnly && (e.buttons & 32) === 32) {
+      setInteraction({ type: "erase", hit: inkAt(p) });
+      return;
+    }
+    if (pt === "pen" && !readOnly && pencilDraws && (tool === "select" || tool === "hand")) {
+      setTool("pen");
+      setSelection([]);
+      setInteraction({ type: "draw", points: [[p.x, p.y]] });
+      return;
+    }
+    // Once a Pencil has been used, a finger in the pen tools moves the board instead of drawing.
+    if (pt === "touch" && penSeen.current && (tool === "pen" || tool === "eraser")) {
+      setInteraction({ type: "pan", sx: e.clientX, sy: e.clientY, cam: camRef.current });
+      return;
+    }
 
     // Right button (or Ctrl+click on a Mac): drag pans, a plain click opens the menu on release.
     const macCtrlClick = e.button === 0 && e.ctrlKey && /Mac/.test(navigator.platform);
@@ -1229,8 +1319,76 @@ export function BoardCanvas({
       setInteraction({ type: "move", start: p, orig: carry, ids: Array.from(carry.keys()), snapshot: elRef.current, lastSend: 0, editOnClick });
       return;
     }
+    // A finger on empty board moves the board (box-select stays a mouse / Pencil thing).
+    if (pt === "touch") {
+      setSelection([]);
+      setInteraction({ type: "pan", sx: e.clientX, sy: e.clientY, cam: camRef.current });
+      return;
+    }
     setInteraction({ type: "marquee", start: p, cur: p, additive: e.shiftKey ? selection : [] });
     if (!e.shiftKey) setSelection([]);
+  }
+
+  function cancelLongPress() {
+    if (longPress.current) clearTimeout(longPress.current.timer);
+    longPress.current = null;
+  }
+
+  /** Touch and hold opens the menu (iPad has no right click). */
+  function armLongPress(e: React.PointerEvent) {
+    cancelLongPress();
+    const { clientX: x, clientY: y, pointerId: id } = e;
+    longPress.current = {
+      id,
+      x,
+      y,
+      timer: setTimeout(() => {
+        longPress.current = null;
+        if (!pointers.current.has(id)) return;
+        const it = interRef.current;
+        if (it?.type === "move") {
+          elRef.current = it.snapshot;
+          setElements(it.snapshot);
+        }
+        interRef.current = null;
+        setInteraction(null);
+        // Same path as the keyboard's menu key: the board's own context-menu handler.
+        rootRef.current?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+      }, 550),
+    };
+  }
+
+  /** Two fingers down: drop whatever the first finger started and zoom/pan with both. */
+  function startPinch() {
+    cancelLongPress();
+    const it = interRef.current;
+    if (it?.type === "move" || it?.type === "resize") {
+      elRef.current = it.snapshot;
+      setElements(it.snapshot);
+    }
+    const [a, b] = [...pointers.current.values()].filter((q) => q.type === "touch");
+    const r = rootRef.current!.getBoundingClientRect();
+    const c = camRef.current;
+    const mx = (a.x + b.x) / 2 - r.left;
+    const my = (a.y + b.y) / 2 - r.top;
+    pinch.current = { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), cam0: c, wx: (mx - c.x) / c.zoom, wy: (my - c.y) / c.zoom };
+    stopGlide();
+    interRef.current = { type: "pinch" };
+    setInteraction({ type: "pinch" });
+    setGhost(null);
+  }
+
+  function movePinch() {
+    const pz = pinch.current;
+    if (!pz) return;
+    const touches = [...pointers.current.values()].filter((q) => q.type === "touch");
+    if (touches.length < 2) return;
+    const [a, b] = touches;
+    const r = rootRef.current!.getBoundingClientRect();
+    const zoom = clamp(pz.cam0.zoom * (Math.hypot(a.x - b.x, a.y - b.y) / pz.d0), MIN_ZOOM, MAX_ZOOM);
+    const mx = (a.x + b.x) / 2 - r.left;
+    const my = (a.y + b.y) / 2 - r.top;
+    setCamera({ zoom, x: mx - pz.wx * zoom, y: my - pz.wy * zoom });
   }
 
   /** Ink strokes passing within a few screen px of `p`. */
@@ -1255,6 +1413,14 @@ export function BoardCanvas({
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+    const lp = longPress.current;
+    if (lp && lp.id === e.pointerId && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) cancelLongPress();
+    if (pinch.current) {
+      movePinch();
+      return;
+    }
+    if (e.pointerType === "touch" && penDown.current) return;
     const p = toWorld(e.clientX, e.clientY);
     lastPointer.current = p;
     rt.sendCursor(p);
@@ -1373,9 +1539,18 @@ export function BoardCanvas({
         setInteraction({ ...it, cur });
         break;
       }
-      case "draw":
-        setInteraction({ type: "draw", points: [...it.points, [p.x, p.y]] });
+      case "draw": {
+        // A Pencil reports far more often than the screen redraws: keep every sample.
+        const evs = typeof e.nativeEvent.getCoalescedEvents === "function" ? e.nativeEvent.getCoalescedEvents() : [];
+        const add: [number, number][] = evs.length ? evs.map((ev) => {
+          const q = toWorld(ev.clientX, ev.clientY);
+          return [q.x, q.y];
+        }) : [[p.x, p.y]];
+        const next: Interaction = { type: "draw", points: [...it.points, ...add] };
+        interRef.current = next;
+        setInteraction(next);
         break;
+      }
       case "erase": {
         const add = inkAt(p).filter((id) => !it.hit.includes(id));
         if (add.length) setInteraction({ type: "erase", hit: [...it.hit, ...add] });
@@ -1385,6 +1560,19 @@ export function BoardCanvas({
   }
 
   function onPointerUp(e: React.PointerEvent) {
+    const had = pointers.current.delete(e.pointerId);
+    if (e.pointerType === "pen") penDown.current = false;
+    if (longPress.current?.id === e.pointerId) cancelLongPress();
+    if (pinch.current) {
+      // Lifting a finger ends the pinch; the other finger does nothing until lifted.
+      if ([...pointers.current.values()].filter((q) => q.type === "touch").length < 2) {
+        pinch.current = null;
+        interRef.current = null;
+        setInteraction(null);
+      }
+      return;
+    }
+    if (!had && e.pointerType === "touch") return;
     const it = interRef.current;
     setInteraction(null);
     setGuides({ v: [], h: [] });
@@ -1493,7 +1681,7 @@ export function BoardCanvas({
         w: Math.max(...xs) - x || 1,
         h: Math.max(...ys) - y || 1,
         z: maxZ() + 1,
-        points: it.points.map(([px, py]) => [Math.round((px - x) * 10) / 10, Math.round((py - y) * 10) / 10]),
+        points: thinPoints(it.points, 0.6 / camRef.current.zoom).map(([px, py]) => [Math.round((px - x) * 10) / 10, Math.round((py - y) * 10) / 10]),
         stroke: penColor,
         width: marker ? penWidth * HIGHLIGHT.scale : penWidth,
         opacity: marker ? HIGHLIGHT.opacity : undefined,
@@ -1909,7 +2097,12 @@ export function BoardCanvas({
             : "crosshair";
 
   return (
-    <div className="zoom-native wb-board-in relative h-full w-full overflow-hidden rounded-xl bg-[#F2F2F2] text-[#1C1C1E] select-none">
+    <div
+      className={clsx(
+        "zoom-native wb-board-in overflow-hidden bg-[#F2F2F2] text-[#1C1C1E] select-none [-webkit-touch-callout:none]",
+        focusMode ? "fixed inset-0 z-[70]" : "relative h-full w-full rounded-xl"
+      )}
+    >
       <div
         ref={rootRef}
         className="absolute inset-0 touch-none"
@@ -1922,6 +2115,7 @@ export function BoardCanvas({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onPointerLeave={() => {
           rt.sendCursor(null);
           setGhost(null);
@@ -1991,9 +2185,9 @@ export function BoardCanvas({
             </defs>
             {drawings.map((d) => (
               <g key={d.id} data-anim={d.id} transform={`translate(${d.x},${d.y})`}>
-                <polyline
+                <path
                   data-box={d.id}
-                  points={d.points.map((q) => q.join(",")).join(" ")}
+                  d={strokePath(d.points)}
                   fill="none"
                   stroke={d.stroke}
                   strokeWidth={d.width}
@@ -2081,7 +2275,7 @@ export function BoardCanvas({
                 );
               })()}
             {interaction?.type === "draw" && (
-              <polyline points={interaction.points.map((q) => q.join(",")).join(" ")} fill="none" stroke={penColor} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={strokePath(interaction.points)} fill="none" stroke={penColor} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
             )}
           </svg>
 
@@ -2355,6 +2549,16 @@ export function BoardCanvas({
       {/* Top-right: collaborators + share */}
       <div data-ui className="wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2">
         {extraActions && <div className={clsx("flex h-12 items-center gap-1 px-1.5", PANEL)}>{extraActions}</div>}
+        <button
+          type="button"
+          onClick={() => setFocusMode((v) => !v)}
+          aria-pressed={focusMode}
+          title={focusMode ? "Exit full screen (Esc)" : "Full screen — hide the app's menus"}
+          aria-label={focusMode ? "Exit full screen" : "Full screen"}
+          className={clsx(PANEL, "wb-btn grid h-12 w-12 place-items-center text-[#1C1C1E] hover:bg-[#F1F2F5]", focusMode && "text-[#4262FF]")}
+        >
+          {focusMode ? <Minimize2 className="h-5 w-5" strokeWidth={1.75} /> : <Maximize2 className="h-5 w-5" strokeWidth={1.75} />}
+        </button>
         <div className={clsx("flex h-12 items-center gap-2 pl-2.5 pr-1.5", PANEL)}>
           <div className="flex -space-x-1.5">
             {peers.slice(0, 4).map((p) => (
@@ -2534,6 +2738,13 @@ export function BoardCanvas({
                         </button>
                       ))}
                     </div>
+                    <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-[#E9EAEF] pt-3 text-[12px] leading-snug text-[#1C1C1E]">
+                      <input type="checkbox" checked={pencilDraws} onChange={(e) => setPencilDraws(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#4262FF]" />
+                      <span>
+                        Apple Pencil draws
+                        <span className="block text-[11px] text-[#656B81]">Fingers move and zoom the board</span>
+                      </span>
+                    </label>
                   </div>
                 )}
               </div>
@@ -3012,8 +3223,8 @@ function ContextBar({
     <div
       ref={ref}
       data-ui
-      className={clsx("wb-pop absolute z-30 flex h-11 items-center gap-0.5 px-1.5", PANEL)}
-      style={{ left, top, visibility: w ? "visible" : "hidden" }}
+      className={clsx("wb-pop absolute z-30 flex min-h-11 flex-wrap items-center gap-0.5 px-1.5 py-0.5", PANEL)}
+      style={{ left, top, maxWidth: Math.max(220, containerW - 76), visibility: w ? "visible" : "hidden" }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {only?.kind === "sticky" && (
