@@ -647,3 +647,18 @@ html[data-motion="reduced"] .wb-wire, html[data-motion="reduced"] .wb-wire-dot {
   to { opacity: 1; }
 }
 .wb-snap { animation: wb-snap-kf 160ms ease-out backwards; }
+
+/* Whiteboard open: no page text selection / iOS callouts while writing with a Pencil. */
+html.wb-noselect,
+html.wb-noselect body,
+html.wb-noselect body * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+html.wb-noselect input,
+html.wb-noselect textarea,
+html.wb-noselect [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}

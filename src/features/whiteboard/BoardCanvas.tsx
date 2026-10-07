@@ -136,7 +136,9 @@ type Interaction =
   | { type: "endpoint"; id: string; end: "from" | "to"; snapshot: El[] }
   | { type: "create"; tool: Tool; start: { x: number; y: number }; cur: { x: number; y: number } }
   | { type: "draw"; points: [number, number][]; snap?: Recognized }
-  | { type: "erase"; hit: string[] };
+  | { type: "erase"; hit: string[] }
+  // Point eraser: cuts ink only where it passes; `last` is the previous eraser position.
+  | { type: "cut"; snapshot: El[]; last: { x: number; y: number } };
 
 const SHAPES: { kind: ShapeKind; label: string }[] = [
   { kind: "round", label: "Rounded" },
@@ -308,6 +310,79 @@ const ICON_BTN = "wb-btn grid h-10 w-10 place-items-center rounded-md text-[#1C1
 const ACTIVE_BTN = "bg-[#E6EAFF] text-[#4262FF] hover:bg-[#E6EAFF]";
 const PEN_COLORS = ["#1A1A1A", "#F24726", "#FAC710", "#8FD14F", "#2D9BF0", "#652CB3", "#808080", "#FFFFFF"];
 const PEN_WIDTHS = [2, 4, 8];
+const ERASER_SIZES = [12, 24, 48];
+
+/**
+ * Rub ink out along the segment a→b (world units, radius r): each stroke the eraser
+ * crosses is split into the pieces it didn't touch. Returns null when nothing changed.
+ */
+function cutInk(els: El[], a: { x: number; y: number }, b: { x: number; y: number }, r: number): El[] | null {
+  const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (r / 2)));
+  const probes = Array.from({ length: steps + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps }));
+  const minX = Math.min(a.x, b.x) - r;
+  const maxX = Math.max(a.x, b.x) + r;
+  const minY = Math.min(a.y, b.y) - r;
+  const maxY = Math.max(a.y, b.y) + r;
+  let changed = false;
+  const out: El[] = [];
+  for (const el of els) {
+    if (el.kind !== "draw" || el.locked) {
+      out.push(el);
+      continue;
+    }
+    const pad = el.width / 2;
+    if (el.x - pad > maxX || el.x + el.w + pad < minX || el.y - pad > maxY || el.y + el.h + pad < minY) {
+      out.push(el);
+      continue;
+    }
+    // Densify so a long straight segment can be cut in the middle.
+    const pts: [number, number][] = [];
+    el.points.forEach(([px, py], i) => {
+      const q: [number, number] = [px + el.x, py + el.y];
+      const prev = pts[pts.length - 1];
+      if (i && prev) {
+        const n = Math.floor(Math.hypot(q[0] - prev[0], q[1] - prev[1]) / (r / 3));
+        for (let k = 1; k < n; k++) pts.push([prev[0] + ((q[0] - prev[0]) * k) / n, prev[1] + ((q[1] - prev[1]) * k) / n]);
+      }
+      pts.push(q);
+    });
+    const hitR = r + pad;
+    const keep = pts.map(([px, py]) => !probes.some((q) => Math.hypot(px - q.x, py - q.y) <= hitR));
+    if (keep.every(Boolean)) {
+      out.push(el);
+      continue;
+    }
+    changed = true;
+    const runs: [number, number][][] = [];
+    let cur: [number, number][] = [];
+    pts.forEach((q, i) => {
+      if (keep[i]) cur.push(q);
+      else if (cur.length) {
+        runs.push(cur);
+        cur = [];
+      }
+    });
+    if (cur.length) runs.push(cur);
+    runs
+      .filter((run) => run.length >= 2)
+      .forEach((run, i) => {
+        const xs = run.map((q) => q[0]);
+        const ys = run.map((q) => q[1]);
+        const x = Math.min(...xs);
+        const y = Math.min(...ys);
+        out.push({
+          ...el,
+          id: i ? uid("ink") : el.id,
+          x,
+          y,
+          w: Math.max(...xs) - x || 1,
+          h: Math.max(...ys) - y || 1,
+          points: run.map(([px, py]) => [Math.round((px - x) * 10) / 10, Math.round((py - y) * 10) / 10]),
+        });
+      });
+  }
+  return changed ? out : null;
+}
 const HIGHLIGHT = { opacity: 0.35, scale: 5 };
 const STICKY_SIZES = [12, 14, 18, 24, 32, 48, 64];
 const SHORTCUTS: [string, string][] = [
@@ -551,6 +626,9 @@ export function BoardCanvas({
   const pinch = useRef<{ d0: number; cam0: Camera; wx: number; wy: number } | null>(null);
   const penDown = useRef(false);
   const penSeen = useRef(false);
+  /** The pointer that started the current gesture; other contacts (a resting palm) can't end or steer it. */
+  const owner = useRef<number | null>(null);
+  const lastPenUp = useRef(-1e9);
   const longPress = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number; id: number } | null>(null);
   // Board fills the whole screen (hides the app's menus) — handy on an iPad.
   const [focusMode, setFocusMode] = useState(false);
@@ -561,6 +639,12 @@ export function BoardCanvas({
   const [penColor, setPenColor] = useState(INK);
   const [penWidth, setPenWidth] = useState(PEN_WIDTHS[0]);
   const [penMode, setPenMode] = useState<"pen" | "highlighter">("pen");
+  /** Eraser: rub out whole items ("stroke") or only the ink it passes over ("point"). */
+  const [eraseMode, setEraseMode] = useState<"stroke" | "point">("stroke");
+  /** Eraser diameter in screen px. */
+  const [eraserSize, setEraserSize] = useState(ERASER_SIZES[1]);
+  /** Where the eraser ring is drawn (board px), while the eraser hovers or rubs. */
+  const [eraserAt, setEraserAt] = useState<{ x: number; y: number } | null>(null);
   const [penDash, setPenDash] = useState<PenDash>("solid");
   // Drawing panel (pen, highlighter, eraser, colours, sizes, line style, settings)
   // docks opposite the main toolbar while a drawing tool is on.
@@ -640,6 +724,33 @@ export function BoardCanvas({
       el.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : "";
     });
   });
+
+  // Writing with the Pencil (and a palm on the glass) must never select page text or
+  // scroll the page: block text selection outside text fields while the board is open,
+  // and swallow the browser's own touch gestures on the canvas.
+  useEffect(() => {
+    const root = rootRef.current;
+    const editable = (t: EventTarget | null) => t instanceof Element && Boolean(t.closest("input, textarea, [contenteditable='true']"));
+    const onSelectStart = (e: Event) => {
+      if (!editable(e.target)) e.preventDefault();
+    };
+    const onRootTouch = (e: TouchEvent) => {
+      if (!editable(e.target) && !(e.target instanceof Element && e.target.closest("[data-ui]"))) e.preventDefault();
+    };
+    const onDocTouchMove = (e: TouchEvent) => {
+      if (penDown.current && !editable(e.target)) e.preventDefault();
+    };
+    document.documentElement.classList.add("wb-noselect");
+    document.addEventListener("selectstart", onSelectStart);
+    document.addEventListener("touchmove", onDocTouchMove, { passive: false });
+    root?.addEventListener("touchmove", onRootTouch, { passive: false });
+    return () => {
+      document.documentElement.classList.remove("wb-noselect");
+      document.removeEventListener("selectstart", onSelectStart);
+      document.removeEventListener("touchmove", onDocTouchMove);
+      root?.removeEventListener("touchmove", onRootTouch);
+    };
+  }, []);
 
   // Top toolbar sits in the header row between the title bar and Share when it fits.
   const titleRef = useRef<HTMLDivElement>(null);
@@ -1491,8 +1602,16 @@ export function BoardCanvas({
     setPenPop(null);
     setTbMore(false);
     const pt = e.pointerType;
-    // Palm rejection: while the Pencil is on the glass, ignore the hand.
+    // Palm rejection: while the Pencil is on the glass, ignore the hand. Once a Pencil
+    // has been used, also ignore big contacts (a palm) and touches right after a stroke.
     if (pt === "touch" && penDown.current) return;
+    if (pt === "touch" && penSeen.current && (e.width > 60 || e.height > 60 || e.timeStamp - lastPenUp.current < 350)) return;
+    if (pt === "pen") {
+      // The Pencil wins over a hand that landed first.
+      for (const [id, q] of pointers.current) if (q.type === "touch") pointers.current.delete(id);
+      pinch.current = null;
+      cancelLongPress();
+    }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: pt });
     if (pt === "pen") penDown.current = penSeen.current = true;
     rootRef.current?.setPointerCapture(e.pointerId);
@@ -1504,11 +1623,12 @@ export function BoardCanvas({
       }
     }
     const p = toWorld(e.clientX, e.clientY);
+    owner.current = e.pointerId;
     if (pt === "touch") armLongPress(e);
 
     // Apple Pencil: draws straight away (or erases with a stylus eraser button).
     if (pt === "pen" && !readOnly && (e.buttons & 32) === 32) {
-      setInteraction({ type: "erase", hit: eraseAt(p, e.clientX, e.clientY, []) });
+      startErase(p, e.clientX, e.clientY);
       return;
     }
     // What's under the pen: a tap there (no drawing) selects it instead.
@@ -1516,7 +1636,11 @@ export function BoardCanvas({
     const tapRaw = tapHost?.dataset.box || tapHost?.dataset.line;
     const tapId = tapRaw ? hostOf(tapRaw) : undefined;
     penTap.current = tapId && !tapId.startsWith("ink") ? { id: tapId, x: e.clientX, y: e.clientY } : null;
-    if (pt === "pen" && !readOnly && pencilDraws && (tool === "select" || tool === "hand")) {
+    // ...but on a dot, a handle, or what the Pencil just picked, it works like the Select tool
+    // (connect, resize, move). Touching empty board goes back to drawing.
+    const onControl = Boolean(target.closest("[data-port], [data-handle], [data-endpoint], [data-crop]"));
+    const onPicked = Boolean(tapId && selRef.current.includes(tapId));
+    if (pt === "pen" && !readOnly && pencilDraws && (tool === "select" || tool === "hand") && !onControl && !onPicked) {
       setTool("pen");
       setSelection([]);
       setInteraction({ type: "draw", points: [[p.x, p.y]] });
@@ -1572,7 +1696,7 @@ export function BoardCanvas({
       return;
     }
     if (tool === "eraser") {
-      setInteraction({ type: "erase", hit: eraseAt(p, e.clientX, e.clientY, []) });
+      startErase(p, e.clientX, e.clientY);
       return;
     }
     if (tool === "connector") {
@@ -1607,7 +1731,7 @@ export function BoardCanvas({
       // Miro: clicking the item that's already selected starts typing in it.
       const hitEl = byId.get(hitId);
       const editOnClick =
-        !readOnly && !e.shiftKey && !e.altKey && selection.length === 1 && selection[0] === hitId && hitEl && !hitEl.locked &&
+        !readOnly && pt !== "pen" && !e.shiftKey && !e.altKey && selection.length === 1 && selection[0] === hitId && hitEl && !hitEl.locked &&
         (hitEl.kind === "sticky" || hitEl.kind === "shape" || hitEl.kind === "text" || hitEl.kind === "card")
           ? hitId
           : undefined;
@@ -1705,6 +1829,19 @@ export function BoardCanvas({
     const r = recognizeShape(it.points);
     if (!r) return;
     const next: Interaction = { ...it, snap: r };
+    interRef.current = next;
+    setInteraction(next);
+  }
+
+  /** Highlighter held still: the stroke becomes a straight line from where it started. */
+  function snapHeldLine() {
+    holdTimer.current = null;
+    const it = interRef.current;
+    if (it?.type !== "draw" || it.snap || it.points.length < 2) return;
+    const [ax, ay] = it.points[0];
+    const [bx, by] = it.points[it.points.length - 1];
+    if (Math.hypot(bx - ax, by - ay) * camRef.current.zoom < 12) return;
+    const next: Interaction = { ...it, snap: { kind: "line", a: { x: ax, y: ay }, b: { x: bx, y: by } } };
     interRef.current = next;
     setInteraction(next);
   }
@@ -1812,9 +1949,27 @@ export function BoardCanvas({
     return [...out].filter((id) => !already.includes(id));
   }
 
-  /** Ink strokes passing within a few screen px of `p`. */
+  function startErase(p: { x: number; y: number }, clientX: number, clientY: number) {
+    if (eraseMode === "point") {
+      const snapshot = elRef.current;
+      const cut = cutInk(snapshot, p, p, eraserSize / 2 / camRef.current.zoom);
+      if (cut) {
+        elRef.current = cut;
+        setElements(cut);
+      }
+      const next: Interaction = { type: "cut", snapshot, last: p };
+      interRef.current = next;
+      setInteraction(next);
+      return;
+    }
+    const next: Interaction = { type: "erase", hit: eraseAt(p, clientX, clientY, []) };
+    interRef.current = next;
+    setInteraction(next);
+  }
+
+  /** Ink strokes under the eraser ring at `p`. */
   function inkAt(p: { x: number; y: number }): string[] {
-    const tol = 8 / camRef.current.zoom;
+    const tol = eraserSize / 2 / camRef.current.zoom;
     const out: string[] = [];
     for (const el of elRef.current) {
       if (el.kind !== "draw" || el.locked) continue;
@@ -1844,6 +1999,12 @@ export function BoardCanvas({
       return;
     }
     if (e.pointerType === "touch" && penDown.current) return;
+    // Only the contact that started a gesture moves it (a resting palm doesn't).
+    if (interRef.current && owner.current !== null && e.pointerId !== owner.current) return;
+    if (tool === "eraser" || interRef.current?.type === "erase" || interRef.current?.type === "cut") {
+      const rr = rootRef.current!.getBoundingClientRect();
+      setEraserAt({ x: e.clientX - rr.left, y: e.clientY - rr.top });
+    } else if (eraserAt) setEraserAt(null);
     const p = toWorld(e.clientX, e.clientY);
     lastPointer.current = p;
     rt.sendCursor(p);
@@ -2007,15 +2168,27 @@ export function BoardCanvas({
           return [q.x, q.y];
         }) : [[p.x, p.y]];
         const next: Interaction = { type: "draw", points: [...it.points, ...add] };
-        // Draw-and-hold: moving on drops a snapped shape and restarts the hold clock.
         const anchor = holdAnchor.current;
-        if (!anchor || Math.hypot(e.clientX - anchor.x, e.clientY - anchor.y) > 5) {
+        if (penMode === "highlighter" && it.snap?.kind === "line") {
+          // A held highlight stays straight; the pen now just moves its far end.
+          next.snap = { ...it.snap, b: { x: p.x, y: p.y } };
+        } else if (!anchor || Math.hypot(e.clientX - anchor.x, e.clientY - anchor.y) > 5) {
+          // Draw-and-hold: moving on drops a snapped shape and restarts the hold clock.
           holdAnchor.current = { x: e.clientX, y: e.clientY };
           if (holdTimer.current) clearTimeout(holdTimer.current);
-          holdTimer.current = penMode === "pen" ? setTimeout(snapHeldStroke, 450) : null;
+          holdTimer.current = setTimeout(penMode === "pen" ? snapHeldStroke : snapHeldLine, 450);
         } else if (it.snap) next.snap = it.snap;
         interRef.current = next;
         setInteraction(next);
+        break;
+      }
+      case "cut": {
+        const cut = cutInk(elRef.current, it.last, p, eraserSize / 2 / camRef.current.zoom);
+        if (cut) {
+          elRef.current = cut;
+          setElements(cut);
+        }
+        it.last = p;
         break;
       }
       case "erase": {
@@ -2032,7 +2205,10 @@ export function BoardCanvas({
 
   function onPointerUp(e: React.PointerEvent) {
     const had = pointers.current.delete(e.pointerId);
-    if (e.pointerType === "pen") penDown.current = false;
+    if (e.pointerType === "pen") {
+      penDown.current = false;
+      lastPenUp.current = e.timeStamp;
+    }
     if (longPress.current?.id === e.pointerId) cancelLongPress();
     if (pinch.current) {
       // Lifting a finger ends the pinch; the other finger does nothing until lifted.
@@ -2044,6 +2220,9 @@ export function BoardCanvas({
       return;
     }
     if (!had && e.pointerType === "touch") return;
+    // A palm lifting off doesn't end the Pencil's stroke.
+    if (interRef.current && owner.current !== null && e.pointerId !== owner.current) return;
+    owner.current = null;
     const it = interRef.current;
     setInteraction(null);
     setGuides({ v: [], h: [] });
@@ -2151,13 +2330,15 @@ export function BoardCanvas({
       }
       if (it.points.length < 2) return;
       const shape = penMode === "pen" ? (it.snap ?? (tb.autoShapes ? recognizeShape(it.points) : null)) : null;
+      const straight = penMode === "highlighter" && it.snap?.kind === "line" ? it.snap : null;
+      const pts: [number, number][] = straight ? [[straight.a.x, straight.a.y], [straight.b.x, straight.b.y]] : it.points;
       if (shape) {
         const made = shapeFromStroke(shape);
         commit([...elRef.current, made.kind === "connector" ? attachEnds(made, elRef.current) : made]);
         return;
       }
-      const xs = it.points.map((q) => q[0]);
-      const ys = it.points.map((q) => q[1]);
+      const xs = pts.map((q) => q[0]);
+      const ys = pts.map((q) => q[1]);
       const x = Math.min(...xs);
       const y = Math.min(...ys);
       const marker = penMode === "highlighter";
@@ -2169,7 +2350,7 @@ export function BoardCanvas({
         w: Math.max(...xs) - x || 1,
         h: Math.max(...ys) - y || 1,
         z: maxZ() + 1,
-        points: thinPoints(it.points, 0.6 / camRef.current.zoom).map(([px, py]) => [Math.round((px - x) * 10) / 10, Math.round((py - y) * 10) / 10]),
+        points: thinPoints(pts, 0.6 / camRef.current.zoom).map(([px, py]) => [Math.round((px - x) * 10) / 10, Math.round((py - y) * 10) / 10]),
         stroke: penColor,
         width: marker ? penWidth * HIGHLIGHT.scale : penWidth,
         opacity: marker ? HIGHLIGHT.opacity : undefined,
@@ -2178,6 +2359,8 @@ export function BoardCanvas({
       const host = inkHost(el);
       if (host) el.on = host;
       commit([...elRef.current, el]);
+    } else if (it.type === "cut") {
+      if (elRef.current !== it.snapshot) commit(elRef.current, { from: it.snapshot });
     } else if (it.type === "erase") {
       if (it.hit.length) {
         const gone = new Set(it.hit);
@@ -2712,26 +2895,30 @@ export function BoardCanvas({
   const toolBtn = (active: boolean) =>
     tbDetailed
       ? clsx(
-          "wb-btn flex flex-col items-center justify-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]",
+          "wb-btn relative flex flex-col items-center justify-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]",
           topInRow ? "h-10 w-[54px] gap-0.5" : "h-[52px] w-[56px] gap-1",
           active && ACTIVE_BTN
         )
-      : clsx(ICON_BTN, active && ACTIVE_BTN);
+      : clsx(ICON_BTN, "relative", active && ACTIVE_BTN);
   const tbLabel = topInRow ? "text-[9.5px] font-medium leading-none" : "text-[10.5px] font-medium leading-none";
-  const flyPos = clsx("z-30", tb.pos === "left" ? "left-[calc(100%+8px)] top-0" : tb.pos === "right" ? "right-[calc(100%+8px)] top-0" : "left-0 top-[calc(100%+8px)]");
+  // Pickers open beside the whole toolbar block (tools + drawing bar), never on top of it.
+  const flyPos = clsx(
+    "z-30",
+    tb.pos === "left" ? "left-[calc(100%+8px)] top-0" : tb.pos === "right" ? "right-[calc(100%+8px)] top-0" : "left-1/2 top-[calc(100%+8px)] -translate-x-1/2"
+  );
   // A side toolbar on a short board: undo/redo moves beside it, then the tools
   // fold into columns, so nothing runs off the bottom.
   const btnStep = (tbDetailed ? 52 : 40) + 2;
-  const mainH = 9 * btnStep + 5 + 8;
+  const mainH = 9 * btnStep + 10 + 8;
   const undoH = 2 * btnStep + 8;
   const availH = view.h - 72 - 12;
-  const sideFits = mainH + 8 + undoH <= availH;
-  const mainFits = mainH <= availH;
-  const toolRows = mainFits ? 0 : Math.max(3, Math.floor((availH - 13) / btnStep));
+  // A side toolbar that's too tall for the board folds into two columns (never more);
+  // undo / redo always stay underneath.
+  const twoCol = tbVertical && mainH + 8 + undoH > availH;
   // The drawing bar shows every colour / width / line type when there's room, else one button each.
   // (A top bar is centred under the toolbar, so it needs room on both sides of that centre.)
   const barMid = topInRow && headerGap ? (headerGap.left + headerGap.right) / 2 : view.w / 2;
-  const penFull = tbVertical ? availH - (tb.pos === "right" ? 56 : 0) >= 680 : 2 * Math.min(barMid - 12, view.w - 12 - barMid) >= 800;
+  const penFull = tbVertical ? availH - (tb.pos === "right" ? 56 : 0) >= 730 : 2 * Math.min(barMid - 12, view.w - 12 - barMid) >= 800;
   const tbTop = topInRow ? 12 : 72;
   const tbW = tbSize?.w ?? tbPanel * 2 + 8;
   const tbH = tbSize?.h ?? tbPanel;
@@ -2754,7 +2941,7 @@ export function BoardCanvas({
         ? "grab"
         : tool === "select"
           ? "default"
-          : tool === "sticky"
+          : tool === "sticky" || tool === "eraser"
             ? "none"
             : "crosshair";
 
@@ -2886,7 +3073,17 @@ export function BoardCanvas({
             {interaction?.type === "draw" &&
               interaction.snap &&
               (interaction.snap.kind === "line" ? (
-                <line className="wb-snap" x1={interaction.snap.a.x} y1={interaction.snap.a.y} x2={interaction.snap.b.x} y2={interaction.snap.b.y} stroke={penColor} strokeWidth={Math.max(2, Math.min(penWidth, 6))} strokeLinecap="round" />
+                <line
+                  className={penMode === "highlighter" ? undefined : "wb-snap"}
+                  x1={interaction.snap.a.x}
+                  y1={interaction.snap.a.y}
+                  x2={interaction.snap.b.x}
+                  y2={interaction.snap.b.y}
+                  stroke={penColor}
+                  strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : Math.max(2, Math.min(penWidth, 6))}
+                  strokeOpacity={penMode === "highlighter" ? HIGHLIGHT.opacity : undefined}
+                  strokeLinecap="round"
+                />
               ) : (
                 <g className="wb-snap" transform={`translate(${interaction.snap.x},${interaction.snap.y})`}>
                   <path d={shapePath(interaction.snap.kind, interaction.snap.w, interaction.snap.h)} fill="none" stroke={penColor} strokeWidth={2} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
@@ -3003,6 +3200,14 @@ export function BoardCanvas({
               </div>
             );
           })()}
+
+          {/* eraser ring */}
+          {eraserAt && (tool === "eraser" || interaction?.type === "erase" || interaction?.type === "cut") && (
+            <div
+              className="absolute rounded-full border-[1.5px] border-[#656B81] bg-white/40"
+              style={{ left: eraserAt.x - eraserSize / 2, top: eraserAt.y - eraserSize / 2, width: eraserSize, height: eraserSize }}
+            />
+          )}
 
           {/* crop: the whole picture dimmed, the kept part bright, handles on the kept part */}
           {single?.kind === "image" && single.id === cropId && (() => {
@@ -3304,14 +3509,12 @@ export function BoardCanvas({
       <div
         className={clsx(
           "flex gap-2",
-          tb.pos === "left" && (sideFits ? "flex-col" : "flex-row items-start"),
-          tb.pos === "right" && (sideFits ? "flex-col" : "flex-row-reverse items-start"),
+          tbVertical && "flex-col",
           tb.pos === "top" && "flex-row flex-wrap items-start justify-center"
         )}
       >
         <div
-          className={clsx("gap-0.5 p-1", PANEL, tbVertical ? (toolRows ? "grid grid-flow-col" : "flex flex-col") : "flex flex-row flex-wrap justify-center")}
-          style={tbVertical && toolRows ? { gridTemplateRows: `repeat(${toolRows}, auto)` } : undefined}
+          className={clsx("gap-0.5 p-1", PANEL, tbVertical ? (twoCol ? "grid grid-cols-2" : "flex flex-col") : "flex flex-row flex-wrap justify-center")}
         >
           {(
             [
@@ -3323,11 +3526,14 @@ export function BoardCanvas({
               ["connector", MoveUpRight, "Connection line", "L", "Line"],
               ["frame", FrameIcon, "Frame", "F", "Frame"],
             ] as [Tool, LucideIcon, string, string, string][]
-          ).filter(([t]) => !tbHidden.has(t)).map(([t, Icon, label, key, short]) => {
+          ).filter(([t]) => !tbHidden.has(t)).flatMap(([t, Icon, label, key, short]) => {
             const flyout = (t === "sticky" && tool === "sticky" && flyoutOpen) || (t === "shape" && shapeMenu);
             const active = tool === t || (t === "pen" && tool === "eraser");
-            return (
-              <div key={t} className="group relative">
+            const sepAfter = t === "hand" && !tbHidden.has("hand") ? (
+              <span key="sep-nav" className={clsx("bg-[#E9EAEF]", tbVertical ? clsx("mx-2 my-0.5 h-px", twoCol && "col-span-2") : "mx-0.5 my-2 w-px self-stretch")} />
+            ) : null;
+            return [
+              <div key={t} className="group">
                 <button
                   type="button"
                   aria-label={`${label} (${key})`}
@@ -3343,8 +3549,8 @@ export function BoardCanvas({
                 >
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
                   {tbDetailed && <span className={tbLabel}>{short}</span>}
+                  {!flyout && <Tip label={label} hint={key} side={tb.pos} />}
                 </button>
-                {!flyout && <Tip label={label} hint={key} side={tb.pos} />}
                 {t === "sticky" && flyout && (
                   <div className={clsx("absolute w-[184px] p-3", flyPos, POPOVER)}>
                     <p className="mb-2 text-[12px] font-semibold text-[#656B81]">Sticky notes</p>
@@ -3389,15 +3595,16 @@ export function BoardCanvas({
                     <p className="mt-3 text-[12px] text-[#9A9DAA]">Click to place, or drag to size</p>
                   </div>
                 )}
-              </div>
-            );
+              </div>,
+              sepAfter,
+            ];
           })}
           {tbHidden.size > 0 && (
-            <div className="group relative">
+            <div className="group">
               <button type="button" aria-label="More tools" aria-pressed={tbMore} onClick={() => setTbMore((v) => !v)} className={toolBtn(tbMore)}>
                 <Ellipsis className="h-5 w-5" strokeWidth={1.75} />
+                {!tbMore && <Tip label="More tools" side={tb.pos} />}
               </button>
-              {!tbMore && <Tip label="More tools" side={tb.pos} />}
               {tbMore && (
                 <div className={clsx("absolute w-52 p-1.5", flyPos, POPOVER)}>
                   {(
@@ -3441,8 +3648,8 @@ export function BoardCanvas({
               )}
             </div>
           )}
-          <span className={clsx("bg-[#E9EAEF]", tbVertical ? "mx-2 my-0.5 h-px" : "mx-0.5 my-2 w-px self-stretch")} />
-          <div className={clsx("group relative", tbHidden.has("blocks") && "hidden")}>
+          <span className={clsx("bg-[#E9EAEF]", tbVertical ? clsx("mx-2 my-0.5 h-px", twoCol && "col-span-2") : "mx-0.5 my-2 w-px self-stretch")} />
+          <div className={clsx("group", tbHidden.has("blocks") && "hidden")}>
             <button
               type="button"
               aria-label="More blocks (B)"
@@ -3456,10 +3663,10 @@ export function BoardCanvas({
             >
               <SquarePlus className="h-5 w-5" strokeWidth={1.75} />
               {tbDetailed && <span className={tbLabel}>Blocks</span>}
+              {!libraryOpen && <Tip label="More blocks" hint="B" side={tb.pos} />}
             </button>
-            {!libraryOpen && <Tip label="More blocks" hint="B" side={tb.pos} />}
           </div>
-          <div className="group relative">
+          <div className="group">
             <button
               type="button"
               aria-label="Toolbar layout"
@@ -3473,8 +3680,8 @@ export function BoardCanvas({
             >
               <SlidersHorizontal className="h-5 w-5" strokeWidth={1.75} />
               {tbDetailed && <span className={tbLabel}>Layout</span>}
+              {!tbMenu && <Tip label="Toolbar layout" side={tb.pos} />}
             </button>
-            {!tbMenu && <Tip label="Toolbar layout" side={tb.pos} />}
             {tbMenu && (
               <div className={clsx("absolute w-[232px] p-3", flyPos, POPOVER)}>
                 <p className="mb-2 text-[12px] font-semibold text-[#656B81]">Toolbar position</p>
@@ -3522,20 +3729,20 @@ export function BoardCanvas({
             )}
           </div>
         </div>
-        <div className={clsx("flex gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row", tbHidden.has("undo") && "hidden")}>
-          <div className="group relative">
+        <div className={clsx("flex gap-0.5 p-1", PANEL, tbVertical && !twoCol ? "flex-col" : "flex-row justify-center", tbHidden.has("undo") && "hidden")}>
+          <div className="group">
             <button type="button" aria-label="Undo" onClick={undo} className={toolBtn(false)}>
               <Undo2 className="h-5 w-5" strokeWidth={1.75} />
               {tbDetailed && <span className={tbLabel}>Undo</span>}
+              <Tip label="Undo" hint="Ctrl+Z" side={tb.pos} />
             </button>
-            <Tip label="Undo" hint="Ctrl+Z" side={tb.pos} />
           </div>
-          <div className={clsx("group relative", tbHidden.has("redo") && "hidden")}>
+          <div className={clsx("group", tbHidden.has("redo") && "hidden")}>
             <button type="button" aria-label="Redo" onClick={redo} className={toolBtn(false)}>
               <Redo2 className="h-5 w-5" strokeWidth={1.75} />
               {tbDetailed && <span className={tbLabel}>Redo</span>}
+              <Tip label="Redo" hint="Ctrl+Shift+Z" side={tb.pos} />
             </button>
-            <Tip label="Redo" hint="Ctrl+Shift+Z" side={tb.pos} />
           </div>
         </div>
       </div>
@@ -3550,7 +3757,6 @@ export function BoardCanvas({
           }
         };
         const btn = (active: boolean) => clsx(ICON_BTN, active && ACTIVE_BTN);
-        const divider = <span className={clsx("bg-[#E9EAEF]", tbVertical ? "mx-2 my-0.5 h-px self-stretch" : "mx-0.5 my-2 w-px self-stretch")} />;
         const popPos = clsx(
           "absolute z-30",
           tb.pos === "left" ? "left-[calc(100%+12px)] top-0" : tb.pos === "right" ? "right-[calc(100%+12px)] top-0" : "left-0 top-[calc(100%+12px)]"
@@ -3573,7 +3779,7 @@ export function BoardCanvas({
               else activate();
               setPenPop(null);
             }}
-            className={clsx("grid h-8 w-10 place-items-center rounded-md hover:bg-[#F1F2F5]", penOn && tool !== "eraser" && penColor === c && "bg-[#E6EAFF]")}
+            className={clsx("grid h-8 w-10 place-items-center rounded-md hover:bg-white", penOn && tool !== "eraser" && penColor === c && "bg-[#E6EAFF]")}
           >
             <span className={clsx("rounded-full", penOn && tool !== "eraser" && penColor === c && "ring-2 ring-[#4262FF] ring-offset-1")}>{swatch(c)}</span>
           </button>
@@ -3590,7 +3796,7 @@ export function BoardCanvas({
               else activate();
               setPenPop(null);
             }}
-            className={clsx("grid h-8 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]", penOn && tool !== "eraser" && penWidth === pw && ACTIVE_BTN)}
+            className={clsx("grid h-8 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-white", penOn && tool !== "eraser" && penWidth === pw && ACTIVE_BTN)}
           >
             <span className="w-5 rounded-full bg-current" style={{ height: pw }} />
           </button>
@@ -3607,7 +3813,7 @@ export function BoardCanvas({
               else activate();
               setPenPop(null);
             }}
-            className={clsx("grid h-8 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]", penOn && tool !== "eraser" && penDash === d && ACTIVE_BTN)}
+            className={clsx("grid h-8 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-white", penOn && tool !== "eraser" && penDash === d && ACTIVE_BTN)}
           >
             {dashIcon(d)}
           </button>
@@ -3627,8 +3833,9 @@ export function BoardCanvas({
           <div
             data-draw-panel
             aria-label="Drawing tools"
-            className={clsx("flex items-center gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row")}
+            className={clsx("flex items-center gap-1 p-1", PANEL, tbVertical ? "flex-col" : "flex-row")}
           >
+            <BarSection vertical={tbVertical} label="Draw">
             <button type="button" aria-label="Pen (P)" title="Pen (P)" aria-pressed={tool === "pen" && penMode === "pen"} onClick={() => { setTool("pen"); setPenMode("pen"); setSelection([]); }} className={btn(tool === "pen" && penMode === "pen")}>
               <Pencil className="h-5 w-5" strokeWidth={1.75} />
             </button>
@@ -3638,12 +3845,39 @@ export function BoardCanvas({
             <button type="button" aria-label="Eraser (E)" title="Eraser (E)" aria-pressed={tool === "eraser"} onClick={() => { setTool("eraser"); setSelection([]); }} className={btn(tool === "eraser")}>
               <Eraser className="h-5 w-5" strokeWidth={1.75} />
             </button>
-            {divider}
-            {group("color", "Pen colour", swatch(penColor), colours)}
-            {divider}
-            {group("width", "Pen thickness", <span className="w-5 rounded-full bg-current" style={{ height: penWidth }} />, widths)}
-            {group("dash", "Line type", dashIcon(penDash), dashes)}
-            {divider}
+            </BarSection>
+            {tool === "eraser" ? (
+              <>
+                <BarSection vertical={tbVertical} label="Erase">
+                  <button type="button" aria-label="Erase whole strokes" title="Erase whole strokes and items" aria-pressed={eraseMode === "stroke"} onClick={() => setEraseMode("stroke")} className={btn(eraseMode === "stroke")}>
+                    <svg width="22" height="18" viewBox="0 0 22 18" fill="none" aria-hidden>
+                      <path d="M2 13c3-8 6-8 9-3s6 5 9-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M4 3l14 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".55" />
+                    </svg>
+                  </button>
+                  <button type="button" aria-label="Erase where it passes" title="Erase only where the eraser passes" aria-pressed={eraseMode === "point"} onClick={() => setEraseMode("point")} className={btn(eraseMode === "point")}>
+                    <svg width="22" height="18" viewBox="0 0 22 18" fill="none" aria-hidden>
+                      <path d="M2 13c2-6 4-7 5.5-5.5M14.5 10.5c2 1.5 3.5 0 5.5-5.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      <circle cx="11" cy="9.5" r="3.2" stroke="currentColor" strokeWidth="1.4" strokeDasharray="1.6 1.6" />
+                    </svg>
+                  </button>
+                </BarSection>
+                <BarSection vertical={tbVertical} label="Size">
+                  {ERASER_SIZES.map((sz) => (
+                    <button key={sz} type="button" aria-label={`Eraser size ${sz}`} title={`Eraser size ${sz}`} aria-pressed={eraserSize === sz} onClick={() => setEraserSize(sz)} className={clsx("grid h-8 w-10 place-items-center rounded-md hover:bg-white", eraserSize === sz && ACTIVE_BTN)}>
+                      <span className="rounded-full border-[1.5px] border-current" style={{ width: 6 + (sz / 48) * 16, height: 6 + (sz / 48) * 16 }} />
+                    </button>
+                  ))}
+                </BarSection>
+              </>
+            ) : (
+              <>
+                <BarSection vertical={tbVertical} label="Colour">{group("color", "Pen colour", swatch(penColor), colours)}</BarSection>
+                <BarSection vertical={tbVertical} label="Width">{group("width", "Pen thickness", <span className="w-5 rounded-full bg-current" style={{ height: penWidth }} />, widths)}</BarSection>
+                <BarSection vertical={tbVertical} label="Line">{group("dash", "Line type", dashIcon(penDash), dashes)}</BarSection>
+              </>
+            )}
+            <BarSection vertical={tbVertical}>
             <div className="relative">
               <button type="button" aria-label="Drawing settings" title="Drawing settings" onClick={() => setPenPop((v) => (v === "settings" ? null : "settings"))} className={btn(penPop === "settings")}>
                 <Settings2 className="h-5 w-5" strokeWidth={1.75} />
@@ -3658,9 +3892,11 @@ export function BoardCanvas({
                     <input type="checkbox" checked={tb.autoShapes} onChange={(e) => setTb({ autoShapes: e.target.checked })} />
                     Turn drawings into shapes
                   </label>
+                  <p className="px-2 pt-1 text-[11.5px] leading-snug text-[#9A9DAA]">Hold the highlighter still at the end of a stroke to make it a straight line.</p>
                 </div>
               )}
             </div>
+            </BarSection>
           </div>
         );
       })()}
@@ -4621,6 +4857,16 @@ function Trigger({
         {children}
       </Btn>
       {open && <div className={popCls}>{popover}</div>}
+    </div>
+  );
+}
+
+/** One boxed group on the drawing bar (draw / colour / width / line / erase / settings), captioned in a column. */
+function BarSection({ label, vertical, children }: { label?: string; vertical: boolean; children: React.ReactNode }) {
+  return (
+    <div className={clsx("flex items-center gap-0.5 rounded-md bg-[#F5F6F8] p-0.5", vertical ? "flex-col" : "flex-row")} title={vertical ? undefined : label}>
+      {label && vertical && <span className="pt-0.5 text-[8.5px] font-semibold uppercase tracking-wide text-[#9A9DAA]">{label}</span>}
+      {children}
     </div>
   );
 }
