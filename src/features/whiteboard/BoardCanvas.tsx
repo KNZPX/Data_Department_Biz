@@ -632,6 +632,57 @@ export function BoardCanvas({
   const longPress = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number; id: number } | null>(null);
   // Board fills the whole screen (hides the app's menus) — handy on an iPad.
   const [focusMode, setFocusMode] = useState(false);
+  /**
+   * Full screen grows out of the board's spot (and shrinks back into it) with a
+   * clip-path reveal, instead of jumping. Insets are measured against the element's
+   * own box so the app's zoom setting doesn't throw them off.
+   */
+  function changeFocus(on: boolean) {
+    const el = boardRef.current;
+    if (!el || reducedMotion() || typeof el.animate !== "function") {
+      setFocusMode(on);
+      return;
+    }
+    const inset = (outer: DOMRect, inner: DOMRect, round: number) => {
+      const k = outer.width / (el.offsetWidth || outer.width) || 1;
+      const t = (inner.top - outer.top) / k;
+      const l = (inner.left - outer.left) / k;
+      const b = (outer.bottom - inner.bottom) / k;
+      const r = (outer.right - inner.right) / k;
+      return `inset(${t}px ${r}px ${b}px ${l}px round ${round}px)`;
+    };
+    if (on) {
+      const from = el.getBoundingClientRect();
+      setFocusMode(true);
+      requestAnimationFrame(() => {
+        const full = el.getBoundingClientRect();
+        el.animate([{ clipPath: inset(full, from, 12) }, { clipPath: "inset(0px 0px 0px 0px round 0px)" }], {
+          duration: 360,
+          easing: "cubic-bezier(.2,.8,.2,1)",
+        });
+      });
+    } else {
+      const full = el.getBoundingClientRect();
+      const spot = el.parentElement?.getBoundingClientRect();
+      if (!spot || spot.width < 10 || spot.height < 10) {
+        setFocusMode(false);
+        return;
+      }
+      const a = el.animate([{ clipPath: "inset(0px 0px 0px 0px round 0px)" }, { clipPath: inset(full, spot, 12) }], {
+        duration: 280,
+        easing: "cubic-bezier(.4,0,.2,1)",
+        fill: "forwards",
+      });
+      a.onfinish = () => {
+        setFocusMode(false);
+        a.cancel();
+      };
+    }
+  }
+  const changeFocusRef = useRef(changeFocus);
+  useLayoutEffect(() => {
+    changeFocusRef.current = changeFocus;
+  });
   const focusRef = useRef(false);
   const [shapeKind, setShapeKind] = useState<ShapeKind>("round");
   const [shapeMenu, setShapeMenu] = useState(false);
@@ -1433,7 +1484,7 @@ export function BoardCanvas({
         // Esc peels back one layer at a time: menus, then selection/tool, then the view itself.
         if (!openUi.current && selRef.current.length === 0) {
           if (focusRef.current) {
-            setFocusMode(false);
+            changeFocusRef.current(false);
             return;
           }
           escIdleRef.current?.();
@@ -3440,7 +3491,7 @@ export function BoardCanvas({
         </button>
         <button
           type="button"
-          onClick={() => setFocusMode((v) => !v)}
+          onClick={() => changeFocus(!focusMode)}
           aria-pressed={focusMode}
           title={focusMode ? "Exit full screen (Esc)" : "Full screen — hide the app's menus"}
           aria-label={focusMode ? "Exit full screen" : "Full screen"}
@@ -3826,7 +3877,11 @@ export function BoardCanvas({
               <button type="button" aria-label={title} title={title} onClick={() => setPenPop((v) => (v === key ? null : key))} className={btn(penPop === key)}>
                 {face}
               </button>
-              {penPop === key && <div className={clsx(popPos, POPOVER, "grid grid-cols-4 gap-0.5 p-1.5")}>{items}</div>}
+              {penPop === key && (
+                <div data-pen-pop={key} className={clsx(popPos, POPOVER, "w-max gap-0.5 p-1.5", key === "color" ? "grid grid-cols-4" : "flex flex-row")}>
+                  {items}
+                </div>
+              )}
             </div>
           );
         return (
