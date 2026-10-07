@@ -620,3 +620,15 @@ html[data-motion="reduced"] .wb-wire, html[data-motion="reduced"] .wb-wire-dot {
   to { translate: 330% 0; }
 }
 .signin-bar { animation: signin-slide 1.3s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+
+/* Whiteboard on touch screens (iPad): bigger targets for fingers. */
+@media (pointer: coarse) {
+  [data-handle]::after,
+  [data-endpoint]::after {
+    content: "";
+    position: absolute;
+    inset: -12px;
+    border-radius: 9999px;
+  }
+  [data-port] { scale: 1.25; }
+}
