@@ -53,6 +53,7 @@ import {
   X,
   type LucideIcon,
   SlidersHorizontal,
+  Settings2,
   PanelLeft,
   PanelRight,
   PanelTop,
@@ -182,6 +183,14 @@ function strokePath(pts: [number, number][]): string {
   }
   const l = pts[pts.length - 1];
   return d + ` L${l[0]},${l[1]}`;
+}
+
+type PenDash = "solid" | "dashed" | "dotted";
+/** Dash pattern for a pen stroke of width `w`. */
+function strokeDash(dash: PenDash | undefined, w: number): string | undefined {
+  if (dash === "dashed") return `${w * 2.5} ${w * 2}`;
+  if (dash === "dotted") return `0.1 ${w * 2.2}`;
+  return undefined;
 }
 
 /** Drop points closer together than `min` (world units) so long strokes stay light. */
@@ -481,6 +490,15 @@ export function BoardCanvas({
   const [penColor, setPenColor] = useState(INK);
   const [penWidth, setPenWidth] = useState(PEN_WIDTHS[0]);
   const [penMode, setPenMode] = useState<"pen" | "highlighter">("pen");
+  const [penDash, setPenDash] = useState<PenDash>("solid");
+  // Drawing panel (pen, highlighter, eraser, colours, sizes, line style, settings)
+  // docks opposite the main toolbar while a drawing tool is on.
+  const [drawPanelOpen, setDrawPanelOpen] = useState(true);
+  const [drawSettings, setDrawSettings] = useState(false);
+  // Toolbar flyouts (e.g. sticky colours) close as soon as you touch the board.
+  const [flyoutOpen, setFlyoutOpen] = useState(false);
+  // A pen that taps an item (without drawing) selects it instead.
+  const penTap = useRef<{ id: string; x: number; y: number } | null>(null);
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
   const [hoverLine, setHoverLine] = useState<string | null>(null);
   const [framesOpen, setFramesOpen] = useState(false);
@@ -593,7 +611,7 @@ export function BoardCanvas({
     camRef.current = camera;
     selRef.current = selection;
     interRef.current = interaction;
-    openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tbMenu || tool !== "select");
+    openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tbMenu || drawSettings || flyoutOpen || tool !== "select");
   });
 
   const byId = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
@@ -1138,6 +1156,8 @@ export function BoardCanvas({
         setFramesOpen(false);
         setZoomMenu(false);
         setTbMenu(false);
+        setDrawSettings(false);
+        setFlyoutOpen(false);
       } else if (e.shiftKey && !mod && k === "s" && !readOnly && elRef.current.some((x) => selRef.current.includes(x.id) && x.kind === "draw")) {
         e.preventDefault();
         convertSelectionToShapes();
@@ -1276,6 +1296,8 @@ export function BoardCanvas({
     setFramesOpen(false);
     setZoomMenu(false);
     setTbMenu(false);
+    setFlyoutOpen(false);
+    setDrawSettings(false);
     const pt = e.pointerType;
     // Palm rejection: while the Pencil is on the glass, ignore the hand.
     if (pt === "touch" && penDown.current) return;
@@ -1297,6 +1319,10 @@ export function BoardCanvas({
       setInteraction({ type: "erase", hit: eraseAt(p, e.clientX, e.clientY, []) });
       return;
     }
+    // What's under the pen: a tap there (no drawing) selects it instead.
+    const tapHost = target.closest("[data-box], [data-line]") as HTMLElement | null;
+    const tapId = tapHost?.dataset.box || tapHost?.dataset.line;
+    penTap.current = tapId && !tapId.startsWith("ink") ? { id: tapId, x: e.clientX, y: e.clientY } : null;
     if (pt === "pen" && !readOnly && pencilDraws && (tool === "select" || tool === "hand")) {
       setTool("pen");
       setSelection([]);
@@ -1599,6 +1625,8 @@ export function BoardCanvas({
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    const tap = penTap.current;
+    if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 6) penTap.current = null;
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     const lp = longPress.current;
     if (lp && lp.id === e.pointerId && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) cancelLongPress();
@@ -1867,6 +1895,14 @@ export function BoardCanvas({
       if (holdTimer.current) clearTimeout(holdTimer.current);
       holdTimer.current = null;
       holdAnchor.current = null;
+      const tap = penTap.current;
+      penTap.current = null;
+      if (tap && byId.get(tap.id)) {
+        // Pen tapped a note / shape / line: select it rather than leave a dot.
+        setTool("select");
+        setSelection(withGroups([tap.id]));
+        return;
+      }
       if (it.points.length < 2) return;
       const shape = penMode === "pen" ? (it.snap ?? (tb.autoShapes ? recognizeShape(it.points) : null)) : null;
       if (shape) {
@@ -1891,6 +1927,7 @@ export function BoardCanvas({
         stroke: penColor,
         width: marker ? penWidth * HIGHLIGHT.scale : penWidth,
         opacity: marker ? HIGHLIGHT.opacity : undefined,
+        ...(penDash !== "solid" ? { dash: penDash } : {}),
       };
       commit([...elRef.current, el]);
     } else if (it.type === "erase") {
@@ -2290,7 +2327,11 @@ export function BoardCanvas({
 
   // Toolbar geometry for the chosen layout.
   const tbVertical = tb.pos !== "top";
-  const tbDetailed = tb.style === "detailed";
+  // Top toolbar goes in the header row (between title and Share) whenever icons fit there;
+  // if the detailed buttons are too wide for that gap, it shows icons there instead.
+  const gapW = headerGap ? headerGap.right - headerGap.left : 0;
+  const topInRow = tb.pos === "top" && gapW >= 540;
+  const tbDetailed = tb.style === "detailed" && !(topInRow && gapW < 740);
   const tbPanel = tbDetailed ? 60 : 48; // panel thickness incl. padding
   const tbReserve = tbPanel + 24;
   const toolBtn = (active: boolean) =>
@@ -2308,7 +2349,6 @@ export function BoardCanvas({
   const mainFits = mainH <= availH;
   const toolRows = mainFits ? 0 : Math.max(3, Math.floor((availH - 13) / btnStep));
   // Top toolbar in the header row (between title and Share) when there's room, else the row below.
-  const topInRow = tb.pos === "top" && headerGap !== null && headerGap.right - headerGap.left >= (tbDetailed ? 740 : 540);
   const tbTop = topInRow ? 12 : 72;
   const libraryPos: React.CSSProperties =
     tb.pos === "left" ? { left: 12 + tbPanel + 8, top: 72 } : tb.pos === "right" ? { right: 12 + tbPanel + 8, top: 72 } : { top: tbTop + tbPanel + 8 };
@@ -2428,6 +2468,7 @@ export function BoardCanvas({
                   fill="none"
                   stroke={d.stroke}
                   strokeWidth={d.width}
+                  strokeDasharray={strokeDash(d.dash, d.width)}
                   strokeOpacity={(d.opacity ?? 1) * (erasing.has(d.id) ? 0.2 : 1)}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -2512,7 +2553,7 @@ export function BoardCanvas({
                 );
               })()}
             {interaction?.type === "draw" && (
-              <path d={strokePath(interaction.points)} fill="none" stroke={penColor} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={interaction.snap ? 0.18 : penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={strokePath(interaction.points)} fill="none" stroke={penColor} strokeDasharray={strokeDash(penDash, penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth)} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={interaction.snap ? 0.18 : penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
             )}
             {interaction?.type === "draw" &&
               interaction.snap &&
@@ -2873,7 +2914,7 @@ export function BoardCanvas({
               ["frame", FrameIcon, "Frame", "F", "Frame"],
             ] as [Tool, LucideIcon, string, string, string][]
           ).map(([t, Icon, label, key, short]) => {
-            const flyout = (t === "sticky" && tool === "sticky") || (t === "shape" && shapeMenu) || (t === "pen" && (tool === "pen" || tool === "eraser"));
+            const flyout = (t === "sticky" && tool === "sticky" && flyoutOpen) || (t === "shape" && shapeMenu);
             const active = tool === t || (t === "pen" && tool === "eraser");
             return (
               <div key={t} className="group relative">
@@ -2884,6 +2925,8 @@ export function BoardCanvas({
                   onClick={() => {
                     setTool(t);
                     if (t !== "select" && t !== "hand") setSelection([]);
+                    setFlyoutOpen(t === "sticky" ? !(flyoutOpen && tool === "sticky") : false);
+                    if (t === "pen") setDrawPanelOpen(true);
                     setLibraryOpen(false);
                     setShapeMenu(t === "shape" ? !shapeMenu || tool !== "shape" : false);
                   }}
@@ -2935,86 +2978,6 @@ export function BoardCanvas({
                       ))}
                     </div>
                     <p className="mt-3 text-[12px] text-[#9A9DAA]">Click to place, or drag to size</p>
-                  </div>
-                )}
-                {t === "pen" && flyout && (
-                  <div className={clsx("absolute w-[184px] p-3", flyPos, POPOVER)}>
-                    <div className="mb-3 grid grid-cols-3 gap-1">
-                      {(
-                        [
-                          ["pen", Pen, "Pen"],
-                          ["highlighter", Highlighter, "Highlighter"],
-                          ["eraser", Eraser, "Eraser (E)"],
-                        ] as const
-                      ).map(([m, Icon, label]) => {
-                        const on = m === "eraser" ? tool === "eraser" : tool === "pen" && penMode === m;
-                        return (
-                          <button
-                            key={m}
-                            type="button"
-                            title={label}
-                            aria-label={label}
-                            aria-pressed={on}
-                            onClick={() => {
-                              if (m === "eraser") setTool("eraser");
-                              else {
-                                setPenMode(m);
-                                setTool("pen");
-                              }
-                            }}
-                            className={clsx("grid h-9 place-items-center rounded-md", on ? ACTIVE_BTN : "text-[#1C1C1E] hover:bg-[#F1F2F5]")}
-                          >
-                            <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {PEN_COLORS.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => setPenColor(c)}
-                          className={clsx("h-7 w-7 rounded-full ring-1 ring-black/10", penColor === c && "ring-2 ring-[#4262FF] ring-offset-2")}
-                          style={{ background: c }}
-                          aria-label={`Pen colour ${c}`}
-                        />
-                      ))}
-                    </div>
-                    <div className="mt-3 flex gap-1">
-                      {PEN_WIDTHS.map((w) => (
-                        <button
-                          key={w}
-                          type="button"
-                          onClick={() => setPenWidth(w)}
-                          className={clsx("grid h-9 flex-1 place-items-center rounded-md", penWidth === w ? ACTIVE_BTN : "hover:bg-[#F1F2F5]")}
-                          aria-label={`Thickness ${w}`}
-                        >
-                          <span
-                            className="w-8 rounded-full"
-                            style={{
-                              height: penMode === "highlighter" ? Math.min(14, w * 2.5) : w,
-                              background: penColor === "#FFFFFF" ? "#C3C6D4" : penColor,
-                              opacity: penMode === "highlighter" ? HIGHLIGHT.opacity + 0.2 : 1,
-                            }}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                    <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-[#E9EAEF] pt-3 text-[12px] leading-snug text-[#1C1C1E]">
-                      <input type="checkbox" checked={pencilDraws} onChange={(e) => setPencilDraws(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#4262FF]" />
-                      <span>
-                        Apple Pencil draws
-                        <span className="block text-[11px] text-[#656B81]">Fingers move and zoom the board</span>
-                      </span>
-                    </label>
-                    <label className="mt-2 flex cursor-pointer items-start gap-2 text-[12px] leading-snug text-[#1C1C1E]">
-                      <input type="checkbox" checked={tb.autoShapes} onChange={(e) => setTb({ autoShapes: e.target.checked })} className="mt-0.5 h-4 w-4 accent-[#4262FF]" />
-                      <span>
-                        Turn drawings into shapes
-                        <span className="block text-[11px] text-[#656B81]">Or draw a shape and hold the pen still to snap it</span>
-                      </span>
-                    </label>
                   </div>
                 )}
               </div>
@@ -3118,6 +3081,116 @@ export function BoardCanvas({
           </div>
         </div>
       </div>
+
+      {/* Drawing panel: pen / highlighter / eraser, colour, width, line type, settings */}
+      {(tool === "pen" || tool === "eraser") && !readOnly && (() => {
+        const dock = tb.pos === "left" ? "right" : tb.pos === "right" ? "left" : "top";
+        const horiz = dock === "top";
+        const top = horiz ? tbTop + Math.max(48, tbPanel) + 8 : 72;
+        const place = dock === "right" ? "right-3" : dock === "left" ? "left-3" : "inset-x-0 mx-auto w-fit max-w-[calc(100%-24px)]";
+        const divider = <div className={horiz ? "mx-1 h-6 w-px self-center bg-[#E3E5EA]" : "my-1 h-px w-full bg-[#E3E5EA]"} />;
+        const btn = (active: boolean) => clsx(ICON_BTN, active && ACTIVE_BTN);
+        if (!drawPanelOpen)
+          return (
+            <button
+              data-ui
+              type="button"
+              aria-label="Drawing options"
+              title="Drawing options"
+              onClick={() => setDrawPanelOpen(true)}
+              className={clsx(PANEL, "absolute z-30 flex h-10 w-10 items-center justify-center text-[#1C1C1E] hover:bg-[#F1F2F5]", dock === "right" ? "right-3" : dock === "left" ? "left-3" : "inset-x-0 mx-auto")}
+              style={{ top }}
+            >
+              <span className="block h-4 w-4 rounded-full ring-1 ring-inset ring-black/15" style={{ background: penColor }} />
+            </button>
+          );
+        return (
+          <div
+            data-ui
+            data-draw-panel
+            className={clsx(PANEL, "wb-pop absolute z-30 flex items-center gap-0.5 p-1.5", horiz ? "flex-row flex-wrap justify-center" : "w-[96px] flex-col", place)}
+            style={{ top }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
+              <button type="button" aria-label="Pen" title="Pen" onClick={() => { setTool("pen"); setPenMode("pen"); }} className={btn(tool === "pen" && penMode === "pen")}>
+                <Pencil className="h-5 w-5" strokeWidth={1.75} />
+              </button>
+              <button type="button" aria-label="Highlighter" title="Highlighter" onClick={() => { setTool("pen"); setPenMode("highlighter"); }} className={btn(tool === "pen" && penMode === "highlighter")}>
+                <Highlighter className="h-5 w-5" strokeWidth={1.75} />
+              </button>
+              <button type="button" aria-label="Eraser" title="Eraser" onClick={() => setTool("eraser")} className={btn(tool === "eraser")}>
+                <Eraser className="h-5 w-5" strokeWidth={1.75} />
+              </button>
+            </div>
+            {divider}
+            <div className={clsx("gap-1 p-1", horiz ? "flex flex-row" : "grid grid-cols-2")}>
+              {PEN_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Colour ${c}`}
+                  title={c}
+                  onClick={() => {
+                    setPenColor(c);
+                    if (tool === "eraser") setTool("pen");
+                  }}
+                  className={clsx("flex h-7 w-7 items-center justify-center rounded-full", penColor === c && tool !== "eraser" && "ring-2 ring-[#4262FF]")}
+                >
+                  <span className="block h-5 w-5 rounded-full ring-1 ring-inset ring-black/15" style={{ background: c }} />
+                </button>
+              ))}
+            </div>
+            {divider}
+            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
+              {PEN_WIDTHS.map((pw) => (
+                <button key={pw} type="button" aria-label={`Thickness ${pw}`} title={`Thickness ${pw}`} onClick={() => { setPenWidth(pw); if (tool === "eraser") setTool("pen"); }} className={btn(penWidth === pw && tool !== "eraser")}>
+                  <span className="w-5 rounded-full bg-current" style={{ height: pw }} />
+                </button>
+              ))}
+            </div>
+            {divider}
+            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
+              {(["solid", "dashed", "dotted"] as const).map((d) => (
+                <button key={d} type="button" aria-label={`Line ${d}`} title={d === "solid" ? "Solid line" : d === "dashed" ? "Dashed line" : "Dotted line"} onClick={() => { setPenDash(d); if (tool === "eraser") setTool("pen"); }} className={btn(penDash === d && tool !== "eraser")}>
+                  <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden>
+                    <line x1="2" y1="5" x2="20" y2="5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={strokeDash(d, 2.5)} />
+                  </svg>
+                </button>
+              ))}
+            </div>
+            {divider}
+            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
+              <div className="relative">
+                <button type="button" aria-label="Drawing settings" title="Drawing settings" onClick={() => setDrawSettings((v) => !v)} className={btn(drawSettings)}>
+                  <Settings2 className="h-5 w-5" strokeWidth={1.75} />
+                </button>
+                {drawSettings && (
+                  <div
+                    className={clsx(
+                      PANEL,
+                      "wb-pop absolute z-40 flex w-60 flex-col gap-1 p-2 text-[13px] text-[#1C1C1E]",
+                      dock === "right" ? "bottom-0 right-[calc(100%+12px)]" : dock === "left" ? "bottom-0 left-[calc(100%+12px)]" : "right-0 top-[calc(100%+12px)]",
+                    )}
+                  >
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[#F1F2F5]">
+                      <input type="checkbox" checked={pencilDraws} onChange={(e) => setPencilDraws(e.target.checked)} />
+                      Apple Pencil draws
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[#F1F2F5]">
+                      <input type="checkbox" checked={tb.autoShapes} onChange={(e) => setTb({ autoShapes: e.target.checked })} />
+                      Turn drawings into shapes
+                    </label>
+                  </div>
+                )}
+              </div>
+              <button type="button" aria-label="Hide drawing options" title="Hide" onClick={() => { setDrawPanelOpen(false); setDrawSettings(false); }} className={btn(false)}>
+                <X className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Block library */}
       {libraryOpen && (
