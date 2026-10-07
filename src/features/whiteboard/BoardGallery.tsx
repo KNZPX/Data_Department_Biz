@@ -88,6 +88,7 @@ export function Thumb({ elements, w = 320, h = 180 }: { elements: El[]; w?: numb
             const fill = e.kind === "sticky" ? e.color : e.kind === "shape" ? e.fill : "#FFFFFF";
             const stroke = e.kind === "shape" ? e.stroke : e.kind === "card" ? e.accent : "none";
             if (e.kind === "text") return <rect key={e.id} x={e.x} y={e.y + e.h / 3} width={e.w * 0.8} height={e.h / 3} rx={2} fill="#C3C6D4" />;
+            if (e.kind === "image") return <image key={e.id} href={e.src} x={e.x} y={e.y} width={e.w} height={e.h} preserveAspectRatio="xMidYMid slice" />;
             if (e.kind === "draw") return <polyline key={e.id} transform={`translate(${e.x},${e.y})`} points={e.points.map((q) => q.join(",")).join(" ")} fill="none" stroke={e.stroke} strokeWidth={2 / s} />;
             return (
               <rect key={e.id} x={e.x} y={e.y} width={e.w} height={e.h} rx={e.kind === "shape" && e.shape === "ellipse" ? e.h / 2 : 6} fill={fill} stroke={stroke} strokeWidth={2 / s} />

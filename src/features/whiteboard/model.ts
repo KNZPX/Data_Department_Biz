@@ -63,9 +63,22 @@ export type TextEl = Base & { kind: "text"; text: string; color: string; fontSiz
 export type CardEl = Base & { kind: "card"; title: string; body: string; accent: string; tag?: string };
 export type FrameEl = Base & { kind: "frame"; title: string; fill: string };
 /** opacity < 1 = highlighter stroke. */
-export type DrawEl = Base & { kind: "draw"; points: [number, number][]; stroke: string; width: number; opacity?: number; dash?: "dashed" | "dotted" };
+export type DrawEl = Base & {
+  kind: "draw";
+  points: [number, number][];
+  stroke: string;
+  width: number;
+  opacity?: number;
+  dash?: "dashed" | "dotted";
+  /** Drawn on top of this note / shape / image: moves, resizes and is deleted with it. */
+  on?: string;
+};
+/** A picture pasted or dropped onto the board. `crop` is the visible part, as fractions of the full picture. */
+export type ImageEl = Base & { kind: "image"; src: string; crop?: { x: number; y: number; w: number; h: number } };
 
 export type Endpoint = { id?: string; side?: Side; x: number; y: number };
+/** Line-end styles; shown only when arrowStart / arrowEnd is on. */
+export type Head = "arrow" | "open" | "circle" | "diamond" | "bar";
 export type ConnectorEl = {
   id: string;
   kind: "connector";
@@ -78,11 +91,13 @@ export type ConnectorEl = {
   dashed?: boolean;
   arrowEnd: boolean;
   arrowStart: boolean;
+  headStart?: Head;
+  headEnd?: Head;
   label?: string;
   locked?: boolean;
 };
 
-export type BoxEl = StickyEl | ShapeEl | TextEl | CardEl | FrameEl | DrawEl;
+export type BoxEl = StickyEl | ShapeEl | TextEl | CardEl | FrameEl | DrawEl | ImageEl;
 export type El = BoxEl | ConnectorEl;
 
 export type Camera = { x: number; y: number; zoom: number };

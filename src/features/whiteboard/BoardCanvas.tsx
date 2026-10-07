@@ -9,8 +9,6 @@ import {
   AlignEndVertical,
   AlignStartHorizontal,
   AlignStartVertical,
-  ArrowLeft,
-  ArrowRight,
   BringToFront,
   ChevronDown,
   ChevronLeft,
@@ -27,6 +25,17 @@ import {
   Hand,
   Eraser,
   Highlighter,
+  Layers,
+  Crop,
+  RotateCcw,
+  Check,
+  ChevronsUp,
+  ChevronsDown,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeftRight,
+  GripVertical,
+  ImageIcon,
   Loader2,
   Lock,
   Map as MapIcon,
@@ -34,7 +43,6 @@ import {
   Minus,
   MousePointer2,
   MoveUpRight,
-  Pen,
   Maximize2,
   Minimize2,
   Pencil,
@@ -80,6 +88,8 @@ import {
   type Camera,
   type ConnectorEl,
   type DrawEl,
+  type Head,
+  type ImageEl,
   type El,
   type Rect,
   type ShapeKind,
@@ -112,7 +122,9 @@ type Interaction =
       dupOf?: string[];
     }
   | { type: "marquee"; start: { x: number; y: number }; cur: { x: number; y: number }; additive: string[] }
-  | { type: "resize"; id: string; handle: Handle; orig: BoxEl; start: { x: number; y: number }; snapshot: El[] }
+  | { type: "resize"; id: string; handle: Handle; orig: BoxEl; start: { x: number; y: number }; snapshot: El[]; ink: DrawEl[] }
+  // Dragging a crop handle (or the crop window itself, "move") on a picture.
+  | { type: "crop"; id: string; handle: Handle | "move"; orig: ImageEl; start: { x: number; y: number }; snapshot: El[] }
   | {
       type: "connect";
       from: { id?: string; side?: Side; x: number; y: number };
@@ -162,8 +174,8 @@ function shapeSize(kind: ShapeKind) {
 
 
 type MenuAction =
-  | "edit" | "label" | "duplicate" | "copy" | "connect" | "front" | "back" | "lock" | "delete" | "group" | "ungroup"
-  | "paste" | "text" | "blocks" | "selectAll" | "fit" | "convert";
+  | "edit" | "label" | "duplicate" | "copy" | "connect" | "front" | "forward" | "backward" | "back" | "lock" | "delete" | "group" | "ungroup"
+  | "paste" | "text" | "blocks" | "selectAll" | "fit" | "convert" | "export";
 
 const WIRE_DIR: Record<Side, [number, number]> = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };
 
@@ -203,6 +215,63 @@ function thinPoints(pts: [number, number][], min: number): [number, number][] {
   const last = pts[pts.length - 1];
   if (last && out[out.length - 1] !== last) out.push(last);
   return out;
+}
+
+const FULL_CROP = { x: 0, y: 0, w: 1, h: 1 };
+/** The whole picture's rectangle (world units) for an image shown with `crop`. */
+function imageFull(el: ImageEl) {
+  const c = el.crop ?? FULL_CROP;
+  const w = el.w / c.w;
+  const h = el.h / c.h;
+  return { x: el.x - c.x * w, y: el.y - c.y * h, w, h };
+}
+
+/** A picture from the clipboard or a drop, shrunk so boards stay light. */
+async function shrinkImage(file: Blob, max = 1600): Promise<{ src: string; w: number; h: number }> {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k));
+  const h = Math.max(1, Math.round(bmp.height * k));
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  c.getContext("2d")!.drawImage(bmp, 0, 0, w, h);
+  bmp.close();
+  let src = c.toDataURL("image/webp", 0.85);
+  // Browsers that can't write WebP hand back PNG; fall back to JPEG when that's heavy.
+  if (!src.startsWith("data:image/webp") && src.length > 900_000) src = c.toDataURL("image/jpeg", 0.85);
+  return { src, w, h };
+}
+
+/** Name shown for an item in the Layers panel. */
+function layerName(e: El): string {
+  const first = (t: string) => t.trim().split("\n")[0];
+  switch (e.kind) {
+    case "sticky":
+      return first(e.text) || "Sticky note";
+    case "shape":
+      return first(e.text) || SHAPES.find((sh) => sh.kind === e.shape)?.label || "Shape";
+    case "text":
+      return first(e.text) || "Text";
+    case "card":
+      return e.title || "Card";
+    case "draw":
+      return e.opacity ? "Highlight" : "Drawing";
+    case "image":
+      return "Image";
+    case "frame":
+      return e.title || "Frame";
+    case "connector":
+      return e.label || "Line";
+  }
+}
+
+/** Items in stacking order (bottom first), each followed by the ink drawn on it. Frames left out. */
+function stackUnits(els: El[]): El[][] {
+  const ids = new Set(els.map((e) => e.id));
+  const byZ = (a: El, b: El) => a.z - b.z;
+  const tops = els.filter((e) => e.kind !== "frame" && !(e.kind === "draw" && e.on && ids.has(e.on))).sort(byZ);
+  return tops.map((t) => [t, ...els.filter((d) => d.kind === "draw" && d.on === t.id).sort(byZ)]);
 }
 
 type TbPos = "left" | "right" | "top";
@@ -259,6 +328,8 @@ const SHORTCUTS: [string, string][] = [
   ["Group / Ungroup", "Ctrl+G / Ctrl+Shift+G"],
   ["Lock / Unlock", "Ctrl+Shift+L"],
   ["Bring to front / back", "PgUp / PgDn"],
+  ["Bring forward / send backward", "Ctrl+] / Ctrl+["],
+  ["Paste a picture", "Ctrl+V (then Crop from its toolbar)"],
   ["Undo / Redo", "Ctrl+Z / Ctrl+Shift+Z"],
   ["Zoom in / out", "Ctrl + / Ctrl −"],
   ["Zoom to fit / selection", "Shift+1 / Shift+2"],
@@ -493,8 +564,8 @@ export function BoardCanvas({
   const [penDash, setPenDash] = useState<PenDash>("solid");
   // Drawing panel (pen, highlighter, eraser, colours, sizes, line style, settings)
   // docks opposite the main toolbar while a drawing tool is on.
-  const [drawPanelOpen, setDrawPanelOpen] = useState(true);
-  const [drawSettings, setDrawSettings] = useState(false);
+  /** Open popover on the drawing bar (compact colour / width / line type, or settings). */
+  const [penPop, setPenPop] = useState<"color" | "width" | "dash" | "settings" | null>(null);
   // Toolbar flyouts (e.g. sticky colours) close as soon as you touch the board.
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   // A pen that taps an item (without drawing) selects it instead.
@@ -502,6 +573,11 @@ export function BoardCanvas({
   const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
   const [hoverLine, setHoverLine] = useState<string | null>(null);
   const [framesOpen, setFramesOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
+  /** Picture being cropped (crop handles shown instead of resize handles). */
+  const [cropId, setCropId] = useState<string | null>(null);
+  /** Top toolbar's overflow menu (tools that don't fit in the header row). */
+  const [tbMore, setTbMore] = useState(false);
   const [zoomMenu, setZoomMenu] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -583,6 +659,20 @@ export function BoardCanvas({
     if (t.offsetParent) ro.observe(t.offsetParent);
     return () => ro.disconnect();
   }, []);
+  // The toolbar block's size (tools + drawing bar), so popups and the library open beside it.
+  const tbRef = useRef<HTMLDivElement>(null);
+  const [tbSize, setTbSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const n = tbRef.current;
+    if (!n) return;
+    const ro = new ResizeObserver(() => {
+      const w = n.offsetWidth;
+      const h = n.offsetHeight;
+      setTbSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+    });
+    ro.observe(n);
+    return () => ro.disconnect();
+  }, []);
   const elRef = useRef(elements);
   const camRef = useRef(camera);
   const selRef = useRef(selection);
@@ -611,7 +701,7 @@ export function BoardCanvas({
     camRef.current = camera;
     selRef.current = selection;
     interRef.current = interaction;
-    openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tbMenu || drawSettings || flyoutOpen || tool !== "select");
+    openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tbMenu || penPop || layersOpen || cropId || tbMore || flyoutOpen || tool !== "select");
   });
 
   const byId = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
@@ -948,6 +1038,7 @@ export function BoardCanvas({
 
   function deleteSelection() {
     const ids = new Set(selRef.current);
+    for (const d of inkOn(ids)) ids.add(d.id);
     if (!ids.size) return;
     const next = elRef.current.filter(
       (e) => !ids.has(e.id) && !(e.kind === "connector" && ((e.from.id && ids.has(e.from.id)) || (e.to.id && ids.has(e.to.id))))
@@ -959,6 +1050,7 @@ export function BoardCanvas({
   /** Copies of `els` moved by (dx, dy) with fresh ids. Lines come along only when
    * both their ends are copied too; groups inside the copy get a new group id. */
   function cloneSet(els: El[], dx: number, dy: number): El[] {
+    els = [...els, ...inkOn(els.map((e) => e.id)).filter((d) => !els.includes(d))];
     const ids = new Map<string, string>();
     const groups = new Map<string, string>();
     for (const e of els) if (isBox(e)) ids.set(e.id, uid());
@@ -984,7 +1076,7 @@ export function BoardCanvas({
         if (!groups.has(groupId)) groups.set(groupId, uid("grp"));
         groupId = groups.get(groupId);
       }
-      out.push({ ...e, id, x: e.x + dx, y: e.y + dy, z: e.kind === "frame" ? e.z : ++z, groupId });
+      out.push({ ...e, id, x: e.x + dx, y: e.y + dy, z: e.kind === "frame" ? e.z : ++z, groupId, ...(e.kind === "draw" && e.on ? { on: ids.get(e.on) } : {}) } as El);
     }
     return out;
   }
@@ -1004,6 +1096,94 @@ export function BoardCanvas({
     const out = new Set(ids);
     for (const el of elRef.current) if (isBox(el) && el.groupId && gids.has(el.groupId)) out.add(el.id);
     return Array.from(out);
+  }
+
+  /** Ink drawn on any of `ids`; it travels with its host. */
+  function inkOn(ids: Iterable<string>, els = elRef.current): DrawEl[] {
+    const set = new Set(ids);
+    return els.filter((e): e is DrawEl => e.kind === "draw" && Boolean(e.on && set.has(e.on)));
+  }
+
+  /** Ink that belongs to a note / shape / image stands for that item when clicked. */
+  function hostOf(id: string): string {
+    const el = elRef.current.find((x) => x.id === id);
+    return el?.kind === "draw" && el.on && elRef.current.some((x) => x.id === el.on) ? el.on : id;
+  }
+
+  /** The note, shape, card or picture a new stroke was drawn on, if any. */
+  function inkHost(b: Rect): string | undefined {
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    let best: BoxEl | null = null;
+    for (const e of elRef.current) {
+      if (e.kind !== "sticky" && e.kind !== "shape" && e.kind !== "image" && e.kind !== "card") continue;
+      if (cx < e.x || cx > e.x + e.w || cy < e.y || cy > e.y + e.h) continue;
+      const gx = e.w * 0.25;
+      const gy = e.h * 0.25;
+      if (b.x < e.x - gx || b.y < e.y - gy || b.x + b.w > e.x + e.w + gx || b.y + b.h > e.y + e.h + gy) continue;
+      if (!best || e.z > best.z) best = e;
+    }
+    return best?.id;
+  }
+
+  /** Give z = 1, 2, 3… in this order (bottom first). */
+  function restack(units: El[][]) {
+    const z = new Map<string, number>();
+    let i = 0;
+    for (const u of units) for (const e of u) z.set(e.id, ++i);
+    commit(elRef.current.map((e) => (z.has(e.id) ? { ...e, z: z.get(e.id)! } : e)));
+  }
+
+  /** Bring to front / send to back, or one step up / down, keeping ink with its host. */
+  function reorder(ids: string[], mode: "front" | "back" | "up" | "down") {
+    const pick = new Set(ids.map(hostOf));
+    const frames = elRef.current.filter((e) => e.kind === "frame" && pick.has(e.id));
+    if (frames.length && (mode === "front" || mode === "back")) {
+      const fz = elRef.current.filter((e) => e.kind === "frame").map((e) => e.z);
+      let z = mode === "front" ? Math.max(...fz) : Math.min(...fz);
+      const fset = new Set(frames.map((f) => f.id));
+      elRef.current = elRef.current.map((e) => (fset.has(e.id) ? { ...e, z: mode === "front" ? ++z : --z } : e));
+    }
+    const units = stackUnits(elRef.current);
+    if (!units.some((u) => pick.has(u[0].id))) {
+      if (frames.length) commit(elRef.current);
+      return;
+    }
+    if (mode === "front") restack([...units.filter((u) => !pick.has(u[0].id)), ...units.filter((u) => pick.has(u[0].id))]);
+    else if (mode === "back") restack([...units.filter((u) => pick.has(u[0].id)), ...units.filter((u) => !pick.has(u[0].id))]);
+    else {
+      const arr = [...units];
+      if (mode === "up") {
+        for (let i = arr.length - 2; i >= 0; i--) if (pick.has(arr[i][0].id) && !pick.has(arr[i + 1][0].id)) [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+      } else {
+        for (let i = 1; i < arr.length; i++) if (pick.has(arr[i][0].id) && !pick.has(arr[i - 1][0].id)) [arr[i], arr[i - 1]] = [arr[i - 1], arr[i]];
+      }
+      restack(arr);
+    }
+  }
+
+  /** Layers panel drag: put item `id` at position `to` of the top-first list. */
+  function moveLayer(id: string, to: number) {
+    const list = stackUnits(elRef.current).reverse();
+    const from = list.findIndex((u) => u[0].id === id);
+    if (from < 0) return;
+    const [u] = list.splice(from, 1);
+    list.splice(Math.max(0, Math.min(list.length, to > from ? to - 1 : to)), 0, u);
+    restack(list.reverse());
+  }
+
+  async function addImageFile(file: Blob, at?: { x: number; y: number }) {
+    try {
+      const { src, w, h } = await shrinkImage(file);
+      const p = at || lastPointer.current || viewCenter();
+      const k = Math.min(1, 480 / Math.max(w, h)) / camRef.current.zoom;
+      const el: ImageEl = { id: uid("img"), kind: "image", x: p.x - (w * k) / 2, y: p.y - (h * k) / 2, w: w * k, h: h * k, z: maxZ() + 1, src };
+      commit([...elRef.current, el]);
+      setSelection([el.id]);
+      setTool("select");
+    } catch {
+      flash("Couldn't read that picture");
+    }
   }
 
   function selectedEls() {
@@ -1035,13 +1215,11 @@ export function BoardCanvas({
   }
 
   function bringFront() {
-    let z = maxZ();
-    update(selRef.current, (el) => (el.kind === "frame" ? el : { ...el, z: ++z }));
+    reorder(selRef.current, "front");
   }
 
   function sendBack() {
-    let z = minZ();
-    update(selRef.current, (el) => (el.kind === "frame" ? { ...el, z: --z } : { ...el, z: Math.max(1, minZ() + 1) }));
+    reorder(selRef.current, "back");
   }
 
   function zoomToSelection() {
@@ -1123,6 +1301,9 @@ export function BoardCanvas({
       } else if (mod && e.shiftKey && k === "l") {
         e.preventDefault();
         toggleLock();
+      } else if (mod && (e.key === "]" || e.key === "[") && selRef.current.length) {
+        e.preventDefault();
+        reorder(selRef.current, e.key === "]" ? "up" : "down");
       } else if (k === "pageup" && selRef.current.length) {
         e.preventDefault();
         bringFront();
@@ -1156,8 +1337,11 @@ export function BoardCanvas({
         setFramesOpen(false);
         setZoomMenu(false);
         setTbMenu(false);
-        setDrawSettings(false);
+        setPenPop(null);
         setFlyoutOpen(false);
+        setCropId(null);
+        setLayersOpen(false);
+        setTbMore(false);
       } else if (e.shiftKey && !mod && k === "s" && !readOnly && elRef.current.some((x) => selRef.current.includes(x.id) && x.kind === "draw")) {
         e.preventDefault();
         convertSelectionToShapes();
@@ -1178,7 +1362,7 @@ export function BoardCanvas({
         const d = e.shiftKey ? 10 : 1;
         const dx = k === "arrowleft" ? -d : k === "arrowright" ? d : 0;
         const dy = k === "arrowup" ? -d : k === "arrowdown" ? d : 0;
-        update(selRef.current, (el) => (isBox(el) && !el.locked ? { ...el, x: el.x + dx, y: el.y + dy } : el));
+        update([...selRef.current, ...inkOn(selRef.current).map((d) => d.id)], (el) => (isBox(el) && !el.locked ? { ...el, x: el.x + dx, y: el.y + dy } : el));
       } else if (!mod && e.key.length === 1 && e.key !== " " && selRef.current.length === 1 && (() => {
         const el = elRef.current.find((x) => x.id === selRef.current[0]);
         return Boolean(el && (el.kind === "sticky" || el.kind === "shape" || el.kind === "text") && !el.locked);
@@ -1195,7 +1379,8 @@ export function BoardCanvas({
         const el = elRef.current.find((x) => x.id === selRef.current[0]);
         if (el && isBox(el) && el.kind !== "draw" && !el.locked) {
           e.preventDefault();
-          setEditingId(el.id);
+          if (el.kind === "image") setCropId(el.id);
+          else setEditingId(el.id);
         }
       } else if (!mod) {
         if (k === "b") setLibraryOpen((v) => !v);
@@ -1220,6 +1405,12 @@ export function BoardCanvas({
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (readOnly) return;
+      const pic = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === "file" && i.type.startsWith("image/"))?.getAsFile();
+      if (pic) {
+        e.preventDefault();
+        void addImageFile(pic);
+        return;
+      }
       const text = e.clipboardData?.getData("text/plain") ?? "";
       const ours = clipboard.current.length > 0 && (!text || copiedText.current === null || text === copiedText.current);
       if (ours) {
@@ -1297,7 +1488,8 @@ export function BoardCanvas({
     setZoomMenu(false);
     setTbMenu(false);
     setFlyoutOpen(false);
-    setDrawSettings(false);
+    setPenPop(null);
+    setTbMore(false);
     const pt = e.pointerType;
     // Palm rejection: while the Pencil is on the glass, ignore the hand.
     if (pt === "touch" && penDown.current) return;
@@ -1321,7 +1513,8 @@ export function BoardCanvas({
     }
     // What's under the pen: a tap there (no drawing) selects it instead.
     const tapHost = target.closest("[data-box], [data-line]") as HTMLElement | null;
-    const tapId = tapHost?.dataset.box || tapHost?.dataset.line;
+    const tapRaw = tapHost?.dataset.box || tapHost?.dataset.line;
+    const tapId = tapRaw ? hostOf(tapRaw) : undefined;
     penTap.current = tapId && !tapId.startsWith("ink") ? { id: tapId, x: e.clientX, y: e.clientY } : null;
     if (pt === "pen" && !readOnly && pencilDraws && (tool === "select" || tool === "hand")) {
       setTool("pen");
@@ -1347,6 +1540,11 @@ export function BoardCanvas({
       return;
     }
 
+    const endpoint = target.closest("[data-endpoint]") as HTMLElement | null;
+    if (endpoint) {
+      setInteraction({ type: "endpoint", id: endpoint.dataset.owner!, end: endpoint.dataset.endpoint as "from" | "to", snapshot: elRef.current });
+      return;
+    }
     const port = target.closest("[data-port]") as HTMLElement | null;
     if (port) {
       const el = byId.get(port.dataset.owner!) as BoxEl;
@@ -1354,20 +1552,21 @@ export function BoardCanvas({
       setInteraction({ type: "connect", from: { id: el.id, side, ...anchor(el, side) }, cur: p, fromPort: true, down: { x: e.clientX, y: e.clientY } });
       return;
     }
+    const cropHandle = target.closest("[data-crop]") as HTMLElement | null;
+    const cropEl = cropId ? byId.get(cropId) : undefined;
+    if (cropHandle && cropEl?.kind === "image") {
+      setInteraction({ type: "crop", id: cropEl.id, handle: cropHandle.dataset.crop as Handle | "move", orig: cropEl, start: p, snapshot: elRef.current });
+      return;
+    }
+    if (cropId) setCropId(null);
     const handle = target.closest("[data-handle]") as HTMLElement | null;
     if (handle && selection.length === 1) {
       const el = byId.get(selection[0]);
       if (el && isBox(el) && !el.locked) {
-        setInteraction({ type: "resize", id: el.id, handle: handle.dataset.handle as Handle, orig: el, start: p, snapshot: elRef.current });
+        setInteraction({ type: "resize", id: el.id, handle: handle.dataset.handle as Handle, orig: el, start: p, snapshot: elRef.current, ink: inkOn([el.id]) });
         return;
       }
     }
-    const endpoint = target.closest("[data-endpoint]") as HTMLElement | null;
-    if (endpoint) {
-      setInteraction({ type: "endpoint", id: endpoint.dataset.owner!, end: endpoint.dataset.endpoint as "from" | "to", snapshot: elRef.current });
-      return;
-    }
-
     if (tool === "pen") {
       setInteraction({ type: "draw", points: [[p.x, p.y]] });
       return;
@@ -1394,7 +1593,8 @@ export function BoardCanvas({
     // select tool
     const boxHost = target.closest("[data-box]") as HTMLElement | null;
     const lineHost = target.closest("[data-line]") as HTMLElement | null;
-    const hitId = boxHost?.dataset.box || lineHost?.dataset.line || null;
+    const rawHit = boxHost?.dataset.box || lineHost?.dataset.line || null;
+    const hitId = rawHit ? hostOf(rawHit) : null;
     if (hitId) {
       // Clicking any member of a group picks up the whole group.
       const unit = withGroups([hitId]);
@@ -1419,6 +1619,8 @@ export function BoardCanvas({
       for (const f of movable.filter((m) => m.kind === "frame")) {
         for (const el of elRef.current) if (isBox(el) && el.kind !== "frame" && !el.locked && contains(f, el)) carry.set(el.id, el);
       }
+      // Ink drawn on a note / shape / picture goes with it.
+      for (const d of inkOn(carry.keys())) if (!d.locked) carry.set(d.id, d);
       if (e.altKey && !readOnly) {
         // Alt+drag: leave the originals and drag copies (lines between them come too).
         const before = elRef.current;
@@ -1586,14 +1788,21 @@ export function BoardCanvas({
    * inside a frame doesn't wipe the frame. Locked items are left alone.
    */
   function eraseAt(p: { x: number; y: number }, clientX: number, clientY: number, already: string[]): string[] {
-    const out = new Set(inkAt(p));
+    // Ink under the eraser goes first; once a gesture has rubbed out ink drawn on a
+    // note / shape / picture, that item is left alone for the rest of the stroke.
+    const ink = inkAt(p);
+    if (ink.length) return ink.filter((id) => !already.includes(id));
+    const shielded = new Set(
+      elRef.current.filter((e): e is DrawEl => e.kind === "draw" && Boolean(e.on) && already.includes(e.id)).map((d) => d.on!)
+    );
+    const out = new Set<string>();
     const tol = 10 / camRef.current.zoom;
     for (const n of document.elementsFromPoint(clientX, clientY)) {
       const host = (n as HTMLElement).closest?.("[data-box], [data-line]") as HTMLElement | null;
       const id = host?.dataset.box || host?.dataset.line;
       if (!id) continue;
       const el = byId.get(id);
-      if (!el || el.locked) continue;
+      if (!el || el.locked || shielded.has(id)) continue;
       if (el.kind === "frame") {
         const nearEdge = Math.min(Math.abs(p.x - el.x), Math.abs(p.x - el.x - el.w), Math.abs(p.y - el.y), Math.abs(p.y - el.y - el.h)) <= tol;
         if (!nearEdge) continue;
@@ -1707,7 +1916,7 @@ export function BoardCanvas({
           h = o.h - dy;
           y = o.y + dy;
         }
-        if ((e.shiftKey || o.kind === "sticky") && it.handle.length === 2) {
+        if ((e.shiftKey || o.kind === "sticky" || o.kind === "image") && it.handle.length === 2) {
           const ratio = o.w / o.h;
           if (w / h > ratio) w = h * ratio;
           else h = w / ratio;
@@ -1716,7 +1925,44 @@ export function BoardCanvas({
         }
         w = Math.max(24, w);
         h = Math.max(24, h);
-        const next = elRef.current.map((el) => (el.id === o.id ? ({ ...o, x, y, w, h } as El) : el));
+        const sx = w / o.w;
+        const sy = h / o.h;
+        const ink = new Map(
+          it.ink.map((d) => [
+            d.id,
+            { ...d, x: x + (d.x - o.x) * sx, y: y + (d.y - o.y) * sy, w: d.w * sx, h: d.h * sy, points: d.points.map(([px, py]) => [px * sx, py * sy] as [number, number]) },
+          ])
+        );
+        const next = elRef.current.map((el) => (el.id === o.id ? ({ ...o, x, y, w, h } as El) : ink.get(el.id) ?? el));
+        elRef.current = next;
+        setElements(next);
+        break;
+      }
+      case "crop": {
+        const o = it.orig;
+        const F = imageFull(o);
+        const dx = p.x - it.start.x;
+        const dy = p.y - it.start.y;
+        let { x, y, w, h } = o;
+        const min = 16 / camRef.current.zoom;
+        if (it.handle === "move") {
+          x = clamp(o.x + dx, F.x, F.x + F.w - o.w);
+          y = clamp(o.y + dy, F.y, F.y + F.h - o.h);
+        } else {
+          const hd = it.handle;
+          if (hd.includes("e")) w = clamp(o.w + dx, min, F.x + F.w - o.x);
+          if (hd.includes("s")) h = clamp(o.h + dy, min, F.y + F.h - o.y);
+          if (hd.includes("w")) {
+            x = clamp(o.x + dx, F.x, o.x + o.w - min);
+            w = o.x + o.w - x;
+          }
+          if (hd.includes("n")) {
+            y = clamp(o.y + dy, F.y, o.y + o.h - min);
+            h = o.y + o.h - y;
+          }
+        }
+        const crop = { x: (x - F.x) / F.w, y: (y - F.y) / F.h, w: w / F.w, h: h / F.h };
+        const next = elRef.current.map((el) => (el.id === o.id ? ({ ...o, x, y, w, h, crop } as El) : el));
         elRef.current = next;
         setElements(next);
         break;
@@ -1822,7 +2068,7 @@ export function BoardCanvas({
         if (it.dupOf) setSelection(it.dupOf);
         else if (it.editOnClick) setEditingId(it.editOnClick);
       }
-    } else if (it.type === "resize") {
+    } else if (it.type === "resize" || it.type === "crop") {
       commit(elRef.current, { from: it.snapshot });
     } else if (it.type === "endpoint") {
       const next = elRef.current.map((el) =>
@@ -1915,7 +2161,7 @@ export function BoardCanvas({
       const x = Math.min(...xs);
       const y = Math.min(...ys);
       const marker = penMode === "highlighter";
-      const el: El = {
+      const el: DrawEl = {
         id: uid("ink"),
         kind: "draw",
         x,
@@ -1929,10 +2175,13 @@ export function BoardCanvas({
         opacity: marker ? HIGHLIGHT.opacity : undefined,
         ...(penDash !== "solid" ? { dash: penDash } : {}),
       };
+      const host = inkHost(el);
+      if (host) el.on = host;
       commit([...elRef.current, el]);
     } else if (it.type === "erase") {
       if (it.hit.length) {
         const gone = new Set(it.hit);
+        for (const d of inkOn(gone)) gone.add(d.id);
         // Lines hooked to an erased item go with it, as with Delete.
         commit(elRef.current.filter((x) => !gone.has(x.id) && !(x.kind === "connector" && ((x.from.id && gone.has(x.from.id)) || (x.to.id && gone.has(x.to.id))))));
         setSelection((sel) => sel.filter((id) => !gone.has(id)));
@@ -1946,7 +2195,8 @@ export function BoardCanvas({
     const one = chosen.length === 1 ? chosen[0] : null;
     switch (action) {
       case "edit":
-        if (one) setEditingId(one.id);
+        if (one?.kind === "image") setCropId(one.id);
+        else if (one) setEditingId(one.id);
         break;
       case "label":
         if (one) setLabelEditId(one.id);
@@ -1965,6 +2215,12 @@ export function BoardCanvas({
         break;
       case "back":
         sendBack();
+        break;
+      case "forward":
+        reorder(sel, "up");
+        break;
+      case "backward":
+        reorder(sel, "down");
         break;
       case "lock":
         toggleLock();
@@ -1995,6 +2251,9 @@ export function BoardCanvas({
         break;
       case "fit":
         fitTo(elRef.current);
+        break;
+      case "export":
+        exportJson();
         break;
     }
   }
@@ -2051,7 +2310,8 @@ export function BoardCanvas({
   function openMenuAt(clientX: number, clientY: number) {
     if (hostAt(clientX, clientY, "[data-ui]")) return;
     const host = hostAt(clientX, clientY, "[data-box], [data-line]");
-    const id = host?.dataset.box || host?.dataset.line;
+    const raw = host?.dataset.box || host?.dataset.line;
+    const id = raw ? hostOf(raw) : undefined;
     if (id && !selRef.current.includes(id)) setSelection(withGroups([id]));
     const r = rootRef.current!.getBoundingClientRect();
     setMenu({ x: clientX - r.left, y: clientY - r.top, world: toWorld(clientX, clientY), onElement: Boolean(id) });
@@ -2066,7 +2326,8 @@ export function BoardCanvas({
   }
 
   function pasteAt(world: { x: number; y: number }) {
-    const src = clipboard.current;
+    const src0 = clipboard.current;
+    const src = [...src0, ...inkOn(src0.map((e) => e.id)).filter((d) => !src0.includes(d))];
     if (!src.length) return;
     const b = boundsOf(src, new Map(src.map((x) => [x.id, x])));
     if (!b) return;
@@ -2078,7 +2339,7 @@ export function BoardCanvas({
     const clones: El[] = src.map((e2) =>
       e2.kind === "connector"
         ? { ...e2, id: map.get(e2.id)!, z: ++z, from: { ...e2.from, id: e2.from.id && map.get(e2.from.id), x: e2.from.x + dx, y: e2.from.y + dy }, to: { ...e2.to, id: e2.to.id && map.get(e2.to.id), x: e2.to.x + dx, y: e2.to.y + dy } }
-        : { ...e2, id: map.get(e2.id)!, x: e2.x + dx, y: e2.y + dy, z: ++z }
+        : ({ ...e2, id: map.get(e2.id)!, x: e2.x + dx, y: e2.y + dy, z: ++z, ...(e2.kind === "draw" && e2.on ? { on: map.get(e2.on) } : {}) } as El)
     );
     commit([...elRef.current, ...clones]);
     setSelection(clones.map((c) => c.id));
@@ -2099,8 +2360,17 @@ export function BoardCanvas({
     if (hostAt(e.clientX, e.clientY, "[data-ui]")) return;
     const host = hostAt(e.clientX, e.clientY, "[data-box]");
     if (host) {
-      const el = byId.get(host.dataset.box!);
-      if (el && isBox(el) && el.kind !== "draw" && !el.locked) setEditingId(el.id);
+      // Double-click on ink drawn on a note still edits the note underneath.
+      const el = byId.get(hostOf(host.dataset.box!));
+      if (el?.kind === "image") {
+        if (!el.locked) {
+          setSelection([el.id]);
+          setCropId(el.id);
+        }
+      } else if (el && isBox(el) && el.kind !== "draw" && !el.locked) {
+        setSelection([el.id]);
+        setEditingId(el.id);
+      }
       return;
     }
     const line = hostAt(e.clientX, e.clientY, "[data-line]");
@@ -2121,9 +2391,9 @@ export function BoardCanvas({
   // -------------------------------------------------------------- derived
   const sorted = useMemo(() => [...elements].sort((a, b) => a.z - b.z), [elements]);
   const frames = sorted.filter((e): e is Extract<El, { kind: "frame" }> => e.kind === "frame");
-  const boxes = sorted.filter((e): e is BoxEl => isBox(e) && e.kind !== "frame" && e.kind !== "draw");
-  const drawings = sorted.filter((e): e is Extract<El, { kind: "draw" }> => e.kind === "draw");
-  const connectors = sorted.filter((e): e is ConnectorEl => e.kind === "connector");
+  // Notes, shapes, images, ink and lines share one stacking order (the Layers panel);
+  // frames always sit underneath.
+  const layered = sorted.filter((e) => e.kind !== "frame");
   const selected = selection.map((id) => byId.get(id)).filter((x): x is El => Boolean(x));
   const selBounds = selected.length ? boundsOf(selected, byId) : null;
   const single = selected.length === 1 ? selected[0] : null;
@@ -2237,6 +2507,21 @@ export function BoardCanvas({
         </div>
       );
     }
+    if (el.kind === "image") {
+      const c = el.crop ?? FULL_CROP;
+      inner = (
+        <div className="relative h-full w-full overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element -- pasted data URL, not an optimisable asset */}
+          <img
+            src={el.src}
+            alt=""
+            draggable={false}
+            className="pointer-events-none absolute max-w-none select-none"
+            style={{ left: (-c.x / c.w) * el.w, top: (-c.y / c.h) * el.h, width: el.w / c.w, height: el.h / c.h }}
+          />
+        </div>
+      );
+    }
     const hovered = !isSel && hoverId === el.id && tool === "select" && !interaction && !readOnly;
     return (
       <div key={el.id} {...common} className={clsx("absolute", el.kind === "sticky" && "rounded-[2px]", isSel && "cursor-move")}>
@@ -2270,7 +2555,7 @@ export function BoardCanvas({
             <textarea data-f="body" defaultValue={el.body} placeholder="Details" rows={3} className="flex-1 resize-none text-[13px] leading-snug text-slate-600 outline-none placeholder:text-slate-300" />
           </div>
         )}
-        {editing && el.kind !== "card" && (
+        {editing && (el.kind === "sticky" || el.kind === "shape" || el.kind === "text") && (
           <div className={clsx("absolute inset-0", el.kind !== "text" && "flex items-center p-4")}>
           <textarea
             autoFocus
@@ -2325,39 +2610,140 @@ export function BoardCanvas({
     );
   }
 
+  function renderInk(d: DrawEl) {
+    const editingHost = Boolean(d.on && d.on === editingId);
+    return (
+      <svg key={d.id} data-anim={d.id} className="pointer-events-none absolute left-0 top-0 overflow-visible" width="1" height="1" style={{ zIndex: d.z }}>
+        <g transform={`translate(${d.x},${d.y})`}>
+          <path
+            data-box={d.id}
+            d={strokePath(d.points)}
+            fill="none"
+            stroke={d.stroke}
+            strokeWidth={d.width}
+            strokeDasharray={strokeDash(d.dash, d.width)}
+            strokeOpacity={(d.opacity ?? 1) * (erasing.has(d.id) ? 0.2 : 1)}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ pointerEvents: editingHost ? "none" : "stroke" }}
+          />
+          {selection.includes(d.id) && <rect x={-4} y={-4} width={d.w + 8} height={d.h + 8} fill="none" stroke={MIRO_BLUE} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
+        </g>
+      </svg>
+    );
+  }
+
+  function renderLine(c: ConnectorEl) {
+    const pth = connectorPath(c, byId);
+    const sel = selection.includes(c.id);
+    const hs = c.arrowStart ? (c.headStart ?? "arrow") : null;
+    const he = c.arrowEnd ? (c.headEnd ?? "arrow") : null;
+    const color = sel ? MIRO_BLUE : c.stroke;
+    return (
+      <svg key={c.id} className="pointer-events-none absolute left-0 top-0 overflow-visible" width="1" height="1" style={{ zIndex: c.z }}>
+        <defs>
+          {hs && <HeadMarker id={`ah-${c.id}-s`} head={hs} color={color} />}
+          {he && <HeadMarker id={`ah-${c.id}-e`} head={he} color={color} />}
+        </defs>
+        <g data-anim={c.id} opacity={erasing.has(c.id) ? 0.2 : undefined}>
+          {hoverLine === c.id && !sel && !interaction && (
+            <path d={pth.d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.35} strokeWidth={c.width + 6 / camera.zoom} strokeLinecap="round" style={{ pointerEvents: "none" }} />
+          )}
+          <path
+            d={pth.d}
+            data-line={c.id}
+            fill="none"
+            stroke="transparent"
+            strokeWidth={14 / camera.zoom}
+            style={{ pointerEvents: "stroke", cursor: "pointer" }}
+            onPointerEnter={() => setHoverLine(c.id)}
+            onPointerLeave={() => setHoverLine((h) => (h === c.id ? null : h))}
+          />
+          <path
+            data-wire=""
+            d={pth.d}
+            fill="none"
+            stroke={color}
+            strokeWidth={c.width}
+            strokeDasharray={c.dashed ? "7 6" : undefined}
+            markerEnd={he ? `url(#ah-${c.id}-e)` : undefined}
+            markerStart={hs ? `url(#ah-${c.id}-s)` : undefined}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ pointerEvents: "none" }}
+          />
+          {c.label && labelEditId !== c.id && (
+            <foreignObject x={pth.mid.x - 80} y={pth.mid.y - 14} width={160} height={28} style={{ overflow: "visible", pointerEvents: "none" }}>
+              <div className="flex justify-center">
+                <span className="rounded-[3px] bg-[#F2F2F2] px-1.5 py-0.5 text-[13px] leading-tight text-[#1C1C1E]">{c.label}</span>
+              </div>
+            </foreignObject>
+          )}
+        </g>
+      </svg>
+    );
+  }
+
   // Toolbar geometry for the chosen layout.
   const tbVertical = tb.pos !== "top";
-  // Top toolbar goes in the header row (between title and Share) whenever icons fit there;
-  // if the detailed buttons are too wide for that gap, it shows icons there instead.
+  // A top toolbar on a narrow board: the title bar slims down so the tools fit beside it.
+  const slimTitle = tb.pos === "top" && view.w < 1100;
+  // The top toolbar sits in the header row between the title bar and Share. Labelled
+  // buttons are used there only when they all fit; otherwise icons, and on a narrow
+  // board the least-used tools move into a "More" menu.
   const gapW = headerGap ? headerGap.right - headerGap.left : 0;
-  const topInRow = tb.pos === "top" && gapW >= 540;
-  const tbDetailed = tb.style === "detailed" && !(topInRow && gapW < 740);
-  const tbPanel = tbDetailed ? 60 : 48; // panel thickness incl. padding
-  const tbReserve = tbPanel + 24;
+  // Width of the row: tools panel (+ "More" when something's hidden) and the undo panel.
+  const rowNeed = (hidden: Set<string>, step = 42) => {
+    const undo = 2 - (hidden.has("undo") ? 1 : 0) - (hidden.has("redo") ? 1 : 0);
+    const main = 9 - (hidden.size - (2 - undo)) + (hidden.size ? 1 : 0);
+    return main * step + 14 + (undo ? undo * step + 16 : 0);
+  };
+  const DROP = ["frame", "hand", "blocks", "connector", "text", "redo", "undo"];
+  const topInRow = tb.pos === "top" && gapW >= rowNeed(new Set(DROP));
+  const tbDetailed = tb.style === "detailed" && (!topInRow || rowNeed(new Set(), 58) <= gapW);
+  const tbHidden = new Set<string>();
+  if (topInRow && !tbDetailed) {
+    for (const t of DROP) {
+      if (rowNeed(tbHidden) <= gapW) break;
+      tbHidden.add(t);
+    }
+  }
+  const tbPanel = tbDetailed && !topInRow ? 60 : 48; // panel thickness incl. padding
   const toolBtn = (active: boolean) =>
     tbDetailed
-      ? clsx("wb-btn flex h-[52px] w-[56px] flex-col items-center justify-center gap-1 rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]", active && ACTIVE_BTN)
+      ? clsx(
+          "wb-btn flex flex-col items-center justify-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]",
+          topInRow ? "h-10 w-[54px] gap-0.5" : "h-[52px] w-[56px] gap-1",
+          active && ACTIVE_BTN
+        )
       : clsx(ICON_BTN, active && ACTIVE_BTN);
-  const flyPos = tb.pos === "left" ? "left-[calc(100%+8px)] top-0" : tb.pos === "right" ? "right-[calc(100%+8px)] top-0" : "left-0 top-[calc(100%+8px)]";
+  const tbLabel = topInRow ? "text-[9.5px] font-medium leading-none" : "text-[10.5px] font-medium leading-none";
+  const flyPos = clsx("z-30", tb.pos === "left" ? "left-[calc(100%+8px)] top-0" : tb.pos === "right" ? "right-[calc(100%+8px)] top-0" : "left-0 top-[calc(100%+8px)]");
   // A side toolbar on a short board: undo/redo moves beside it, then the tools
   // fold into columns, so nothing runs off the bottom.
   const btnStep = (tbDetailed ? 52 : 40) + 2;
-  const mainH = 10 * btnStep + 5 + 8;
+  const mainH = 9 * btnStep + 5 + 8;
   const undoH = 2 * btnStep + 8;
   const availH = view.h - 72 - 12;
   const sideFits = mainH + 8 + undoH <= availH;
   const mainFits = mainH <= availH;
   const toolRows = mainFits ? 0 : Math.max(3, Math.floor((availH - 13) / btnStep));
-  // Top toolbar in the header row (between title and Share) when there's room, else the row below.
+  // The drawing bar shows every colour / width / line type when there's room, else one button each.
+  // (A top bar is centred under the toolbar, so it needs room on both sides of that centre.)
+  const barMid = topInRow && headerGap ? (headerGap.left + headerGap.right) / 2 : view.w / 2;
+  const penFull = tbVertical ? availH - (tb.pos === "right" ? 56 : 0) >= 680 : 2 * Math.min(barMid - 12, view.w - 12 - barMid) >= 800;
   const tbTop = topInRow ? 12 : 72;
+  const tbW = tbSize?.w ?? tbPanel * 2 + 8;
+  const tbH = tbSize?.h ?? tbPanel;
   const libraryPos: React.CSSProperties =
-    tb.pos === "left" ? { left: 12 + tbPanel + 8, top: 72 } : tb.pos === "right" ? { right: 12 + tbPanel + 8, top: 72 } : { top: tbTop + tbPanel + 8 };
+    tb.pos === "left" ? { left: 12 + tbW + 8, top: 72 } : tb.pos === "right" ? { right: 12 + tbW + 8, top: 72 } : { top: tbTop + tbH + 8 };
 
   const showPorts = (id: string) =>
     !readOnly &&
     (tool === "select" || tool === "connector") &&
     !interaction &&
     !editingId &&
+    id !== cropId &&
     (hoverId === id || (selection.length === 1 && selection[0] === id));
 
   // ------------------------------------------------------------------ render
@@ -2400,9 +2786,16 @@ export function BoardCanvas({
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes("application/x-wb-block")) e.preventDefault();
+          if (e.dataTransfer.types.includes("application/x-wb-block") || (!readOnly && e.dataTransfer.types.includes("Files"))) e.preventDefault();
         }}
         onDrop={(e) => {
+          const pics = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
+          if (pics.length && !readOnly) {
+            e.preventDefault();
+            const at = toWorld(e.clientX, e.clientY);
+            pics.forEach((f, i) => void addImageFile(f, { x: at.x + i * 24, y: at.y + i * 24 }));
+            return;
+          }
           const id = e.dataTransfer.getData("application/x-wb-block");
           if (!id) return;
           e.preventDefault();
@@ -2452,72 +2845,7 @@ export function BoardCanvas({
             </div>
           ))}
 
-          <svg className="absolute left-0 top-0 overflow-visible" width="1" height="1" style={{ zIndex: 1 }}>
-            <defs>
-              {connectors.map((c) => (
-                <marker key={c.id} id={`ah-${c.id}`} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M0,0 L10,5 L0,10 z" fill={c.stroke} />
-                </marker>
-              ))}
-            </defs>
-            {drawings.map((d) => (
-              <g key={d.id} data-anim={d.id} transform={`translate(${d.x},${d.y})`}>
-                <path
-                  data-box={d.id}
-                  d={strokePath(d.points)}
-                  fill="none"
-                  stroke={d.stroke}
-                  strokeWidth={d.width}
-                  strokeDasharray={strokeDash(d.dash, d.width)}
-                  strokeOpacity={(d.opacity ?? 1) * (erasing.has(d.id) ? 0.2 : 1)}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ pointerEvents: "stroke" }}
-                />
-                {selection.includes(d.id) && <rect x={-4} y={-4} width={d.w + 8} height={d.h + 8} fill="none" stroke={MIRO_BLUE} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
-              </g>
-            ))}
-            {connectors.map((c) => {
-              const pth = connectorPath(c, byId);
-              const sel = selection.includes(c.id);
-              return (
-                <g key={c.id} data-anim={c.id} opacity={erasing.has(c.id) ? 0.2 : undefined}>
-                  {hoverLine === c.id && !sel && !interaction && (
-                    <path d={pth.d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.35} strokeWidth={c.width + 6 / camera.zoom} strokeLinecap="round" style={{ pointerEvents: "none" }} />
-                  )}
-                  <path
-                    d={pth.d}
-                    data-line={c.id}
-                    fill="none"
-                    stroke="transparent"
-                    strokeWidth={14 / camera.zoom}
-                    style={{ pointerEvents: "stroke", cursor: "pointer" }}
-                    onPointerEnter={() => setHoverLine(c.id)}
-                    onPointerLeave={() => setHoverLine((h) => (h === c.id ? null : h))}
-                  />
-                  <path
-                    data-wire=""
-                    d={pth.d}
-                    fill="none"
-                    stroke={sel ? MIRO_BLUE : c.stroke}
-                    strokeWidth={c.width}
-                    strokeDasharray={c.dashed ? "7 6" : undefined}
-                    markerEnd={c.arrowEnd ? `url(#ah-${c.id})` : undefined}
-                    markerStart={c.arrowStart ? `url(#ah-${c.id})` : undefined}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{ pointerEvents: "none" }}
-                  />
-                  {c.label && labelEditId !== c.id && (
-                    <foreignObject x={pth.mid.x - 80} y={pth.mid.y - 14} width={160} height={28} style={{ overflow: "visible", pointerEvents: "none" }}>
-                      <div className="flex justify-center">
-                        <span className="rounded-[3px] bg-[#F2F2F2] px-1.5 py-0.5 text-[13px] leading-tight text-[#1C1C1E]">{c.label}</span>
-                      </div>
-                    </foreignObject>
-                  )}
-                </g>
-              );
-            })}
+          <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width="1" height="1" style={{ zIndex: 3 }}>
             {interaction?.type === "connect" &&
               (() => {
                 // A soft, bendy wire while dragging: it leaves the box along its side,
@@ -2568,7 +2896,7 @@ export function BoardCanvas({
 
           <div data-leave className="pointer-events-none absolute left-0 top-0" style={{ zIndex: 2 }} />
           <div className="absolute left-0 top-0" style={{ zIndex: 2 }}>
-            {boxes.map(renderBox)}
+            {layered.map((el) => (el.kind === "draw" ? renderInk(el) : el.kind === "connector" ? renderLine(el) : renderBox(el)))}
             {ghost && tool === "sticky" && !interaction && (
               <div
                 className="pointer-events-none absolute rounded-[2px] opacity-60"
@@ -2642,7 +2970,7 @@ export function BoardCanvas({
             })()}
 
           {/* selection box */}
-          {selBounds && !editingId && interaction?.type !== "marquee" && !(single && single.kind === "connector") && (() => {
+          {selBounds && !editingId && interaction?.type !== "marquee" && !(single && single.kind === "connector") && !(single && single.id === cropId) && (() => {
             const a = toScreen(selBounds.x, selBounds.y);
             const w = selBounds.w * camera.zoom;
             const h = selBounds.h * camera.zoom;
@@ -2656,7 +2984,7 @@ export function BoardCanvas({
                     return <div key={m.id} className="absolute ring-1 ring-[#4262FF]/60" style={{ left: ma.x - a.x, top: ma.y - a.y, width: m.w * camera.zoom, height: m.h * camera.zoom }} />;
                   })}
                 {canResize &&
-                  HANDLES.filter((hd) => hd.length === 2 || single?.kind !== "sticky").map((hd) => {
+                  HANDLES.filter((hd) => hd.length === 2 || (single?.kind !== "sticky" && single?.kind !== "image")).map((hd) => {
                     const corner = hd.length === 2;
                     const hw = corner ? 12 : hd === "n" || hd === "s" ? 18 : 6;
                     const hh = corner ? 12 : hd === "n" || hd === "s" ? 6 : 18;
@@ -2676,6 +3004,65 @@ export function BoardCanvas({
             );
           })()}
 
+          {/* crop: the whole picture dimmed, the kept part bright, handles on the kept part */}
+          {single?.kind === "image" && single.id === cropId && (() => {
+            const F = imageFull(single);
+            const fa = toScreen(F.x, F.y);
+            const a = toScreen(single.x, single.y);
+            const z = camera.zoom;
+            const w = single.w * z;
+            const h = single.h * z;
+            const img = (left: number, top: number, opacity?: number) => (
+              // eslint-disable-next-line @next/next/no-img-element -- same picture, uncropped
+              <img src={single.src} alt="" draggable={false} className="pointer-events-none absolute max-w-none select-none" style={{ left, top, width: F.w * z, height: F.h * z, opacity }} />
+            );
+            return (
+              <>
+                <div className="absolute" style={{ left: fa.x, top: fa.y, width: F.w * z, height: F.h * z, boxShadow: "0 0 0 1px rgba(66,98,255,.5)" }}>{img(0, 0, 0.35)}</div>
+                <div data-crop="move" className="pointer-events-auto absolute cursor-move overflow-hidden" style={{ left: a.x, top: a.y, width: w, height: h, boxShadow: `0 0 0 2px ${MIRO_BLUE}` }}>
+                  {img(fa.x - a.x, fa.y - a.y)}
+                </div>
+                {HANDLES.map((hd) => {
+                  const corner = hd.length === 2;
+                  const hw = corner ? 16 : hd === "n" || hd === "s" ? 22 : 6;
+                  const hh = corner ? 16 : hd === "n" || hd === "s" ? 6 : 22;
+                  return (
+                    <div
+                      key={hd}
+                      data-crop={hd}
+                      className="pointer-events-auto absolute border-[#4262FF] bg-white"
+                      style={{
+                        left: a.x + (hd.includes("w") ? 0 : hd.includes("e") ? w : w / 2) - hw / 2,
+                        top: a.y + (hd.includes("n") ? 0 : hd.includes("s") ? h : h / 2) - hh / 2,
+                        width: hw,
+                        height: hh,
+                        borderWidth: 2,
+                        borderRadius: corner ? 3 : 3,
+                        cursor: `${hd}-resize`,
+                      }}
+                    />
+                  );
+                })}
+                <div data-ui className={clsx("pointer-events-auto absolute flex -translate-x-1/2 items-center gap-1 p-1 text-[13px]", PANEL)} style={{ left: a.x + w / 2, top: Math.max(8, Math.min(fa.y, a.y) - 48) }}>
+                  <span className="px-1.5 text-[#656B81]">Crop</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const F2 = imageFull(single);
+                      update([single.id], (x) => ({ ...(x as ImageEl), x: F2.x, y: F2.y, w: F2.w, h: F2.h, crop: undefined }));
+                    }}
+                    className="flex h-8 items-center gap-1 rounded-md px-2 hover:bg-[#F1F2F5]"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Reset
+                  </button>
+                  <button type="button" onClick={() => setCropId(null)} className="flex h-8 items-center gap-1 rounded-md bg-[#4262FF] px-2.5 font-medium text-white hover:bg-[#3550E6]">
+                    <Check className="h-3.5 w-3.5" /> Done
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+
           {/* connector endpoints */}
           {single && single.kind === "connector" &&
             (() => {
@@ -2687,9 +3074,11 @@ export function BoardCanvas({
                     key={end}
                     data-endpoint={end}
                     data-owner={single.id}
-                    className="pointer-events-auto absolute h-3 w-3 cursor-move rounded-full border-[1.5px] border-[#4262FF] bg-white shadow-[0_1px_2px_rgba(0,0,0,.15)]"
-                    style={{ left: pt.x - 6, top: pt.y - 6 }}
-                  />
+                    className="pointer-events-auto absolute z-10 grid h-6 w-6 cursor-move place-items-center"
+                    style={{ left: pt.x - 12, top: pt.y - 12 }}
+                  >
+                    <span className="pointer-events-none h-3 w-3 rounded-full border-[1.5px] border-[#4262FF] bg-white shadow-[0_1px_2px_rgba(0,0,0,.15)]" />
+                  </div>
                 );
               });
             })()}
@@ -2780,7 +3169,10 @@ export function BoardCanvas({
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           readOnly={readOnly}
           style={{ outline: "none" }}
-          className="h-9 max-w-[min(40vw,320px)] truncate rounded-md bg-transparent px-2 text-[16px] font-semibold text-[#1C1C1E] outline-none hover:bg-[#F1F2F5] focus:bg-white focus:ring-[1.5px] focus:ring-[#4262FF]"
+          className={clsx(
+            "h-9 truncate rounded-md bg-transparent px-2 text-[16px] font-semibold text-[#1C1C1E] outline-none hover:bg-[#F1F2F5] focus:bg-white focus:ring-[1.5px] focus:ring-[#4262FF]",
+            slimTitle ? "max-w-[100px]" : tb.pos === "top" ? "max-w-[min(22vw,180px)]" : "max-w-[min(40vw,320px)]"
+          )}
           aria-label="Board name"
         />
         <span
@@ -2790,7 +3182,7 @@ export function BoardCanvas({
         >
           {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : saveState === "error" ? <CloudOff className="h-4 w-4" /> : <Cloud className="h-4 w-4" />}
         </span>
-        <button type="button" onClick={exportJson} className={clsx(ICON_BTN, "h-9 w-9")} title="Export board (.json)" aria-label="Export board">
+        <button type="button" onClick={exportJson} className={clsx(ICON_BTN, "h-9 w-9", slimTitle && "hidden")} title="Export board (.json)" aria-label="Export board">
           <Download className="h-[18px] w-[18px]" />
         </button>
         <div className="relative">
@@ -2798,13 +3190,13 @@ export function BoardCanvas({
             type="button"
             onClick={() => setFramesOpen((v) => !v)}
             aria-pressed={framesOpen}
-            className={clsx(ICON_BTN, "h-9 w-auto gap-1 px-2", framesOpen && ACTIVE_BTN)}
+            className={clsx(ICON_BTN, "h-9 gap-1", slimTitle ? "w-9" : "w-auto px-2", framesOpen && ACTIVE_BTN)}
             title="Frames"
             aria-label="Frames"
           >
             <span className="flex items-center gap-1">
               <FrameIcon className="h-[18px] w-[18px]" />
-              <span className="text-[13px] tabular-nums">{frames.length}</span>
+              {!slimTitle && <span className="text-[13px] tabular-nums">{frames.length}</span>}
             </span>
           </button>
           {framesOpen && (
@@ -2831,6 +3223,16 @@ export function BoardCanvas({
             </div>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => setLayersOpen((v) => !v)}
+          aria-pressed={layersOpen}
+          className={clsx(ICON_BTN, "h-9 w-9", layersOpen && ACTIVE_BTN)}
+          title="Layers — order what sits on top"
+          aria-label="Layers"
+        >
+          <Layers className="h-[18px] w-[18px]" />
+        </button>
         <button
           type="button"
           onClick={() => setFocusMode((v) => !v)}
@@ -2883,8 +3285,9 @@ export function BoardCanvas({
         </div>
       )}
 
-      {/* Toolbar: left, right or top; icons only or with labels (Toolbar layout menu) */}
+      {/* Toolbar (left, right or top) with the drawing bar packed beside it */}
       <div
+        ref={tbRef}
         data-ui
         style={{
           ...(readOnly ? { display: "none" } : {}),
@@ -2892,10 +3295,18 @@ export function BoardCanvas({
         }}
         className={clsx(
           "absolute top-[72px] z-20 flex gap-2",
-          tb.pos === "left" && clsx("wb-from-left left-3", sideFits ? "flex-col" : "flex-row items-start"),
-          tb.pos === "right" && clsx("wb-from-right right-3", sideFits ? "flex-col" : "flex-row-reverse items-start"),
-          topInRow && "wb-from-top flex-row items-start justify-center",
-          tb.pos === "top" && !topInRow && "wb-from-top inset-x-0 mx-auto w-fit max-w-[calc(100%-24px)] flex-row flex-wrap justify-center"
+          tb.pos === "left" && "wb-from-left left-3 flex-row items-start",
+          tb.pos === "right" && "wb-from-right right-3 flex-row-reverse items-start",
+          tb.pos === "top" && "wb-from-top flex-col items-center",
+          tb.pos === "top" && !topInRow && "inset-x-0 mx-auto w-fit max-w-[calc(100%-24px)]"
+        )}
+      >
+      <div
+        className={clsx(
+          "flex gap-2",
+          tb.pos === "left" && (sideFits ? "flex-col" : "flex-row items-start"),
+          tb.pos === "right" && (sideFits ? "flex-col" : "flex-row-reverse items-start"),
+          tb.pos === "top" && "flex-row flex-wrap items-start justify-center"
         )}
       >
         <div
@@ -2910,10 +3321,9 @@ export function BoardCanvas({
               ["sticky", StickyNote, "Sticky note", "N", "Sticky"],
               ["shape", Shapes, "Shapes", "S", "Shapes"],
               ["connector", MoveUpRight, "Connection line", "L", "Line"],
-              ["pen", Pen, "Pen", "P", "Pen"],
               ["frame", FrameIcon, "Frame", "F", "Frame"],
             ] as [Tool, LucideIcon, string, string, string][]
-          ).map(([t, Icon, label, key, short]) => {
+          ).filter(([t]) => !tbHidden.has(t)).map(([t, Icon, label, key, short]) => {
             const flyout = (t === "sticky" && tool === "sticky" && flyoutOpen) || (t === "shape" && shapeMenu);
             const active = tool === t || (t === "pen" && tool === "eraser");
             return (
@@ -2926,14 +3336,13 @@ export function BoardCanvas({
                     setTool(t);
                     if (t !== "select" && t !== "hand") setSelection([]);
                     setFlyoutOpen(t === "sticky" ? !(flyoutOpen && tool === "sticky") : false);
-                    if (t === "pen") setDrawPanelOpen(true);
                     setLibraryOpen(false);
                     setShapeMenu(t === "shape" ? !shapeMenu || tool !== "shape" : false);
                   }}
                   className={toolBtn(active)}
                 >
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
-                  {tbDetailed && <span className="text-[10.5px] font-medium leading-none">{short}</span>}
+                  {tbDetailed && <span className={tbLabel}>{short}</span>}
                 </button>
                 {!flyout && <Tip label={label} hint={key} side={tb.pos} />}
                 {t === "sticky" && flyout && (
@@ -2983,8 +3392,57 @@ export function BoardCanvas({
               </div>
             );
           })}
+          {tbHidden.size > 0 && (
+            <div className="group relative">
+              <button type="button" aria-label="More tools" aria-pressed={tbMore} onClick={() => setTbMore((v) => !v)} className={toolBtn(tbMore)}>
+                <Ellipsis className="h-5 w-5" strokeWidth={1.75} />
+              </button>
+              {!tbMore && <Tip label="More tools" side={tb.pos} />}
+              {tbMore && (
+                <div className={clsx("absolute w-52 p-1.5", flyPos, POPOVER)}>
+                  {(
+                    [
+                      ["text", Type, "Text", "T"],
+                      ["connector", MoveUpRight, "Connection line", "L"],
+                      ["hand", Hand, "Hand", "H"],
+                      ["frame", FrameIcon, "Frame", "F"],
+                      ["blocks", SquarePlus, "More blocks", "B"],
+                      ["undo", Undo2, "Undo", "Ctrl+Z"],
+                      ["redo", Redo2, "Redo", "Ctrl+Shift+Z"],
+                    ] as [string, LucideIcon, string, string][]
+                  )
+                    .filter(([t]) => tbHidden.has(t))
+                    .map(([t, Icon, label, key]) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => {
+                          setTbMore(false);
+                          if (t === "blocks") {
+                            setLibraryOpen(true);
+                            return;
+                          }
+                          if (t === "undo" || t === "redo") {
+                            if (t === "undo") undo();
+                            else redo();
+                            return;
+                          }
+                          setTool(t as Tool);
+                          if (t !== "hand") setSelection([]);
+                        }}
+                        className={clsx("flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px]", tool === t ? ACTIVE_BTN : "hover:bg-[#F1F2F5]")}
+                      >
+                        <Icon className="h-4 w-4" strokeWidth={1.75} />
+                        <span className="flex-1">{label}</span>
+                        <span className="text-[12px] text-[#9A9DAA]">{key}</span>
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
           <span className={clsx("bg-[#E9EAEF]", tbVertical ? "mx-2 my-0.5 h-px" : "mx-0.5 my-2 w-px self-stretch")} />
-          <div className="group relative">
+          <div className={clsx("group relative", tbHidden.has("blocks") && "hidden")}>
             <button
               type="button"
               aria-label="More blocks (B)"
@@ -2997,7 +3455,7 @@ export function BoardCanvas({
               className={toolBtn(libraryOpen)}
             >
               <SquarePlus className="h-5 w-5" strokeWidth={1.75} />
-              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Blocks</span>}
+              {tbDetailed && <span className={tbLabel}>Blocks</span>}
             </button>
             {!libraryOpen && <Tip label="More blocks" hint="B" side={tb.pos} />}
           </div>
@@ -3014,7 +3472,7 @@ export function BoardCanvas({
               className={toolBtn(tbMenu)}
             >
               <SlidersHorizontal className="h-5 w-5" strokeWidth={1.75} />
-              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Layout</span>}
+              {tbDetailed && <span className={tbLabel}>Layout</span>}
             </button>
             {!tbMenu && <Tip label="Toolbar layout" side={tb.pos} />}
             {tbMenu && (
@@ -3064,133 +3522,173 @@ export function BoardCanvas({
             )}
           </div>
         </div>
-        <div className={clsx("flex gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row")}>
+        <div className={clsx("flex gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row", tbHidden.has("undo") && "hidden")}>
           <div className="group relative">
             <button type="button" aria-label="Undo" onClick={undo} className={toolBtn(false)}>
               <Undo2 className="h-5 w-5" strokeWidth={1.75} />
-              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Undo</span>}
+              {tbDetailed && <span className={tbLabel}>Undo</span>}
             </button>
             <Tip label="Undo" hint="Ctrl+Z" side={tb.pos} />
           </div>
-          <div className="group relative">
+          <div className={clsx("group relative", tbHidden.has("redo") && "hidden")}>
             <button type="button" aria-label="Redo" onClick={redo} className={toolBtn(false)}>
               <Redo2 className="h-5 w-5" strokeWidth={1.75} />
-              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Redo</span>}
+              {tbDetailed && <span className={tbLabel}>Redo</span>}
             </button>
             <Tip label="Redo" hint="Ctrl+Shift+Z" side={tb.pos} />
           </div>
         </div>
       </div>
 
-      {/* Drawing panel: pen / highlighter / eraser, colour, width, line type, settings */}
-      {(tool === "pen" || tool === "eraser") && !readOnly && (() => {
-        const dock = tb.pos === "left" ? "right" : tb.pos === "right" ? "left" : "top";
-        const horiz = dock === "top";
-        const top = horiz ? tbTop + Math.max(48, tbPanel) + 8 : 72;
-        const place = dock === "right" ? "right-3" : dock === "left" ? "left-3" : "inset-x-0 mx-auto w-fit max-w-[calc(100%-24px)]";
-        const divider = <div className={horiz ? "mx-1 h-6 w-px self-center bg-[#E3E5EA]" : "my-1 h-px w-full bg-[#E3E5EA]"} />;
+      {/* Drawing bar: always open; using any of it switches to the pen */}
+      {(() => {
+        const penOn = tool === "pen" || tool === "eraser";
+        const activate = () => {
+          if (!penOn) {
+            setTool("pen");
+            setSelection([]);
+          }
+        };
         const btn = (active: boolean) => clsx(ICON_BTN, active && ACTIVE_BTN);
-        if (!drawPanelOpen)
-          return (
-            <button
-              data-ui
-              type="button"
-              aria-label="Drawing options"
-              title="Drawing options"
-              onClick={() => setDrawPanelOpen(true)}
-              className={clsx(PANEL, "absolute z-30 flex h-10 w-10 items-center justify-center text-[#1C1C1E] hover:bg-[#F1F2F5]", dock === "right" ? "right-3" : dock === "left" ? "left-3" : "inset-x-0 mx-auto")}
-              style={{ top }}
-            >
-              <span className="block h-4 w-4 rounded-full ring-1 ring-inset ring-black/15" style={{ background: penColor }} />
-            </button>
+        const divider = <span className={clsx("bg-[#E9EAEF]", tbVertical ? "mx-2 my-0.5 h-px self-stretch" : "mx-0.5 my-2 w-px self-stretch")} />;
+        const popPos = clsx(
+          "absolute z-30",
+          tb.pos === "left" ? "left-[calc(100%+12px)] top-0" : tb.pos === "right" ? "right-[calc(100%+12px)] top-0" : "left-0 top-[calc(100%+12px)]"
+        );
+        const swatch = (c: string) => <span className="block h-5 w-5 rounded-full ring-1 ring-inset ring-black/15" style={{ background: c }} />;
+        const dashIcon = (d: PenDash) => (
+          <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden>
+            <line x1="2" y1="5" x2="20" y2="5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={strokeDash(d, 2.5)} />
+          </svg>
+        );
+        const colours = PEN_COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`Colour ${c}`}
+            title={c}
+            onClick={() => {
+              setPenColor(c);
+              if (tool === "eraser") setTool("pen");
+              else activate();
+              setPenPop(null);
+            }}
+            className={clsx("grid h-8 w-10 place-items-center rounded-md hover:bg-[#F1F2F5]", penOn && tool !== "eraser" && penColor === c && "bg-[#E6EAFF]")}
+          >
+            <span className={clsx("rounded-full", penOn && tool !== "eraser" && penColor === c && "ring-2 ring-[#4262FF] ring-offset-1")}>{swatch(c)}</span>
+          </button>
+        ));
+        const widths = PEN_WIDTHS.map((pw) => (
+          <button
+            key={pw}
+            type="button"
+            aria-label={`Thickness ${pw}`}
+            title={`Thickness ${pw}`}
+            onClick={() => {
+              setPenWidth(pw);
+              if (tool === "eraser") setTool("pen");
+              else activate();
+              setPenPop(null);
+            }}
+            className={clsx("grid h-8 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]", penOn && tool !== "eraser" && penWidth === pw && ACTIVE_BTN)}
+          >
+            <span className="w-5 rounded-full bg-current" style={{ height: pw }} />
+          </button>
+        ));
+        const dashes = (["solid", "dashed", "dotted"] as const).map((d) => (
+          <button
+            key={d}
+            type="button"
+            aria-label={`Line ${d}`}
+            title={d === "solid" ? "Solid line" : d === "dashed" ? "Dashed line" : "Dotted line"}
+            onClick={() => {
+              setPenDash(d);
+              if (tool === "eraser") setTool("pen");
+              else activate();
+              setPenPop(null);
+            }}
+            className={clsx("grid h-8 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]", penOn && tool !== "eraser" && penDash === d && ACTIVE_BTN)}
+          >
+            {dashIcon(d)}
+          </button>
+        ));
+        const group = (key: "color" | "width" | "dash", title: string, face: React.ReactNode, items: React.ReactNode) =>
+          penFull ? (
+            items
+          ) : (
+            <div className="relative">
+              <button type="button" aria-label={title} title={title} onClick={() => setPenPop((v) => (v === key ? null : key))} className={btn(penPop === key)}>
+                {face}
+              </button>
+              {penPop === key && <div className={clsx(popPos, POPOVER, "grid grid-cols-4 gap-0.5 p-1.5")}>{items}</div>}
+            </div>
           );
         return (
           <div
-            data-ui
             data-draw-panel
-            className={clsx(PANEL, "wb-pop absolute z-30 flex items-center gap-0.5 p-1.5", horiz ? "flex-row flex-wrap justify-center" : "w-[96px] flex-col", place)}
-            style={{ top }}
-            onPointerDown={(e) => e.stopPropagation()}
+            aria-label="Drawing tools"
+            className={clsx("flex items-center gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row")}
           >
-            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
-              <button type="button" aria-label="Pen" title="Pen" onClick={() => { setTool("pen"); setPenMode("pen"); }} className={btn(tool === "pen" && penMode === "pen")}>
-                <Pencil className="h-5 w-5" strokeWidth={1.75} />
-              </button>
-              <button type="button" aria-label="Highlighter" title="Highlighter" onClick={() => { setTool("pen"); setPenMode("highlighter"); }} className={btn(tool === "pen" && penMode === "highlighter")}>
-                <Highlighter className="h-5 w-5" strokeWidth={1.75} />
-              </button>
-              <button type="button" aria-label="Eraser" title="Eraser" onClick={() => setTool("eraser")} className={btn(tool === "eraser")}>
-                <Eraser className="h-5 w-5" strokeWidth={1.75} />
-              </button>
-            </div>
+            <button type="button" aria-label="Pen (P)" title="Pen (P)" aria-pressed={tool === "pen" && penMode === "pen"} onClick={() => { setTool("pen"); setPenMode("pen"); setSelection([]); }} className={btn(tool === "pen" && penMode === "pen")}>
+              <Pencil className="h-5 w-5" strokeWidth={1.75} />
+            </button>
+            <button type="button" aria-label="Highlighter" title="Highlighter" aria-pressed={tool === "pen" && penMode === "highlighter"} onClick={() => { setTool("pen"); setPenMode("highlighter"); setSelection([]); }} className={btn(tool === "pen" && penMode === "highlighter")}>
+              <Highlighter className="h-5 w-5" strokeWidth={1.75} />
+            </button>
+            <button type="button" aria-label="Eraser (E)" title="Eraser (E)" aria-pressed={tool === "eraser"} onClick={() => { setTool("eraser"); setSelection([]); }} className={btn(tool === "eraser")}>
+              <Eraser className="h-5 w-5" strokeWidth={1.75} />
+            </button>
             {divider}
-            <div className={clsx("gap-1 p-1", horiz ? "flex flex-row" : "grid grid-cols-2")}>
-              {PEN_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`Colour ${c}`}
-                  title={c}
-                  onClick={() => {
-                    setPenColor(c);
-                    if (tool === "eraser") setTool("pen");
-                  }}
-                  className={clsx("flex h-7 w-7 items-center justify-center rounded-full", penColor === c && tool !== "eraser" && "ring-2 ring-[#4262FF]")}
-                >
-                  <span className="block h-5 w-5 rounded-full ring-1 ring-inset ring-black/15" style={{ background: c }} />
-                </button>
-              ))}
-            </div>
+            {group("color", "Pen colour", swatch(penColor), colours)}
             {divider}
-            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
-              {PEN_WIDTHS.map((pw) => (
-                <button key={pw} type="button" aria-label={`Thickness ${pw}`} title={`Thickness ${pw}`} onClick={() => { setPenWidth(pw); if (tool === "eraser") setTool("pen"); }} className={btn(penWidth === pw && tool !== "eraser")}>
-                  <span className="w-5 rounded-full bg-current" style={{ height: pw }} />
-                </button>
-              ))}
-            </div>
+            {group("width", "Pen thickness", <span className="w-5 rounded-full bg-current" style={{ height: penWidth }} />, widths)}
+            {group("dash", "Line type", dashIcon(penDash), dashes)}
             {divider}
-            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
-              {(["solid", "dashed", "dotted"] as const).map((d) => (
-                <button key={d} type="button" aria-label={`Line ${d}`} title={d === "solid" ? "Solid line" : d === "dashed" ? "Dashed line" : "Dotted line"} onClick={() => { setPenDash(d); if (tool === "eraser") setTool("pen"); }} className={btn(penDash === d && tool !== "eraser")}>
-                  <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden>
-                    <line x1="2" y1="5" x2="20" y2="5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={strokeDash(d, 2.5)} />
-                  </svg>
-                </button>
-              ))}
-            </div>
-            {divider}
-            <div className={clsx("flex gap-0.5", horiz ? "flex-row" : "flex-row flex-wrap justify-center")}>
-              <div className="relative">
-                <button type="button" aria-label="Drawing settings" title="Drawing settings" onClick={() => setDrawSettings((v) => !v)} className={btn(drawSettings)}>
-                  <Settings2 className="h-5 w-5" strokeWidth={1.75} />
-                </button>
-                {drawSettings && (
-                  <div
-                    className={clsx(
-                      PANEL,
-                      "wb-pop absolute z-40 flex w-60 flex-col gap-1 p-2 text-[13px] text-[#1C1C1E]",
-                      dock === "right" ? "bottom-0 right-[calc(100%+12px)]" : dock === "left" ? "bottom-0 left-[calc(100%+12px)]" : "right-0 top-[calc(100%+12px)]",
-                    )}
-                  >
-                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[#F1F2F5]">
-                      <input type="checkbox" checked={pencilDraws} onChange={(e) => setPencilDraws(e.target.checked)} />
-                      Apple Pencil draws
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[#F1F2F5]">
-                      <input type="checkbox" checked={tb.autoShapes} onChange={(e) => setTb({ autoShapes: e.target.checked })} />
-                      Turn drawings into shapes
-                    </label>
-                  </div>
-                )}
-              </div>
-              <button type="button" aria-label="Hide drawing options" title="Hide" onClick={() => { setDrawPanelOpen(false); setDrawSettings(false); }} className={btn(false)}>
-                <X className="h-4 w-4" strokeWidth={1.75} />
+            <div className="relative">
+              <button type="button" aria-label="Drawing settings" title="Drawing settings" onClick={() => setPenPop((v) => (v === "settings" ? null : "settings"))} className={btn(penPop === "settings")}>
+                <Settings2 className="h-5 w-5" strokeWidth={1.75} />
               </button>
+              {penPop === "settings" && (
+                <div className={clsx(popPos, POPOVER, "flex w-60 flex-col gap-1 p-2 text-[13px] text-[#1C1C1E]", tbVertical && "!top-auto bottom-0")}>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[#F1F2F5]">
+                    <input type="checkbox" checked={pencilDraws} onChange={(e) => setPencilDraws(e.target.checked)} />
+                    Apple Pencil draws
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[#F1F2F5]">
+                    <input type="checkbox" checked={tb.autoShapes} onChange={(e) => setTb({ autoShapes: e.target.checked })} />
+                    Turn drawings into shapes
+                  </label>
+                </div>
+              )}
             </div>
           </div>
         );
       })()}
+      </div>
+
+      {/* Layers: everything on the board, top first; drag to reorder */}
+      {layersOpen && (
+        <LayersPanel
+          units={stackUnits(elements).reverse()}
+          frames={frames}
+          selection={selection}
+          readOnly={readOnly}
+          top={72}
+          onClose={() => setLayersOpen(false)}
+          onSelect={(id, add) => {
+            const unit = withGroups([id]);
+            setSelection(add ? (selection.includes(id) ? selection.filter((x) => !unit.includes(x)) : [...new Set([...selection, ...unit])]) : unit);
+          }}
+          onHover={(id) => setHoverId(id)}
+          onToggleLock={(id) => update([id, ...inkOn([id]).map((d) => d.id)], (el) => ({ ...el, locked: !byId.get(id)?.locked }))}
+          onMove={moveLayer}
+          onOrder={(mode) => reorder(selection, mode)}
+          onZoom={(id) => {
+            const el = byId.get(id);
+            if (el) fitTo([el]);
+          }}
+        />
+      )}
 
       {/* Block library */}
       {libraryOpen && (
@@ -3253,8 +3751,9 @@ export function BoardCanvas({
         <div
           data-ui
           role="menu"
-          className={clsx("absolute z-40 w-60 p-1.5 text-[14px]", POPOVER)}
-          style={{ left: Math.min(menu.x, view.w - 252), top: Math.max(8, Math.min(menu.y, view.h - 380)) }}
+          data-scrollable
+          className={clsx("absolute z-40 w-60 overflow-y-auto p-1.5 text-[14px]", POPOVER)}
+          style={{ left: Math.min(menu.x, view.w - 252), top: Math.max(8, Math.min(menu.y, view.h - 380)), maxHeight: view.h - 16 }}
           onPointerDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -3295,7 +3794,7 @@ export function BoardCanvas({
           )}
           {(menu.onElement
             ? ([
-                ...(single && isBox(single) && single.kind !== "draw" && !single.locked ? [["edit", "Edit text", "Enter"]] : []),
+                ...(single && isBox(single) && single.kind !== "draw" && !single.locked ? [["edit", single.kind === "image" ? "Crop" : "Edit text", "Enter"]] : []),
                 ...(single && single.kind === "connector" && !single.locked ? [["label", single.label ? "Edit line text" : "Add text to line", "Enter"]] : []),
                 ["duplicate", "Duplicate", "Ctrl+D"],
                 ["copy", "Copy", "Ctrl+C"],
@@ -3304,6 +3803,8 @@ export function BoardCanvas({
                 ...(grouping.grouped ? [["ungroup", "Ungroup", "Ctrl+Shift+G"]] : []),
                 ["connect", "Connect from here", "L"],
                 ["front", "Bring to front", "PgUp"],
+                ["forward", "Bring forward", "Ctrl+]"],
+                ["backward", "Send backward", "Ctrl+["],
                 ["back", "Send to back", "PgDn"],
                 ["lock", selected.every((x) => x.locked) ? "Unlock" : "Lock", "Ctrl+Shift+L"],
                 ["delete", "Delete", "Del"],
@@ -3314,6 +3815,7 @@ export function BoardCanvas({
                 ["blocks", "More blocks…", "B"],
                 ["selectAll", "Select all", "Ctrl+A"],
                 ["fit", "Zoom to fit", "Shift+1"],
+                ["export", "Export board (.json)", ""],
               ] as [MenuAction, string, string][])
           ).map(([action, l, hint]) => {
             const disabled = action === "paste" && !hasClip;
@@ -3345,7 +3847,7 @@ export function BoardCanvas({
       )}
 
       {/* Contextual toolbar */}
-      {selBounds && !interaction && !editingId && (
+      {selBounds && !interaction && !editingId && !(single && single.id === cropId) && (
         <ContextBar
           key={selection.join("|")}
           x={toScreen(selBounds.x + selBounds.w / 2, 0).x}
@@ -3353,12 +3855,15 @@ export function BoardCanvas({
           below={toScreen(0, selBounds.y + selBounds.h).y}
           containerW={view.w}
           containerH={view.h}
-          insetL={tb.pos === "left" ? tbReserve : 12}
-          insetR={tb.pos === "right" ? tbReserve : 12}
-          safeTop={tb.pos === "top" ? tbTop + Math.max(48, tbPanel) + 12 : 72}
+          insetL={tb.pos === "left" ? 12 + tbW + 12 : 12}
+          insetR={tb.pos === "right" ? 12 + tbW + 12 : 12}
+          safeTop={tb.pos === "top" ? tbTop + tbH + 12 : 72}
           selected={selected}
           onUpdate={(fn) => update(selection, fn)}
           onFront={bringFront}
+          onForward={() => reorder(selRef.current, "up")}
+          onBackward={() => reorder(selRef.current, "down")}
+          onCrop={single?.kind === "image" && !single.locked && !readOnly ? () => setCropId(single.id) : undefined}
           onBack={sendBack}
           grouping={grouping}
           onGroup={groupSelection}
@@ -3366,7 +3871,7 @@ export function BoardCanvas({
           onDuplicate={() => duplicate(selected)}
           onConvert={!readOnly && selected.some((x) => x.kind === "draw" && !x.locked) ? () => convertSelectionToShapes() : undefined}
           onEdit={
-            single && isBox(single) && single.kind !== "draw" && !single.locked
+            single && isBox(single) && single.kind !== "draw" && single.kind !== "image" && !single.locked
               ? () => setEditingId(single.id)
               : single && single.kind === "connector" && !single.locked
                 ? () => setLabelEditId(single.id)
@@ -3580,6 +4085,9 @@ function ContextBar({
   onDelete,
   onAlign,
   onEdit,
+  onCrop,
+  onForward,
+  onBackward,
   grouping,
   onGroup,
   onUngroup,
@@ -3606,8 +4114,11 @@ function ContextBar({
   onDelete: () => void;
   onAlign: (m: "left" | "hcenter" | "top" | "right") => void;
   onEdit?: () => void;
+  onCrop?: () => void;
+  onForward: () => void;
+  onBackward: () => void;
 }) {
-  type Pop = "color" | "stroke" | "textColor" | "shape" | "size" | "route" | "align" | "more" | "textAlign";
+  type Pop = "color" | "stroke" | "textColor" | "shape" | "size" | "route" | "align" | "more" | "textAlign" | "headStart" | "headEnd";
   const [pop, setPop] = useState<Pop | null>(null);
   const kinds = new Set(selected.map((s) => s.kind));
   const only = kinds.size === 1 ? selected[0] : null;
@@ -3906,11 +4417,60 @@ function ContextBar({
             </span>
           </Trigger>
           {sep}
-          <Btn title="Arrow at start" active={only.arrowStart} onClick={() => onUpdate((el) => (el.kind === "connector" ? { ...el, arrowStart: !el.arrowStart } : el))}>
-            <ArrowLeft className="h-4 w-4" />
-          </Btn>
-          <Btn title="Arrow at end" active={only.arrowEnd} onClick={() => onUpdate((el) => (el.kind === "connector" ? { ...el, arrowEnd: !el.arrowEnd } : el))}>
-            <ArrowRight className="h-4 w-4" />
+          {(["start", "end"] as const).map((end) => {
+            const on = end === "start" ? only.arrowStart : only.arrowEnd;
+            const cur: Head | null = on ? ((end === "start" ? only.headStart : only.headEnd) ?? "arrow") : null;
+            const pick = (h: Head | null) =>
+              onUpdate((el) =>
+                el.kind !== "connector" ? el : end === "start" ? { ...el, arrowStart: Boolean(h), headStart: h ?? el.headStart } : { ...el, arrowEnd: Boolean(h), headEnd: h ?? el.headEnd }
+              );
+            const key = end === "start" ? "headStart" : "headEnd";
+            return (
+              <Trigger
+                key={end}
+                open={pop === key}
+                onToggle={() => toggle(key)}
+                popCls={popCls}
+                title={end === "start" ? "Start of the line" : "End of the line (where it points)"}
+                popover={
+                  <div className="-m-1.5 flex w-44 flex-col">
+                    <p className="px-2.5 pb-1 pt-1 text-[11px] font-semibold text-[#656B81]">{end === "start" ? "Line start" : "Line end"}</p>
+                    {([null, "arrow", "open", "circle", "diamond", "bar"] as (Head | null)[]).map((h) => (
+                      <button
+                        key={h ?? "none"}
+                        type="button"
+                        aria-label={`${end === "start" ? "Start" : "End"}: ${h ?? "none"}`}
+                        onClick={() => {
+                          pick(h);
+                          setPop(null);
+                        }}
+                        className={clsx("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px]", cur === h ? "bg-[#E6EAFF] text-[#4262FF]" : "hover:bg-[#F1F2F5]")}
+                      >
+                        <HeadIcon head={h} flip={end === "start"} />
+                        {h === null ? "None" : h === "arrow" ? "Arrow" : h === "open" ? "Open arrow" : h === "circle" ? "Dot" : h === "diamond" ? "Diamond" : "Bar"}
+                      </button>
+                    ))}
+                  </div>
+                }
+              >
+                <span className="flex items-center gap-0.5">
+                  <HeadIcon head={cur} flip={end === "start"} />
+                  <ChevronDown className="h-3 w-3 text-[#656B81]" />
+                </span>
+              </Trigger>
+            );
+          })}
+          <Btn
+            title="Swap direction"
+            onClick={() =>
+              onUpdate((el) =>
+                el.kind === "connector"
+                  ? { ...el, from: el.to, to: el.from, arrowStart: el.arrowEnd, arrowEnd: el.arrowStart, headStart: el.headEnd, headEnd: el.headStart }
+                  : el
+              )
+            }
+          >
+            <ArrowLeftRight className="h-4 w-4" />
           </Btn>
           <Btn title="Dashed line" active={only.dashed} onClick={() => onUpdate((el) => (el.kind === "connector" ? { ...el, dashed: !el.dashed } : el))}>
             <svg width="18" height="4" viewBox="0 0 18 4">
@@ -3977,6 +4537,11 @@ function ContextBar({
           <Pencil className="h-4 w-4" />
         </Btn>
       )}
+      {onCrop && (
+        <Btn title="Crop (or double-click the picture)" onClick={onCrop}>
+          <Crop className="h-4 w-4" />
+        </Btn>
+      )}
       {onConvert && (
         <button
           type="button"
@@ -3999,8 +4564,10 @@ function ContextBar({
           <div className="-m-1.5 flex w-52 flex-col text-[13px]">
             {(
               [
-                [BringToFront, "Bring to front", "", onFront],
-                [SendToBack, "Send to back", "", onBack],
+                [BringToFront, "Bring to front", "PgUp", onFront],
+                [ChevronsUp, "Bring forward", "Ctrl+]", onForward],
+                [ChevronsDown, "Send backward", "Ctrl+[", onBackward],
+                [SendToBack, "Send to back", "PgDn", onBack],
                 [Copy, "Duplicate", "Ctrl+D", onDuplicate],
                 [Trash2, "Delete", "Del", onDelete],
               ] as const
@@ -4055,6 +4622,205 @@ function Trigger({
       </Btn>
       {open && <div className={popCls}>{popover}</div>}
     </div>
+  );
+}
+
+/** Layers panel: every item, topmost first. Drag a row (or use the arrows) to restack. */
+function LayersPanel({
+  units,
+  frames,
+  selection,
+  readOnly,
+  top,
+  onClose,
+  onSelect,
+  onHover,
+  onToggleLock,
+  onMove,
+  onOrder,
+  onZoom,
+}: {
+  units: El[][];
+  frames: El[];
+  selection: string[];
+  readOnly: boolean;
+  top: number;
+  onClose: () => void;
+  onSelect: (id: string, add: boolean) => void;
+  onHover: (id: string | null) => void;
+  onToggleLock: (id: string) => void;
+  onMove: (id: string, to: number) => void;
+  onOrder: (mode: "front" | "back" | "up" | "down") => void;
+  onZoom: (id: string) => void;
+}) {
+  const ROW = 36;
+  const listRef = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{ id: string; y0: number; moved: boolean; over: number } | null>(null);
+  const icon = (e: El) => {
+    const cls = "h-4 w-4 shrink-0";
+    if (e.kind === "sticky") return <span className="h-4 w-4 shrink-0 rounded-[2px] ring-1 ring-inset ring-black/10" style={{ background: e.color }} />;
+    if (e.kind === "shape") return <Shapes className={cls} />;
+    if (e.kind === "text") return <Type className={cls} />;
+    if (e.kind === "image") return <ImageIcon className={cls} />;
+    if (e.kind === "draw") return <Pencil className={cls} />;
+    if (e.kind === "connector") return <MoveUpRight className={cls} />;
+    if (e.kind === "frame") return <FrameIcon className={cls} />;
+    return <SquarePlus className={cls} />;
+  };
+  const indexAt = (clientY: number) => {
+    const r = listRef.current!.getBoundingClientRect();
+    return clamp(Math.round((clientY - r.top + listRef.current!.scrollTop) / ROW), 0, units.length);
+  };
+  const anySel = selection.length > 0 && !readOnly;
+  return (
+    <div
+      data-ui
+      className={clsx("absolute right-3 z-30 flex w-72 flex-col", POPOVER)}
+      style={{ top, maxHeight: `calc(100% - ${top + 72}px)` }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
+        <p className="text-[14px] font-semibold text-[#1C1C1E]">Layers</p>
+        <button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-[#656B81] hover:bg-[#F1F2F5]" aria-label="Close layers">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <p className="px-3 pb-2 text-[12px] text-[#656B81]">Top of the list sits on top. Drag to reorder.</p>
+      <div ref={listRef} data-scrollable className="relative min-h-0 flex-1 overflow-y-auto px-1.5" onPointerLeave={() => onHover(null)}>
+        {units.length === 0 && <p className="px-2 py-3 text-[13px] text-[#656B81]">Nothing on the board yet.</p>}
+        {units.map((u, i) => {
+          const e = u[0];
+          const sel = selection.includes(e.id);
+          const inks = u.length - 1;
+          return (
+            <div
+              key={e.id}
+              data-layer={e.id}
+              role="button"
+              tabIndex={0}
+              className={clsx(
+                "group flex items-center gap-2 rounded-md px-1.5 text-[13px] text-[#1C1C1E]",
+                sel ? "bg-[#E6EAFF]" : "hover:bg-[#F1F2F5]",
+                drag?.id === e.id && drag.moved && "opacity-40"
+              )}
+              style={{ height: ROW, touchAction: "none" }}
+              onPointerEnter={() => onHover(e.id)}
+              onPointerDown={(ev) => {
+                if ((ev.target as HTMLElement).closest("button")) return;
+                (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+                setDrag({ id: e.id, y0: ev.clientY, moved: false, over: i });
+              }}
+              onPointerMove={(ev) => {
+                if (!drag || drag.id !== e.id || readOnly) return;
+                const moved = drag.moved || Math.abs(ev.clientY - drag.y0) > 4;
+                setDrag({ ...drag, moved, over: indexAt(ev.clientY) });
+              }}
+              onPointerUp={(ev) => {
+                if (!drag || drag.id !== e.id) return;
+                if (drag.moved) onMove(e.id, drag.over);
+                else onSelect(e.id, ev.shiftKey || ev.metaKey || ev.ctrlKey);
+                setDrag(null);
+              }}
+              onPointerCancel={() => setDrag(null)}
+              onDoubleClick={() => onZoom(e.id)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter") onSelect(e.id, ev.shiftKey);
+              }}
+            >
+              {!readOnly && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-[#C3C6D4]" />}
+              <span className={sel ? "text-[#4262FF]" : "text-[#656B81]"}>{icon(e)}</span>
+              <span className="min-w-0 flex-1 truncate">{layerName(e)}</span>
+              {inks > 0 && (
+                <span className="flex items-center gap-0.5 text-[11px] text-[#9A9DAA]" title={`${inks} drawing${inks > 1 ? "s" : ""} on it`}>
+                  <Pencil className="h-3 w-3" />
+                  {inks}
+                </span>
+              )}
+              {!readOnly && (
+                <button
+                  type="button"
+                  aria-label={e.locked ? "Unlock" : "Lock"}
+                  title={e.locked ? "Unlock" : "Lock"}
+                  onClick={() => onToggleLock(e.id)}
+                  className={clsx("grid h-7 w-7 place-items-center rounded-md hover:bg-white", e.locked ? "text-[#4262FF]" : "text-[#9A9DAA] opacity-0 group-hover:opacity-100")}
+                >
+                  {e.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {drag?.moved && <div className="pointer-events-none absolute left-2 right-2 h-0.5 rounded bg-[#4262FF]" style={{ top: drag.over * ROW - 1 }} />}
+        {frames.length > 0 && (
+          <>
+            <p className="px-1.5 pb-1 pt-3 text-[11px] font-semibold text-[#9A9DAA]">Frames (always underneath)</p>
+            {frames.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={(ev) => onSelect(f.id, ev.shiftKey)}
+                onDoubleClick={() => onZoom(f.id)}
+                className={clsx("flex h-8 w-full items-center gap-2 rounded-md px-1.5 text-left text-[13px]", selection.includes(f.id) ? "bg-[#E6EAFF]" : "hover:bg-[#F1F2F5]")}
+              >
+                <FrameIcon className="h-4 w-4 shrink-0 text-[#656B81]" />
+                <span className="truncate">{layerName(f)}</span>
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-1 border-t border-[#E9EAEF] p-1.5">
+        {(
+          [
+            ["front", BringToFront, "Bring to front"],
+            ["up", ArrowUp, "Bring forward"],
+            ["down", ArrowDown, "Send backward"],
+            ["back", SendToBack, "Send to back"],
+          ] as const
+        ).map(([mode, Icon, label]) => (
+          <button
+            key={mode}
+            type="button"
+            disabled={!anySel}
+            onClick={() => onOrder(mode)}
+            title={label}
+            aria-label={label}
+            className="grid h-8 flex-1 place-items-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5] disabled:opacity-35 disabled:hover:bg-transparent"
+          >
+            <Icon className="h-4 w-4" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** SVG marker for a line end; `orient="auto-start-reverse"` turns the start one around. */
+function HeadMarker({ id, head, color }: { id: string; head: Head; color: string }) {
+  const ref = head === "circle" ? 5 : head === "diamond" ? 9.5 : head === "bar" ? 9 : head === "open" ? 9 : 8.5;
+  return (
+    <marker id={id} viewBox="0 0 10 10" refX={ref} refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse" overflow="visible">
+      {head === "arrow" && <path d="M0,0 L10,5 L0,10 z" fill={color} />}
+      {head === "open" && <path d="M1,1 L9,5 L1,9" fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />}
+      {head === "circle" && <circle cx="5" cy="5" r="3.6" fill={color} />}
+      {head === "diamond" && <path d="M0,5 L5,1 L10,5 L5,9 z" fill={color} />}
+      {head === "bar" && <path d="M9,0 L9,10" stroke={color} strokeWidth={1.8} strokeLinecap="round" />}
+    </marker>
+  );
+}
+
+/** A short line with the given end, for the line-end picker. */
+function HeadIcon({ head, flip }: { head: Head | null; flip?: boolean }) {
+  const c = "currentColor";
+  return (
+    <svg width="26" height="14" viewBox="0 0 26 14" fill="none" style={flip ? { transform: "scaleX(-1)" } : undefined} aria-hidden>
+      <path d={`M2 7H${head === "arrow" || head === "diamond" ? 16 : head === "circle" ? 18 : 22}`} stroke={c} strokeWidth="1.75" strokeLinecap="round" />
+      {head === "arrow" && <path d="M15 2.5L23 7L15 11.5Z" fill={c} />}
+      {head === "open" && <path d="M16 2.5L23 7L16 11.5" stroke={c} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />}
+      {head === "circle" && <circle cx="20.5" cy="7" r="3" fill={c} />}
+      {head === "diamond" && <path d="M15 7L19 3L23 7L19 11Z" fill={c} />}
+      {head === "bar" && <path d="M22 2.5V11.5" stroke={c} strokeWidth="2" strokeLinecap="round" />}
+    </svg>
   );
 }
 
