@@ -147,8 +147,8 @@ const SHAPES: { kind: ShapeKind; label: string }[] = [
   { kind: "plus", label: "Plus" },
 ];
 
-/** New shapes start as clean white cards (white outline, soft shadow); recolour from the context bar. */
-const SHAPE_LOOK = { fill: "#FFFFFF", stroke: "#FFFFFF" };
+/** New and converted shapes start white with a black outline; recolour from the context bar. */
+const SHAPE_LOOK = { fill: "#FFFFFF", stroke: "#1A1A1A" };
 const SHAPE_TEXT = "#1C1C1E";
 
 /** Starting size: round-ish shapes start square. */
@@ -509,6 +509,60 @@ export function BoardCanvas({
     if (!node) return;
     const ro = new ResizeObserver(() => setView({ w: node.clientWidth, h: node.clientHeight }));
     ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+  // Every popup (menus, flyouts, pickers, the selection toolbar) is nudged back
+  // inside the board if it would hang off an edge. Runs after each render; the
+  // nudge is a transform so it stacks on the popups' own position and animation.
+  const boardRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    const b = board.getBoundingClientRect();
+    const pad = 8;
+    board.querySelectorAll<HTMLElement>(".wb-pop").forEach((el) => {
+      const px = parseFloat(el.dataset.nudgeX || "0");
+      const py = parseFloat(el.dataset.nudgeY || "0");
+      const r = el.getBoundingClientRect();
+      // Layout size, not the on-screen box: popups open with a small scale-in animation.
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      if (!w || !h) return;
+      const left = r.left - px;
+      const right = left + w;
+      const top = r.top - py;
+      const bottom = top + h;
+      let dx = 0;
+      let dy = 0;
+      if (right > b.right - pad) dx = b.right - pad - right;
+      if (left + dx < b.left + pad) dx = b.left + pad - left;
+      if (bottom > b.bottom - pad) dy = b.bottom - pad - bottom;
+      if (top + dy < b.top + pad) dy = b.top + pad - top;
+      dx = Math.round(dx);
+      dy = Math.round(dy);
+      if (dx === px && dy === py) return;
+      el.dataset.nudgeX = String(dx);
+      el.dataset.nudgeY = String(dy);
+      el.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : "";
+    });
+  });
+
+  // Top toolbar sits in the header row between the title bar and Share when it fits.
+  const titleRef = useRef<HTMLDivElement>(null);
+  const shareRef = useRef<HTMLDivElement>(null);
+  const [headerGap, setHeaderGap] = useState<{ left: number; right: number } | null>(null);
+  useEffect(() => {
+    const t = titleRef.current;
+    const sh = shareRef.current;
+    if (!t || !sh) return;
+    const ro = new ResizeObserver(() => {
+      const left = t.offsetLeft + t.offsetWidth + 12;
+      const right = sh.offsetLeft - 12;
+      setHeaderGap((prev) => (prev && prev.left === left && prev.right === right ? prev : { left, right }));
+    });
+    ro.observe(t);
+    ro.observe(sh);
+    if (t.offsetParent) ro.observe(t.offsetParent);
     return () => ro.disconnect();
   }, []);
   const elRef = useRef(elements);
@@ -1240,7 +1294,7 @@ export function BoardCanvas({
 
     // Apple Pencil: draws straight away (or erases with a stylus eraser button).
     if (pt === "pen" && !readOnly && (e.buttons & 32) === 32) {
-      setInteraction({ type: "erase", hit: inkAt(p) });
+      setInteraction({ type: "erase", hit: eraseAt(p, e.clientX, e.clientY, []) });
       return;
     }
     if (pt === "pen" && !readOnly && pencilDraws && (tool === "select" || tool === "hand")) {
@@ -1293,7 +1347,7 @@ export function BoardCanvas({
       return;
     }
     if (tool === "eraser") {
-      setInteraction({ type: "erase", hit: inkAt(p) });
+      setInteraction({ type: "erase", hit: eraseAt(p, e.clientX, e.clientY, []) });
       return;
     }
     if (tool === "connector") {
@@ -1431,7 +1485,7 @@ export function BoardCanvas({
   function shapeFromStroke(r: Recognized, color = penColor, width = penWidth, z = maxZ() + 1): El {
     if (r.kind === "line")
       return { id: uid("cx"), kind: "connector", z, from: { x: r.a.x, y: r.a.y }, to: { x: r.b.x, y: r.b.y }, route: "straight", stroke: color, width: Math.max(2, Math.min(width, 6)), arrowEnd: false, arrowStart: false };
-    return { id: uid(), kind: "shape", shape: r.kind, x: r.x, y: r.y, w: Math.max(r.w, 12), h: Math.max(r.h, 12), z, text: "", fill: "transparent", stroke: color, textColor: SHAPE_TEXT, fontSize: 16 };
+    return { id: uid(), kind: "shape", shape: r.kind, x: r.x, y: r.y, w: Math.max(r.w, 12), h: Math.max(r.h, 12), z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16 };
   }
 
   /**
@@ -1498,6 +1552,29 @@ export function BoardCanvas({
     const mx = (a.x + b.x) / 2 - r.left;
     const my = (a.y + b.y) / 2 - r.top;
     setCamera({ zoom, x: mx - pz.wx * zoom, y: my - pz.wy * zoom });
+  }
+
+  /**
+   * Everything the eraser touches at this point: ink, notes, shapes, text,
+   * cards, lines — and frames only along their edge or title, so erasing
+   * inside a frame doesn't wipe the frame. Locked items are left alone.
+   */
+  function eraseAt(p: { x: number; y: number }, clientX: number, clientY: number, already: string[]): string[] {
+    const out = new Set(inkAt(p));
+    const tol = 10 / camRef.current.zoom;
+    for (const n of document.elementsFromPoint(clientX, clientY)) {
+      const host = (n as HTMLElement).closest?.("[data-box], [data-line]") as HTMLElement | null;
+      const id = host?.dataset.box || host?.dataset.line;
+      if (!id) continue;
+      const el = byId.get(id);
+      if (!el || el.locked) continue;
+      if (el.kind === "frame") {
+        const nearEdge = Math.min(Math.abs(p.x - el.x), Math.abs(p.x - el.x - el.w), Math.abs(p.y - el.y), Math.abs(p.y - el.y - el.h)) <= tol;
+        if (!nearEdge) continue;
+      }
+      out.add(id);
+    }
+    return [...out].filter((id) => !already.includes(id));
   }
 
   /** Ink strokes passing within a few screen px of `p`. */
@@ -1668,8 +1745,12 @@ export function BoardCanvas({
         break;
       }
       case "erase": {
-        const add = inkAt(p).filter((id) => !it.hit.includes(id));
-        if (add.length) setInteraction({ type: "erase", hit: [...it.hit, ...add] });
+        const add = eraseAt(p, e.clientX, e.clientY, it.hit);
+        if (add.length) {
+          const next: Interaction = { type: "erase", hit: [...it.hit, ...add] };
+          interRef.current = next;
+          setInteraction(next);
+        }
         break;
       }
     }
@@ -1815,7 +1896,9 @@ export function BoardCanvas({
     } else if (it.type === "erase") {
       if (it.hit.length) {
         const gone = new Set(it.hit);
-        commit(elRef.current.filter((x) => !gone.has(x.id)));
+        // Lines hooked to an erased item go with it, as with Delete.
+        commit(elRef.current.filter((x) => !gone.has(x.id) && !(x.kind === "connector" && ((x.from.id && gone.has(x.from.id)) || (x.to.id && gone.has(x.to.id))))));
+        setSelection((sel) => sel.filter((id) => !gone.has(id)));
       }
     }
   }
@@ -2054,7 +2137,7 @@ export function BoardCanvas({
       "data-anim": el.id,
       onPointerEnter: () => setHoverId(el.id),
       onPointerLeave: () => setHoverId((h) => (h === el.id ? null : h)),
-      style: { left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z } as React.CSSProperties,
+      style: { left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z, opacity: erasing.has(el.id) ? 0.25 : undefined } as React.CSSProperties,
     };
     const fmt = fmtStyle(fmtOf(el));
     let inner: React.ReactNode = null;
@@ -2215,8 +2298,20 @@ export function BoardCanvas({
       ? clsx("wb-btn flex h-[52px] w-[56px] flex-col items-center justify-center gap-1 rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]", active && ACTIVE_BTN)
       : clsx(ICON_BTN, active && ACTIVE_BTN);
   const flyPos = tb.pos === "left" ? "left-[calc(100%+8px)] top-0" : tb.pos === "right" ? "right-[calc(100%+8px)] top-0" : "left-0 top-[calc(100%+8px)]";
+  // A side toolbar on a short board: undo/redo moves beside it, then the tools
+  // fold into columns, so nothing runs off the bottom.
+  const btnStep = (tbDetailed ? 52 : 40) + 2;
+  const mainH = 10 * btnStep + 5 + 8;
+  const undoH = 2 * btnStep + 8;
+  const availH = view.h - 72 - 12;
+  const sideFits = mainH + 8 + undoH <= availH;
+  const mainFits = mainH <= availH;
+  const toolRows = mainFits ? 0 : Math.max(3, Math.floor((availH - 13) / btnStep));
+  // Top toolbar in the header row (between title and Share) when there's room, else the row below.
+  const topInRow = tb.pos === "top" && headerGap !== null && headerGap.right - headerGap.left >= (tbDetailed ? 740 : 540);
+  const tbTop = topInRow ? 12 : 72;
   const libraryPos: React.CSSProperties =
-    tb.pos === "left" ? { left: 12 + tbPanel + 8, top: 72 } : tb.pos === "right" ? { right: 12 + tbPanel + 8, top: 72 } : { top: 72 + tbPanel + 8 };
+    tb.pos === "left" ? { left: 12 + tbPanel + 8, top: 72 } : tb.pos === "right" ? { right: 12 + tbPanel + 8, top: 72 } : { top: tbTop + tbPanel + 8 };
 
   const showPorts = (id: string) =>
     !readOnly &&
@@ -2239,8 +2334,9 @@ export function BoardCanvas({
 
   return (
     <div
+      ref={boardRef}
       className={clsx(
-        "zoom-native wb-board-in overflow-hidden bg-[#F2F2F2] text-[#1C1C1E] select-none [-webkit-touch-callout:none]",
+        "zoom-native wb-board-in overflow-clip bg-[#F2F2F2] text-[#1C1C1E] select-none [-webkit-touch-callout:none]",
         focusMode ? "fixed inset-0 z-[70]" : "relative h-full w-full rounded-xl"
       )}
     >
@@ -2285,7 +2381,7 @@ export function BoardCanvas({
               data-box={f.id}
               data-anim={f.id}
               className="absolute"
-              style={{ left: f.x, top: f.y, width: f.w, height: f.h, background: f.fill, boxShadow: `0 0 0 ${1 / camera.zoom}px rgba(0,0,0,.08)` }}
+              style={{ left: f.x, top: f.y, width: f.w, height: f.h, background: f.fill, boxShadow: `0 0 0 ${1 / camera.zoom}px rgba(0,0,0,.08)`, opacity: erasing.has(f.id) ? 0.3 : undefined }}
               onPointerEnter={() => setHoverId(f.id)}
               onPointerLeave={() => setHoverId((h) => (h === f.id ? null : h))}
             >
@@ -2344,7 +2440,7 @@ export function BoardCanvas({
               const pth = connectorPath(c, byId);
               const sel = selection.includes(c.id);
               return (
-                <g key={c.id} data-anim={c.id}>
+                <g key={c.id} data-anim={c.id} opacity={erasing.has(c.id) ? 0.2 : undefined}>
                   {hoverLine === c.id && !sel && !interaction && (
                     <path d={pth.d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.35} strokeWidth={c.width + 6 / camera.zoom} strokeLinecap="round" style={{ pointerEvents: "none" }} />
                   )}
@@ -2625,7 +2721,7 @@ export function BoardCanvas({
 
       {/* ---------------- Floating UI ---------------- */}
       {/* Top-left: board header */}
-      <div data-ui className={clsx("wb-from-top absolute left-3 top-3 z-20 flex h-12 items-center gap-0.5 px-1.5", PANEL)}>
+      <div ref={titleRef} data-ui className={clsx("wb-from-top absolute left-3 top-3 z-20 flex h-12 items-center gap-0.5 px-1.5", PANEL)}>
         <button type="button" onClick={onBack} className={clsx(ICON_BTN, "h-9 w-9")} title={backLabel} aria-label={backLabel}>
           <ChevronLeft className="h-5 w-5" />
         </button>
@@ -2707,7 +2803,7 @@ export function BoardCanvas({
       </div>
 
       {/* Top-right: collaborators + share */}
-      <div data-ui className="wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2">
+      <div ref={shareRef} data-ui className="wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2">
         {extraActions && <div className={clsx("flex h-12 items-center gap-1 px-1.5", PANEL)}>{extraActions}</div>}
         <div className={clsx("flex h-12 items-center gap-2 pl-2.5 pr-1.5", PANEL)}>
           <div className="flex -space-x-1.5">
@@ -2749,15 +2845,22 @@ export function BoardCanvas({
       {/* Toolbar: left, right or top; icons only or with labels (Toolbar layout menu) */}
       <div
         data-ui
-        style={readOnly ? { display: "none" } : undefined}
+        style={{
+          ...(readOnly ? { display: "none" } : {}),
+          ...(topInRow && headerGap ? { left: headerGap.left, width: headerGap.right - headerGap.left, top: 12 } : {}),
+        }}
         className={clsx(
           "absolute top-[72px] z-20 flex gap-2",
-          tb.pos === "left" && "wb-from-left left-3 flex-col",
-          tb.pos === "right" && "wb-from-right right-3 flex-col",
-          tb.pos === "top" && "wb-from-top inset-x-0 mx-auto w-fit max-w-[calc(100%-24px)] flex-row flex-wrap justify-center"
+          tb.pos === "left" && clsx("wb-from-left left-3", sideFits ? "flex-col" : "flex-row items-start"),
+          tb.pos === "right" && clsx("wb-from-right right-3", sideFits ? "flex-col" : "flex-row-reverse items-start"),
+          topInRow && "wb-from-top flex-row items-start justify-center",
+          tb.pos === "top" && !topInRow && "wb-from-top inset-x-0 mx-auto w-fit max-w-[calc(100%-24px)] flex-row flex-wrap justify-center"
         )}
       >
-        <div className={clsx("flex gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row flex-wrap justify-center")}>
+        <div
+          className={clsx("gap-0.5 p-1", PANEL, tbVertical ? (toolRows ? "grid grid-flow-col" : "flex flex-col") : "flex flex-row flex-wrap justify-center")}
+          style={tbVertical && toolRows ? { gridTemplateRows: `repeat(${toolRows}, auto)` } : undefined}
+        >
           {(
             [
               ["select", MousePointer2, "Select", "V", "Select"],
@@ -3179,7 +3282,7 @@ export function BoardCanvas({
           containerH={view.h}
           insetL={tb.pos === "left" ? tbReserve : 12}
           insetR={tb.pos === "right" ? tbReserve : 12}
-          safeTop={tb.pos === "top" ? 72 + tbPanel + 12 : 72}
+          safeTop={tb.pos === "top" ? tbTop + Math.max(48, tbPanel) + 12 : 72}
           selected={selected}
           onUpdate={(fn) => update(selection, fn)}
           onFront={bringFront}
