@@ -63,7 +63,7 @@ export type TextEl = Base & { kind: "text"; text: string; color: string; fontSiz
 export type CardEl = Base & { kind: "card"; title: string; body: string; accent: string; tag?: string };
 export type FrameEl = Base & { kind: "frame"; title: string; fill: string };
 /** opacity < 1 = highlighter stroke. */
-export type DrawEl = Base & { kind: "draw"; points: [number, number][]; stroke: string; width: number; opacity?: number };
+export type DrawEl = Base & { kind: "draw"; points: [number, number][]; stroke: string; width: number; opacity?: number; dash?: "dashed" | "dotted" };
 
 export type Endpoint = { id?: string; side?: Side; x: number; y: number };
 export type ConnectorEl = {
