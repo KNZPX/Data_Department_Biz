@@ -52,6 +52,10 @@ import {
   UserPlus,
   X,
   type LucideIcon,
+  SlidersHorizontal,
+  PanelLeft,
+  PanelRight,
+  PanelTop,
 } from "lucide-react";
 import { clsx } from "clsx";
 import {
@@ -80,6 +84,7 @@ import {
   type Side,
   type TextFmt,
 } from "./model";
+import { recognizeShape, type Recognized } from "./recognize";
 import { useBoardRealtime, type Ops } from "./useRealtime";
 import { initialsOf } from "@/components/layout/Presence";
 
@@ -116,7 +121,7 @@ type Interaction =
     }
   | { type: "endpoint"; id: string; end: "from" | "to"; snapshot: El[] }
   | { type: "create"; tool: Tool; start: { x: number; y: number }; cur: { x: number; y: number } }
-  | { type: "draw"; points: [number, number][] }
+  | { type: "draw"; points: [number, number][]; snap?: Recognized }
   | { type: "erase"; hit: string[] };
 
 const SHAPES: { kind: ShapeKind; label: string }[] = [
@@ -188,6 +193,18 @@ function thinPoints(pts: [number, number][], min: number): [number, number][] {
   const last = pts[pts.length - 1];
   if (last && out[out.length - 1] !== last) out.push(last);
   return out;
+}
+
+type TbPos = "left" | "right" | "top";
+type TbPrefs = { pos: TbPos; style: "compact" | "detailed"; autoShapes: boolean };
+const TB_KEY = "wb_toolbar";
+function readToolbarPref(): TbPrefs {
+  try {
+    const v = JSON.parse(localStorage.getItem(TB_KEY) || "{}");
+    return { pos: v.pos === "right" || v.pos === "top" ? v.pos : "left", style: v.style === "detailed" ? "detailed" : "compact", autoShapes: v.autoShapes === true };
+  } catch {
+    return { pos: "left", style: "compact", autoShapes: false };
+  }
 }
 
 const PENCIL_KEY = "wb_pencil_draws";
@@ -435,6 +452,20 @@ export function BoardCanvas({
       localStorage.setItem(PENCIL_KEY, on ? "1" : "0");
     } catch {}
   };
+  // Toolbar: where it sits (left / right / top), icons only or with labels, and
+  // whether finished pen strokes that look like shapes become shapes.
+  const [tb, setTbState] = useState<TbPrefs>(readToolbarPref);
+  const setTb = (patch: Partial<TbPrefs>) => {
+    const next = { ...tb, ...patch };
+    setTbState(next);
+    try {
+      localStorage.setItem(TB_KEY, JSON.stringify(next));
+    } catch {}
+  };
+  const [tbMenu, setTbMenu] = useState(false);
+  // Draw-and-hold: keeping the pen still for a moment snaps the stroke to a shape.
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdAnchor = useRef<{ x: number; y: number } | null>(null);
   const pointers = useRef(new Map<number, { x: number; y: number; type: string }>());
   const pinch = useRef<{ d0: number; cam0: Camera; wx: number; wy: number } | null>(null);
   const penDown = useRef(false);
@@ -507,7 +538,7 @@ export function BoardCanvas({
     camRef.current = camera;
     selRef.current = selection;
     interRef.current = interaction;
-    openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tool !== "select");
+    openUi.current = Boolean(menu || libraryOpen || shapeMenu || helpOpen || tbMenu || tool !== "select");
   });
 
   const byId = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
@@ -1051,6 +1082,7 @@ export function BoardCanvas({
         setHelpOpen(false);
         setFramesOpen(false);
         setZoomMenu(false);
+        setTbMenu(false);
       } else if (e.shiftKey && !mod && e.code === "Digit1") {
         fitTo(elRef.current);
       } else if (e.shiftKey && !mod && e.code === "Digit2") {
@@ -1185,6 +1217,7 @@ export function BoardCanvas({
     setHelpOpen(false);
     setFramesOpen(false);
     setZoomMenu(false);
+    setTbMenu(false);
     const pt = e.pointerType;
     // Palm rejection: while the Pencil is on the glass, ignore the hand.
     if (pt === "touch" && penDown.current) return;
@@ -1378,6 +1411,26 @@ export function BoardCanvas({
     setGhost(null);
   }
 
+  /** The pen has stayed still: if the stroke looks like a shape, show it snapped. */
+  function snapHeldStroke() {
+    holdTimer.current = null;
+    const it = interRef.current;
+    if (it?.type !== "draw" || it.snap) return;
+    const r = recognizeShape(it.points);
+    if (!r) return;
+    const next: Interaction = { ...it, snap: r };
+    interRef.current = next;
+    setInteraction(next);
+  }
+
+  /** The board item a recognised stroke becomes, in the pen's colour. */
+  function shapeFromStroke(r: Recognized): El {
+    const z = maxZ() + 1;
+    if (r.kind === "line")
+      return { id: uid("cx"), kind: "connector", z, from: { x: r.a.x, y: r.a.y }, to: { x: r.b.x, y: r.b.y }, route: "straight", stroke: penColor, width: Math.max(2, Math.min(penWidth, 6)), arrowEnd: false, arrowStart: false };
+    return { id: uid(), kind: "shape", shape: r.kind, x: r.x, y: r.y, w: Math.max(r.w, 12), h: Math.max(r.h, 12), z, text: "", fill: "transparent", stroke: penColor, textColor: SHAPE_TEXT, fontSize: 16 };
+  }
+
   function movePinch() {
     const pz = pinch.current;
     if (!pz) return;
@@ -1547,6 +1600,13 @@ export function BoardCanvas({
           return [q.x, q.y];
         }) : [[p.x, p.y]];
         const next: Interaction = { type: "draw", points: [...it.points, ...add] };
+        // Draw-and-hold: moving on drops a snapped shape and restarts the hold clock.
+        const anchor = holdAnchor.current;
+        if (!anchor || Math.hypot(e.clientX - anchor.x, e.clientY - anchor.y) > 5) {
+          holdAnchor.current = { x: e.clientX, y: e.clientY };
+          if (holdTimer.current) clearTimeout(holdTimer.current);
+          holdTimer.current = penMode === "pen" ? setTimeout(snapHeldStroke, 450) : null;
+        } else if (it.snap) next.snap = it.snap;
         interRef.current = next;
         setInteraction(next);
         break;
@@ -1667,7 +1727,15 @@ export function BoardCanvas({
       }
       setTool("select");
     } else if (it.type === "draw") {
+      if (holdTimer.current) clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+      holdAnchor.current = null;
       if (it.points.length < 2) return;
+      const shape = penMode === "pen" ? (it.snap ?? (tb.autoShapes ? recognizeShape(it.points) : null)) : null;
+      if (shape) {
+        commit([...elRef.current, shapeFromStroke(shape)]);
+        return;
+      }
       const xs = it.points.map((q) => q[0]);
       const ys = it.points.map((q) => q[1]);
       const x = Math.min(...xs);
@@ -2077,6 +2145,19 @@ export function BoardCanvas({
     );
   }
 
+  // Toolbar geometry for the chosen layout.
+  const tbVertical = tb.pos !== "top";
+  const tbDetailed = tb.style === "detailed";
+  const tbPanel = tbDetailed ? 60 : 48; // panel thickness incl. padding
+  const tbReserve = tbPanel + 24;
+  const toolBtn = (active: boolean) =>
+    tbDetailed
+      ? clsx("wb-btn flex h-[52px] w-[56px] flex-col items-center justify-center gap-1 rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]", active && ACTIVE_BTN)
+      : clsx(ICON_BTN, active && ACTIVE_BTN);
+  const flyPos = tb.pos === "left" ? "left-[calc(100%+8px)] top-0" : tb.pos === "right" ? "right-[calc(100%+8px)] top-0" : "left-0 top-[calc(100%+8px)]";
+  const libraryPos: React.CSSProperties =
+    tb.pos === "left" ? { left: 12 + tbPanel + 8, top: 72 } : tb.pos === "right" ? { right: 12 + tbPanel + 8, top: 72 } : { top: 72 + tbPanel + 8 };
+
   const showPorts = (id: string) =>
     !readOnly &&
     (tool === "select" || tool === "connector") &&
@@ -2275,8 +2356,17 @@ export function BoardCanvas({
                 );
               })()}
             {interaction?.type === "draw" && (
-              <path d={strokePath(interaction.points)} fill="none" stroke={penColor} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={strokePath(interaction.points)} fill="none" stroke={penColor} strokeWidth={penMode === "highlighter" ? penWidth * HIGHLIGHT.scale : penWidth} strokeOpacity={interaction.snap ? 0.18 : penMode === "highlighter" ? HIGHLIGHT.opacity : 1} strokeLinecap="round" strokeLinejoin="round" />
             )}
+            {interaction?.type === "draw" &&
+              interaction.snap &&
+              (interaction.snap.kind === "line" ? (
+                <line className="wb-snap" x1={interaction.snap.a.x} y1={interaction.snap.a.y} x2={interaction.snap.b.x} y2={interaction.snap.b.y} stroke={penColor} strokeWidth={Math.max(2, Math.min(penWidth, 6))} strokeLinecap="round" />
+              ) : (
+                <g className="wb-snap" transform={`translate(${interaction.snap.x},${interaction.snap.y})`}>
+                  <path d={shapePath(interaction.snap.kind, interaction.snap.w, interaction.snap.h)} fill="none" stroke={penColor} strokeWidth={2} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                </g>
+              ))}
           </svg>
 
           <div data-leave className="pointer-events-none absolute left-0 top-0" style={{ zIndex: 2 }} />
@@ -2544,21 +2634,21 @@ export function BoardCanvas({
             </div>
           )}
         </div>
-      </div>
-
-      {/* Top-right: collaborators + share */}
-      <div data-ui className="wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2">
-        {extraActions && <div className={clsx("flex h-12 items-center gap-1 px-1.5", PANEL)}>{extraActions}</div>}
         <button
           type="button"
           onClick={() => setFocusMode((v) => !v)}
           aria-pressed={focusMode}
           title={focusMode ? "Exit full screen (Esc)" : "Full screen — hide the app's menus"}
           aria-label={focusMode ? "Exit full screen" : "Full screen"}
-          className={clsx(PANEL, "wb-btn grid h-12 w-12 place-items-center text-[#1C1C1E] hover:bg-[#F1F2F5]", focusMode && "text-[#4262FF]")}
+          className={clsx(ICON_BTN, "h-9 w-9", focusMode && ACTIVE_BTN)}
         >
-          {focusMode ? <Minimize2 className="h-5 w-5" strokeWidth={1.75} /> : <Maximize2 className="h-5 w-5" strokeWidth={1.75} />}
+          {focusMode ? <Minimize2 className="h-[18px] w-[18px]" /> : <Maximize2 className="h-[18px] w-[18px]" />}
         </button>
+      </div>
+
+      {/* Top-right: collaborators + share */}
+      <div data-ui className="wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2">
+        {extraActions && <div className={clsx("flex h-12 items-center gap-1 px-1.5", PANEL)}>{extraActions}</div>}
         <div className={clsx("flex h-12 items-center gap-2 pl-2.5 pr-1.5", PANEL)}>
           <div className="flex -space-x-1.5">
             {peers.slice(0, 4).map((p) => (
@@ -2596,21 +2686,30 @@ export function BoardCanvas({
         </div>
       )}
 
-      {/* Left: toolbar */}
-      <div data-ui style={readOnly ? { display: "none" } : undefined} className="wb-from-left absolute left-3 top-[72px] z-20 flex flex-col gap-2">
-        <div className={clsx("flex flex-col gap-0.5 p-1", PANEL)}>
+      {/* Toolbar: left, right or top; icons only or with labels (Toolbar layout menu) */}
+      <div
+        data-ui
+        style={readOnly ? { display: "none" } : undefined}
+        className={clsx(
+          "absolute top-[72px] z-20 flex gap-2",
+          tb.pos === "left" && "wb-from-left left-3 flex-col",
+          tb.pos === "right" && "wb-from-right right-3 flex-col",
+          tb.pos === "top" && "wb-from-top inset-x-0 mx-auto w-fit max-w-[calc(100%-24px)] flex-row flex-wrap justify-center"
+        )}
+      >
+        <div className={clsx("flex gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row flex-wrap justify-center")}>
           {(
             [
-              ["select", MousePointer2, "Select", "V"],
-              ["hand", Hand, "Hand", "H"],
-              ["text", Type, "Text", "T"],
-              ["sticky", StickyNote, "Sticky note", "N"],
-              ["shape", Shapes, "Shapes", "S"],
-              ["connector", MoveUpRight, "Connection line", "L"],
-              ["pen", Pen, "Pen", "P"],
-              ["frame", FrameIcon, "Frame", "F"],
-            ] as [Tool, LucideIcon, string, string][]
-          ).map(([t, Icon, label, key]) => {
+              ["select", MousePointer2, "Select", "V", "Select"],
+              ["hand", Hand, "Hand", "H", "Hand"],
+              ["text", Type, "Text", "T", "Text"],
+              ["sticky", StickyNote, "Sticky note", "N", "Sticky"],
+              ["shape", Shapes, "Shapes", "S", "Shapes"],
+              ["connector", MoveUpRight, "Connection line", "L", "Line"],
+              ["pen", Pen, "Pen", "P", "Pen"],
+              ["frame", FrameIcon, "Frame", "F", "Frame"],
+            ] as [Tool, LucideIcon, string, string, string][]
+          ).map(([t, Icon, label, key, short]) => {
             const flyout = (t === "sticky" && tool === "sticky") || (t === "shape" && shapeMenu) || (t === "pen" && (tool === "pen" || tool === "eraser"));
             const active = tool === t || (t === "pen" && tool === "eraser");
             return (
@@ -2625,13 +2724,14 @@ export function BoardCanvas({
                     setLibraryOpen(false);
                     setShapeMenu(t === "shape" ? !shapeMenu || tool !== "shape" : false);
                   }}
-                  className={clsx(ICON_BTN, active && ACTIVE_BTN)}
+                  className={toolBtn(active)}
                 >
                   <Icon className="h-5 w-5" strokeWidth={1.75} />
+                  {tbDetailed && <span className="text-[10.5px] font-medium leading-none">{short}</span>}
                 </button>
-                {!flyout && <Tip label={label} hint={key} />}
+                {!flyout && <Tip label={label} hint={key} side={tb.pos} />}
                 {t === "sticky" && flyout && (
-                  <div className={clsx("absolute left-[52px] top-0 w-[184px] p-3", POPOVER)}>
+                  <div className={clsx("absolute w-[184px] p-3", flyPos, POPOVER)}>
                     <p className="mb-2 text-[12px] font-semibold text-[#656B81]">Sticky notes</p>
                     <div className="grid grid-cols-4 gap-2">
                       {STICKY_COLORS.map((c) => (
@@ -2649,7 +2749,7 @@ export function BoardCanvas({
                   </div>
                 )}
                 {t === "shape" && flyout && (
-                  <div className={clsx("absolute left-[52px] top-0 w-[232px] p-3", POPOVER)}>
+                  <div className={clsx("absolute w-[232px] p-3", flyPos, POPOVER)}>
                     <p className="mb-2 text-[12px] font-semibold text-[#656B81]">Shapes</p>
                     <div className="grid grid-cols-4 gap-1">
                       {SHAPES.map((sh) => (
@@ -2675,7 +2775,7 @@ export function BoardCanvas({
                   </div>
                 )}
                 {t === "pen" && flyout && (
-                  <div className={clsx("absolute left-[52px] top-0 w-[184px] p-3", POPOVER)}>
+                  <div className={clsx("absolute w-[184px] p-3", flyPos, POPOVER)}>
                     <div className="mb-3 grid grid-cols-3 gap-1">
                       {(
                         [
@@ -2745,12 +2845,19 @@ export function BoardCanvas({
                         <span className="block text-[11px] text-[#656B81]">Fingers move and zoom the board</span>
                       </span>
                     </label>
+                    <label className="mt-2 flex cursor-pointer items-start gap-2 text-[12px] leading-snug text-[#1C1C1E]">
+                      <input type="checkbox" checked={tb.autoShapes} onChange={(e) => setTb({ autoShapes: e.target.checked })} className="mt-0.5 h-4 w-4 accent-[#4262FF]" />
+                      <span>
+                        Turn drawings into shapes
+                        <span className="block text-[11px] text-[#656B81]">Or draw a shape and hold the pen still to snap it</span>
+                      </span>
+                    </label>
                   </div>
                 )}
               </div>
             );
           })}
-          <span className="mx-2 my-0.5 h-px bg-[#E9EAEF]" />
+          <span className={clsx("bg-[#E9EAEF]", tbVertical ? "mx-2 my-0.5 h-px" : "mx-0.5 my-2 w-px self-stretch")} />
           <div className="group relative">
             <button
               type="button"
@@ -2759,26 +2866,92 @@ export function BoardCanvas({
               onClick={() => {
                 setLibraryOpen((v) => !v);
                 setShapeMenu(false);
+                setTbMenu(false);
               }}
-              className={clsx(ICON_BTN, libraryOpen && ACTIVE_BTN)}
+              className={toolBtn(libraryOpen)}
             >
               <SquarePlus className="h-5 w-5" strokeWidth={1.75} />
+              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Blocks</span>}
             </button>
-            {!libraryOpen && <Tip label="More blocks" hint="B" />}
+            {!libraryOpen && <Tip label="More blocks" hint="B" side={tb.pos} />}
+          </div>
+          <div className="group relative">
+            <button
+              type="button"
+              aria-label="Toolbar layout"
+              aria-pressed={tbMenu}
+              onClick={() => {
+                setTbMenu((v) => !v);
+                setShapeMenu(false);
+                setLibraryOpen(false);
+              }}
+              className={toolBtn(tbMenu)}
+            >
+              <SlidersHorizontal className="h-5 w-5" strokeWidth={1.75} />
+              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Layout</span>}
+            </button>
+            {!tbMenu && <Tip label="Toolbar layout" side={tb.pos} />}
+            {tbMenu && (
+              <div className={clsx("absolute w-[232px] p-3", flyPos, POPOVER)}>
+                <p className="mb-2 text-[12px] font-semibold text-[#656B81]">Toolbar position</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {(
+                    [
+                      ["left", PanelLeft, "Left"],
+                      ["top", PanelTop, "Top"],
+                      ["right", PanelRight, "Right"],
+                    ] as const
+                  ).map(([pos, Icon, label]) => (
+                    <button
+                      key={pos}
+                      type="button"
+                      aria-pressed={tb.pos === pos}
+                      onClick={() => setTb({ pos })}
+                      className={clsx("flex h-14 flex-col items-center justify-center gap-1 rounded-md text-[12px]", tb.pos === pos ? ACTIVE_BTN : "text-[#1C1C1E] hover:bg-[#F1F2F5]")}
+                    >
+                      <Icon className="h-5 w-5" strokeWidth={1.75} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mb-2 mt-3 text-[12px] font-semibold text-[#656B81]">Buttons</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {(
+                    [
+                      ["compact", "Compact", "Icons only"],
+                      ["detailed", "Detailed", "Icons and names"],
+                    ] as const
+                  ).map(([style, label, hint]) => (
+                    <button
+                      key={style}
+                      type="button"
+                      aria-pressed={tb.style === style}
+                      onClick={() => setTb({ style })}
+                      className={clsx("rounded-md px-2 py-2 text-left", tb.style === style ? ACTIVE_BTN : "text-[#1C1C1E] hover:bg-[#F1F2F5]")}
+                    >
+                      <span className="block text-[13px] font-medium">{label}</span>
+                      <span className="block text-[11px] text-[#656B81]">{hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
-        <div className={clsx("flex flex-col gap-0.5 p-1", PANEL)}>
+        <div className={clsx("flex gap-0.5 p-1", PANEL, tbVertical ? "flex-col" : "flex-row")}>
           <div className="group relative">
-            <button type="button" aria-label="Undo" onClick={undo} className={ICON_BTN}>
+            <button type="button" aria-label="Undo" onClick={undo} className={toolBtn(false)}>
               <Undo2 className="h-5 w-5" strokeWidth={1.75} />
+              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Undo</span>}
             </button>
-            <Tip label="Undo" hint="Ctrl+Z" />
+            <Tip label="Undo" hint="Ctrl+Z" side={tb.pos} />
           </div>
           <div className="group relative">
-            <button type="button" aria-label="Redo" onClick={redo} className={ICON_BTN}>
+            <button type="button" aria-label="Redo" onClick={redo} className={toolBtn(false)}>
               <Redo2 className="h-5 w-5" strokeWidth={1.75} />
+              {tbDetailed && <span className="text-[10.5px] font-medium leading-none">Redo</span>}
             </button>
-            <Tip label="Redo" hint="Ctrl+Shift+Z" />
+            <Tip label="Redo" hint="Ctrl+Shift+Z" side={tb.pos} />
           </div>
         </div>
       </div>
@@ -2788,7 +2961,8 @@ export function BoardCanvas({
         <div
           data-ui
           data-scrollable
-          className={clsx("absolute left-[68px] top-[72px] z-20 max-h-[calc(100%-96px)] w-72 overflow-y-auto p-3", POPOVER)}
+          className={clsx("absolute z-20 w-72 overflow-y-auto p-3", tb.pos === "top" && "inset-x-0 mx-auto", POPOVER)}
+          style={{ ...libraryPos, maxHeight: `calc(100% - ${(libraryPos.top as number) + 24}px)` }}
         >
           <div className="mb-1 flex items-center justify-between">
             <p className="text-[14px] font-semibold text-[#1C1C1E]">Add to board</p>
@@ -2942,6 +3116,9 @@ export function BoardCanvas({
           below={toScreen(0, selBounds.y + selBounds.h).y}
           containerW={view.w}
           containerH={view.h}
+          insetL={tb.pos === "left" ? tbReserve : 12}
+          insetR={tb.pos === "right" ? tbReserve : 12}
+          safeTop={tb.pos === "top" ? 72 + tbPanel + 12 : 72}
           selected={selected}
           onUpdate={(fn) => update(selection, fn)}
           onFront={bringFront}
@@ -3093,9 +3270,16 @@ export function BoardCanvas({
 
 // ---------------------------------------------------------------------------
 /** Dark tooltip to the right of a toolbar button (parent needs `group relative`). */
-function Tip({ label, hint }: { label: string; hint?: string }) {
+function Tip({ label, hint, side = "left" }: { label: string; hint?: string; side?: TbPos }) {
   return (
-    <span className="pointer-events-none absolute left-[52px] top-1/2 z-30 hidden -translate-y-1/2 items-center gap-2 whitespace-nowrap wb-tip rounded-md bg-[#1C1C1E] px-2 py-1.5 text-[12px] font-medium text-white shadow-lg group-hover:flex">
+    <span
+      className={clsx(
+        "pointer-events-none absolute z-30 hidden items-center gap-2 whitespace-nowrap wb-tip rounded-md bg-[#1C1C1E] px-2 py-1.5 text-[12px] font-medium text-white shadow-lg group-hover:flex",
+        side === "left" && "left-[calc(100%+8px)] top-1/2 -translate-y-1/2",
+        side === "right" && "right-[calc(100%+8px)] top-1/2 -translate-y-1/2",
+        side === "top" && "left-1/2 top-[calc(100%+8px)] -translate-x-1/2"
+      )}
+    >
       {label}
       {hint && <span className="text-[#A5A7B5]">{hint}</span>}
     </span>
@@ -3146,6 +3330,9 @@ function ContextBar({
   below,
   containerW,
   containerH,
+  insetL,
+  insetR,
+  safeTop,
   selected,
   onUpdate,
   onFront,
@@ -3166,6 +3353,10 @@ function ContextBar({
   below: number;
   containerW: number;
   containerH: number;
+  /** Room kept free for the toolbar on each side, and below the top bars. */
+  insetL: number;
+  insetR: number;
+  safeTop: number;
   selected: El[];
   onUpdate: (fn: (el: El) => El) => void;
   onFront: () => void;
@@ -3193,11 +3384,11 @@ function ContextBar({
   // there's no room, and docks it under the header when neither fits.
   const BAR_H = 44;
   const GAP = 30; // clears the connection dots above the selection
-  const SAFE_TOP = 72;
+  const SAFE_TOP = safeTop;
   let top = y - GAP - BAR_H;
   if (top < SAFE_TOP) top = below + GAP;
   if (top + BAR_H > containerH - 60) top = SAFE_TOP;
-  const left = clamp(x - w / 2, 64, Math.max(64, containerW - w - 12));
+  const left = clamp(x - w / 2, insetL, Math.max(insetL, containerW - w - insetR));
   const popUp = top > containerH / 2;
 
   const toggle = (p: Pop) => setPop((cur) => (cur === p ? null : p));
@@ -3224,7 +3415,7 @@ function ContextBar({
       ref={ref}
       data-ui
       className={clsx("wb-pop absolute z-30 flex min-h-11 flex-wrap items-center gap-0.5 px-1.5 py-0.5", PANEL)}
-      style={{ left, top, maxWidth: Math.max(220, containerW - 76), visibility: w ? "visible" : "hidden" }}
+      style={{ left, top, maxWidth: Math.max(220, containerW - insetL - insetR), visibility: w ? "visible" : "hidden" }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {only?.kind === "sticky" && (

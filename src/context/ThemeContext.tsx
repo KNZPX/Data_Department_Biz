@@ -80,7 +80,7 @@ export const MOTIONS: { id: MotionId; name: string; hint: string }[] = [
 ];
 
 export const PAGE_SIZES: { id: PageSizeId; name: string; hint: string }[] = [
-  { id: "auto", name: "Auto", hint: "90% (85% on small laptops)" },
+  { id: "auto", name: "Auto", hint: "90% on computers, 100% on iPad" },
   { id: "100", name: "100%", hint: "Full size" },
   { id: "90", name: "90%", hint: "A little smaller" },
   { id: "80", name: "80%", hint: "Fit the most" },
