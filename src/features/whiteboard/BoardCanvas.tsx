@@ -78,13 +78,14 @@ import {
   type BoxEl,
   type Camera,
   type ConnectorEl,
+  type DrawEl,
   type El,
   type Rect,
   type ShapeKind,
   type Side,
   type TextFmt,
 } from "./model";
-import { recognizeShape, type Recognized } from "./recognize";
+import { fitShape, recognizeShape, type Recognized } from "./recognize";
 import { useBoardRealtime, type Ops } from "./useRealtime";
 import { initialsOf } from "@/components/layout/Presence";
 
@@ -161,7 +162,7 @@ function shapeSize(kind: ShapeKind) {
 
 type MenuAction =
   | "edit" | "label" | "duplicate" | "copy" | "connect" | "front" | "back" | "lock" | "delete" | "group" | "ungroup"
-  | "paste" | "text" | "blocks" | "selectAll" | "fit";
+  | "paste" | "text" | "blocks" | "selectAll" | "fit" | "convert";
 
 const WIRE_DIR: Record<Side, [number, number]> = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] };
 
@@ -1083,6 +1084,9 @@ export function BoardCanvas({
         setFramesOpen(false);
         setZoomMenu(false);
         setTbMenu(false);
+      } else if (e.shiftKey && !mod && k === "s" && !readOnly && elRef.current.some((x) => selRef.current.includes(x.id) && x.kind === "draw")) {
+        e.preventDefault();
+        convertSelectionToShapes();
       } else if (e.shiftKey && !mod && e.code === "Digit1") {
         fitTo(elRef.current);
       } else if (e.shiftKey && !mod && e.code === "Digit2") {
@@ -1424,11 +1428,63 @@ export function BoardCanvas({
   }
 
   /** The board item a recognised stroke becomes, in the pen's colour. */
-  function shapeFromStroke(r: Recognized): El {
-    const z = maxZ() + 1;
+  function shapeFromStroke(r: Recognized, color = penColor, width = penWidth, z = maxZ() + 1): El {
     if (r.kind === "line")
-      return { id: uid("cx"), kind: "connector", z, from: { x: r.a.x, y: r.a.y }, to: { x: r.b.x, y: r.b.y }, route: "straight", stroke: penColor, width: Math.max(2, Math.min(penWidth, 6)), arrowEnd: false, arrowStart: false };
-    return { id: uid(), kind: "shape", shape: r.kind, x: r.x, y: r.y, w: Math.max(r.w, 12), h: Math.max(r.h, 12), z, text: "", fill: "transparent", stroke: penColor, textColor: SHAPE_TEXT, fontSize: 16 };
+      return { id: uid("cx"), kind: "connector", z, from: { x: r.a.x, y: r.a.y }, to: { x: r.b.x, y: r.b.y }, route: "straight", stroke: color, width: Math.max(2, Math.min(width, 6)), arrowEnd: false, arrowStart: false };
+    return { id: uid(), kind: "shape", shape: r.kind, x: r.x, y: r.y, w: Math.max(r.w, 12), h: Math.max(r.h, 12), z, text: "", fill: "transparent", stroke: color, textColor: SHAPE_TEXT, fontSize: 16 };
+  }
+
+  /**
+   * A line whose ends were drawn on (or right next to) a shape gets hooked to
+   * that shape's nearest side, so it follows the shape like any connection.
+   */
+  function attachEnds(c: ConnectorEl, els: El[]): ConnectorEl {
+    const pad = 28 / camRef.current.zoom;
+    const near = (p: { x: number; y: number }, other?: string) => {
+      let best: BoxEl | null = null;
+      let bestD = Infinity;
+      for (const e of els) {
+        if (!isBox(e) || e.kind === "draw" || e.kind === "frame" || e.id === other) continue;
+        if (p.x < e.x - pad || p.x > e.x + e.w + pad || p.y < e.y - pad || p.y > e.y + e.h + pad) continue;
+        const d = Math.hypot(p.x - (e.x + e.w / 2), p.y - (e.y + e.h / 2));
+        if (d < bestD) {
+          bestD = d;
+          best = e;
+        }
+      }
+      return best;
+    };
+    const a = near(c.from);
+    const b = near(c.to, a?.id);
+    const end = (box: BoxEl | null, p: { x: number; y: number }) => {
+      if (!box) return { x: p.x, y: p.y };
+      const side = nearestSide(box, p);
+      return { id: box.id, side, ...anchor(box, side) };
+    };
+    return { ...c, from: end(a, c.from), to: end(b, c.to), route: a && b ? "elbow" : c.route, arrowEnd: Boolean(a && b) || c.arrowEnd };
+  }
+
+  /** Turn selected pen strokes into real shapes (with connection dots) and lines into connections. */
+  function convertSelectionToShapes(ids = selRef.current) {
+    const pick = new Set(ids);
+    const strokes = elRef.current.filter((e): e is DrawEl => pick.has(e.id) && e.kind === "draw" && !e.locked);
+    if (!strokes.length) return;
+    const made = new Map<string, El>();
+    for (const s of strokes) {
+      const r = fitShape(s.points.map(([px, py]) => [px + s.x, py + s.y]));
+      if (r) made.set(s.id, shapeFromStroke(r, s.stroke, s.width, s.z));
+    }
+    if (!made.size) {
+      flash("Those strokes are too small to turn into shapes");
+      return;
+    }
+    let next = elRef.current.map((e) => made.get(e.id) ?? e);
+    // Lines go last so they can hook onto the shapes just made too.
+    next = next.map((e) => (e.kind === "connector" && [...made.values()].includes(e) ? attachEnds(e, next) : e));
+    commit(next);
+    setSelection([...made.values()].map((e) => e.id));
+    const left = strokes.length - made.size;
+    flash(`Converted ${made.size} ${made.size === 1 ? "stroke" : "strokes"} to shapes${left ? ` · ${left} left as ink` : ""}`);
   }
 
   function movePinch() {
@@ -1733,7 +1789,8 @@ export function BoardCanvas({
       if (it.points.length < 2) return;
       const shape = penMode === "pen" ? (it.snap ?? (tb.autoShapes ? recognizeShape(it.points) : null)) : null;
       if (shape) {
-        commit([...elRef.current, shapeFromStroke(shape)]);
+        const made = shapeFromStroke(shape);
+        commit([...elRef.current, made.kind === "connector" ? attachEnds(made, elRef.current) : made]);
         return;
       }
       const xs = it.points.map((q) => q[0]);
@@ -1794,6 +1851,9 @@ export function BoardCanvas({
         break;
       case "group":
         groupSelection();
+        break;
+      case "convert":
+        convertSelectionToShapes();
         break;
       case "ungroup":
         ungroupSelection();
@@ -3063,6 +3123,7 @@ export function BoardCanvas({
                 ...(single && single.kind === "connector" && !single.locked ? [["label", single.label ? "Edit line text" : "Add text to line", "Enter"]] : []),
                 ["duplicate", "Duplicate", "Ctrl+D"],
                 ["copy", "Copy", "Ctrl+C"],
+                ...(selected.some((x) => x.kind === "draw" && !x.locked) ? [["convert", "Convert to shape", "Shift+S"]] : []),
                 ...(grouping.canGroup ? [["group", "Group", "Ctrl+G"]] : []),
                 ...(grouping.grouped ? [["ungroup", "Ungroup", "Ctrl+Shift+G"]] : []),
                 ["connect", "Connect from here", "L"],
@@ -3127,6 +3188,7 @@ export function BoardCanvas({
           onGroup={groupSelection}
           onUngroup={ungroupSelection}
           onDuplicate={() => duplicate(selected)}
+          onConvert={!readOnly && selected.some((x) => x.kind === "draw" && !x.locked) ? () => convertSelectionToShapes() : undefined}
           onEdit={
             single && isBox(single) && single.kind !== "draw" && !single.locked
               ? () => setEditingId(single.id)
@@ -3338,6 +3400,7 @@ function ContextBar({
   onFront,
   onBack,
   onDuplicate,
+  onConvert,
   onDelete,
   onAlign,
   onEdit,
@@ -3362,6 +3425,8 @@ function ContextBar({
   onFront: () => void;
   onBack: () => void;
   onDuplicate: () => void;
+  /** Shown when pen strokes are selected. */
+  onConvert?: () => void;
   onDelete: () => void;
   onAlign: (m: "left" | "hcenter" | "top" | "right") => void;
   onEdit?: () => void;
@@ -3735,6 +3800,16 @@ function ContextBar({
         <Btn title={only?.kind === "connector" ? "Add or edit the line's text" : "Edit text (Enter)"} onClick={onEdit}>
           <Pencil className="h-4 w-4" />
         </Btn>
+      )}
+      {onConvert && (
+        <button
+          type="button"
+          onClick={onConvert}
+          title="Convert to shape (Shift+S) — becomes a shape with connection dots"
+          className="wb-btn flex h-8 items-center gap-1.5 rounded-md bg-[#E6EAFF] px-2 text-[12.5px] font-medium text-[#4262FF] hover:bg-[#D9DFFF]"
+        >
+          <Shapes className="h-4 w-4" /> Convert to shape
+        </button>
       )}
       <Btn title={locked ? "Unlock" : "Lock"} active={locked} onClick={() => onUpdate((el) => ({ ...el, locked: !locked }))}>
         {locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
