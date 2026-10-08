@@ -65,3 +65,78 @@ export function normalizeOrg(raw: unknown): OrgStructure {
     }));
   return { sites, units };
 }
+
+// ---- per year -------------------------------------------------------------------
+// CoE / SBU units can change from year to year (a new CoE, a unit dropped, a
+// hospital added to one). What's stored: the hospitals (shared by every year),
+// a default unit list, and each year's own list where the team set one. A year
+// without its own list carries on the closest earlier year's, else the default.
+
+export type OrgStore = OrgStructure & { years: Record<string, OrgUnit[]> };
+
+export function normalizeOrgStore(raw: unknown): OrgStore {
+  const base = normalizeOrg(raw);
+  const r = raw as { years?: Record<string, unknown> } | null;
+  const years: Record<string, OrgUnit[]> = {};
+  if (r?.years && typeof r.years === "object")
+    for (const [y, list] of Object.entries(r.years)) if (/^\d{4}$/.test(y) && Array.isArray(list)) years[y] = normalizeOrg({ sites: base.sites, units: list }).units;
+  return { ...base, years };
+}
+
+export const ownYears = (store: OrgStore) =>
+  Object.keys(store.years)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+/** The year whose list `year` uses: itself, the closest earlier year with a list, or null for the default list. */
+export function orgSourceYear(store: OrgStore, year: number): number | null {
+  const ys = ownYears(store).filter((y) => y <= year);
+  return ys.length ? ys[ys.length - 1] : null;
+}
+
+/** The organisation for one year. */
+export function orgForYear(store: OrgStore, year: number): OrgStructure {
+  const from = orgSourceYear(store, year);
+  return { sites: store.sites, units: from === null ? store.units : store.years[String(from)] };
+}
+
+/**
+ * Give `year` its own unit list (hospitals are shared by every year). Years
+ * between it and the next year with its own list used to carry on an older
+ * list; they keep that list, so changing one year never reshapes another.
+ */
+export function setOrgYear(store: OrgStore, year: number, org: OrgStructure): OrgStore {
+  const years = { ...store.years };
+  const next = ownYears(store).find((y) => y > year);
+  if (next !== undefined && !(String(year) in years)) for (let y = year + 1; y < next; y++) years[String(y)] = orgForYear(store, y).units;
+  years[String(year)] = structuredClone(org.units);
+  return { sites: org.sites, units: store.units, years };
+}
+
+/** Drop `year`'s own list so it carries on the year before it. */
+export function clearOrgYear(store: OrgStore, year: number): OrgStore {
+  const years = { ...store.years };
+  delete years[String(year)];
+  return { ...store, years };
+}
+
+/** What changed from one year's organisation to another's, in words. */
+export function orgChanges(from: OrgStructure, to: OrgStructure): string[] {
+  const out: string[] = [];
+  const site = (c: string) => c.replace(" (Premium)", "");
+  const was = new Map(from.units.filter((u) => u.active).map((u) => [u.id, u]));
+  const now = new Map(to.units.filter((u) => u.active).map((u) => [u.id, u]));
+  for (const [id, u] of now) if (!was.has(id)) out.push(`+ ${u.name}${u.sites.length ? ` (${u.sites.map(site).join(", ")})` : ""}`);
+  for (const [id, u] of was) if (!now.has(id)) out.push(`− ${u.name}`);
+  for (const [id, u] of now) {
+    const p = was.get(id);
+    if (!p) continue;
+    if (p.name !== u.name) out.push(`${p.name} → ${u.name}`);
+    if (p.group !== u.group) out.push(`${u.name}: ${p.group} → ${u.group}`);
+    const add = u.sites.filter((s) => !p.sites.includes(s));
+    const drop = p.sites.filter((s) => !u.sites.includes(s));
+    if (add.length) out.push(`${u.name} + ${add.map(site).join(", ")}`);
+    if (drop.length) out.push(`${u.name} − ${drop.map(site).join(", ")}`);
+  }
+  return out;
+}

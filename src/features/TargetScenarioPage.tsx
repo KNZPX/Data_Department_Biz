@@ -20,6 +20,7 @@ import {
   Lock,
   MoreHorizontal,
   Network,
+  PieChart,
   Plus,
   Redo2,
   Grid3x3,
@@ -77,12 +78,13 @@ import {
 } from "@/lib/targetPlan";
 import { DEFAULT_STEP, blankFromOrg, buildBasePlan, buildBlankPlan, legacyToTargets, restructurePlan, unitNumbers } from "@/lib/targetPlanBase";
 import { OrgMatrix } from "@/components/OrgMatrix";
-import { ORG_EVENT } from "@/lib/useOrgStructure";
-import type { OrgStructure } from "@/lib/orgStructure";
+import { TargetSummaryView } from "@/features/TargetSummaryView";
+import { growthOf, shareOf, targetSummary } from "@/lib/targetSummary";
+import { saveOrgYear, useOrgStructure } from "@/lib/useOrgStructure";
+import { orgForYear, type OrgStructure } from "@/lib/orgStructure";
 import { normalizeEbo, planFigures } from "@/lib/ebo";
 import Link from "next/link";
 import { defaultOrgStructure } from "@/lib/orgStructure";
-import { useOrgStructure } from "@/lib/useOrgStructure";
 import { HOSPITAL_PROFILES, TARGET_META } from "@/data/targetScenarioData";
 import { useT } from "@/lib/i18n";
 import { usePersonalPref } from "@/lib/usePersonalPref";
@@ -100,7 +102,7 @@ type SavedScenario = {
   saved_at_label?: string | null;
   snapshot: { revTgt?: number; plan?: PlanSnapshot; snap?: unknown } & Record<string, unknown>;
 };
-type Tab = "plan" | "coe" | "months" | "segments";
+type Tab = "plan" | "summary" | "coe" | "months" | "segments";
 
 const LEVEL_LABEL: Record<PlanNode["level"], string> = {
   network: "Network",
@@ -227,9 +229,10 @@ export function TargetScenarioPage() {
   const canEdit = can("target.edit");
   // Older saved scenarios were built on the 2027 planning file; new plans start blank.
   const basePlan = useMemo(() => buildBasePlan(), []);
-  const { org, meta: orgMeta } = useOrgStructure();
   const firstYear = new Date().getFullYear() + 1;
   const [plan, setPlan] = useState<Plan>(() => buildBlankPlan(blankFromOrg(defaultOrgStructure()), firstYear));
+  // CoE / SBU units can differ by year; this is the list for the year being planned.
+  const { org, store: orgStore, source: orgSource, meta: orgMeta } = useOrgStructure(plan.targetYear);
   const [past, setPast] = useState<Plan[]>([]);
   const [future, setFuture] = useState<Plan[]>([]);
   const [report, setReport] = useState<(ChangeReport & { label: string }) | null>(null);
@@ -635,6 +638,39 @@ export function TargetScenarioPage() {
         growth: r.base > 0 ? Math.round(((r.target - r.base) / r.base) * 1000) / 10 : 0,
         ...Object.fromEntries(ct.sites.map((sid) => [`s_${sid}`, v(r.bySite[sid] || 0)])),
       }));
+      // Summary: base year against the target year, as on the Summary tab
+      const sm = targetSummary(plan, siteFilter);
+      const pc1 = (x: number | null) => (x === null ? null : Math.round(x * 1000) / 10);
+      const sumRow = (name: string, group: string, f: { prior: number; base: number; target: number }) => ({
+        name,
+        group,
+        base: v(f.base),
+        bshare: pc1(shareOf(f.base, sm.totals.all.base)),
+        bgrowth: pc1(growthOf(f.base, f.prior)),
+        target: v(f.target),
+        tshare: pc1(shareOf(f.target, sm.totals.all.target)),
+        tgrowth: pc1(growthOf(f.target, f.base)),
+        plus: v(f.target - f.base),
+      });
+      const summaryRows = [
+        ...(sm.alignment.length ? [sumRow(`${siteFilter === "ALL" ? "Phuket" : siteFilter} Alignment`, "", sm.totals.alignment)] : []),
+        ...sm.alignment.map((l) => sumRow(l.name, l.group, l)),
+        sumRow("Usual Business", "incl. Hospital Focus", sm.totals.usual),
+        ...[...sm.usual, ...sm.focus].map((l) => sumRow(l.name, l.group, l)),
+        sumRow("Total", "", sm.totals.all),
+      ];
+      const summaryLevels = summaryRows.map((r) => (r.group === "" || r.group === "incl. Hospital Focus" ? 0 : 1));
+      const summaryCols = [
+        { header: "CoE / SBU", key: "name", width: 34 },
+        { header: "Group", key: "group", width: 18 },
+        { header: `${B} base (${u})`, key: "base", width: 16, numFmt: nf },
+        { header: "%Portion", key: "bshare", width: 10, numFmt: "0.0" },
+        { header: `%Growth vs ${P}`, key: "bgrowth", width: 12, numFmt: "0.0" },
+        { header: `T ${Y} (${u})`, key: "target", width: 16, numFmt: nf },
+        { header: "%Portion", key: "tshare", width: 10, numFmt: "0.0" },
+        { header: `%Growth vs ${B}`, key: "tgrowth", width: 12, numFmt: "0.0" },
+        { header: `Plus ${B}→${Y} (${u})`, key: "plus", width: 16, numFmt: nf },
+      ];
       // 3. By month: every hospital and unit in the filter
       const monthRows: Record<string, string | number | null>[] = [];
       const monthLevels: number[] = [];
@@ -673,6 +709,7 @@ export function TargetScenarioPage() {
           fileName: `target-${Y}-${current.name}`,
           sheets: [
             { name: "Plan", columns: planCols, rows: planRows, levels, bold },
+            { name: "Summary", columns: summaryCols, rows: summaryRows, levels: summaryLevels, bold: summaryLevels.map((l) => l === 0) },
             { name: "By CoE-SBU", columns: coeCols, rows: coeRows },
             { name: "By segment", columns: segCols, rows: segRows },
             { name: "By month", columns: monthCols, rows: monthRows, levels: monthLevels },
@@ -708,7 +745,7 @@ export function TargetScenarioPage() {
       const ok = await confirmDialog({ title: "Discard unsaved changes?", body: `You have changes to “${current.name}” that aren't saved.`, confirmLabel: "Discard", danger: true });
       if (!ok) return;
     }
-    let next = from === "blank" ? buildBlankPlan(blankFromOrg(org), year) : plan;
+    let next = from === "blank" ? buildBlankPlan(blankFromOrg(orgForYear(orgStore, year)), year) : plan;
     if (year < next.targetYear) return void toast.error(`Pick ${next.targetYear} or later`);
     while (next.targetYear < year) next = rollForward(next, growth);
     setExpanded(new Set(["PKT", ...next.nodes.PKT.children]));
@@ -1011,6 +1048,7 @@ export function TargetScenarioPage() {
             {(
               [
                 ["plan", t("Plan"), Network],
+                ["summary", t("Summary"), PieChart],
                 ["coe", t("By CoE / SBU"), Layers],
                 ["segments", t("OPD/IPD & segment"), Users],
                 ["months", t("By month"), CalendarRange],
@@ -1434,6 +1472,7 @@ export function TargetScenarioPage() {
             />
           )}
           {tab === "coe" && <CoeView plan={plan} siteFilter={siteFilter} />}
+          {tab === "summary" && <TargetSummaryView plan={plan} siteFilter={siteFilter} unit={unit} scenarioName={current.name} />}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-[11.5px] text-slate-500">
@@ -1444,7 +1483,7 @@ export function TargetScenarioPage() {
           {!canEdit && <span className="ml-auto font-medium text-slate-600">View only — ask an admin for “Save scenarios” to edit.</span>}
         </div>
       </div>
-      {orgOpen && <OrgDialog org={org} plan={plan} canEditPlan={canEdit} onApply={applyOrg} onClose={() => setOrgOpen(false)} />}
+      {orgOpen && <OrgDialog org={org} source={orgSource} plan={plan} canEditPlan={canEdit} onApply={applyOrg} onClose={() => setOrgOpen(false)} />}
       {newPlanOpen && <NewPlanDialog fromYear={plan.targetYear} orgUnits={blankFromOrg(org).units.length} currentName={current.name} onCreate={(y, f, g) => void createPlan(y, f, g)} onClose={() => setNewPlanOpen(false)} />}
     </div>
     </UnitContext.Provider>
@@ -2186,7 +2225,8 @@ function structureChanges(plan: Plan, structure: ReturnType<typeof blankFromOrg>
   };
 }
 
-function OrgDialog({ org, plan, canEditPlan, onApply, onClose }: { org: OrgStructure; plan: Plan; canEditPlan: boolean; onApply: (o: OrgStructure) => void; onClose: () => void }) {
+function OrgDialog({ org, source, plan, canEditPlan, onApply, onClose }: { org: OrgStructure; source: number | null; plan: Plan; canEditPlan: boolean; onApply: (o: OrgStructure) => void; onClose: () => void }) {
+  const Y = plan.targetYear;
   const { isAdmin } = useAccess();
   const [draft, setDraft] = useState<OrgStructure>(org);
   const [apply, setApply] = useState(canEditPlan);
@@ -2198,14 +2238,9 @@ function OrgDialog({ org, plan, canEditPlan, onApply, onClose }: { org: OrgStruc
   async function save() {
     setSaving(true);
     try {
-      if (dirty) {
-        const res = await fetch("/api/team-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "org_structure", value: draft }) });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.error || "The server didn't accept it");
-        window.dispatchEvent(new Event(ORG_EVENT));
-      }
+      if (dirty) await saveOrgYear(Y, draft);
       if (apply && planChanges) onApply(draft);
-      if (dirty) toast("Organisation saved", { body: "Planning pages use it from now on." });
+      if (dirty) toast(`${Y} organisation saved`, { body: `Planning pages for ${Y} use it from now on.` });
       onClose();
     } catch (e) {
       toast.error("Couldn't save the organisation", { body: e instanceof Error ? e.message : undefined });
@@ -2220,10 +2255,12 @@ function OrgDialog({ org, plan, canEditPlan, onApply, onClose }: { org: OrgStruc
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div>
             <h3 id="org-title" className="text-[15px] font-semibold text-slate-900">
-              CoE / SBU by hospital
+              CoE / SBU by hospital · {Y}
             </h3>
             <p className="mt-0.5 text-[12.5px] text-slate-500">
-              Tick the hospitals each unit runs in. {isAdmin ? "Saving updates the organisation for the whole team (Settings → Organisation)." : "Only admins can change the organisation; you can still bring this plan in line with it."}
+              Tick the hospitals each unit runs in during {Y}.{" "}
+              {source === Y ? `${Y} has its own list.` : `${Y} carries on ${source === null ? "the default list" : `${source}'s list`}${isAdmin ? `; saving gives ${Y} its own` : ""}.`}{" "}
+              {isAdmin ? "Other years stay as they are (Settings → Organisation)." : "Only admins can change the organisation; you can still bring this plan in line with it."}
             </p>
           </div>
           <button type="button" onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-slate-100" aria-label="Close">

@@ -3,14 +3,14 @@
 // Settings → Organisation: hospitals and the CoE / SBU units in each.
 // The Target planner and the EBO & OKR page are built on this.
 import { useMemo, useState } from "react";
-import { Building2, Check, GitFork, Grid3x3, List, Loader2, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
+import { Building2, CalendarDays, Check, GitFork, Grid3x3, List, Loader2, Plus, Save, ShieldAlert, Trash2, Undo2 } from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, promptDialog, toast } from "@/components/feedback";
 import { TreeDiagram, type TreeNode } from "@/components/TreeDiagram";
 import { OrgMatrix } from "@/components/OrgMatrix";
-import { UNIT_GROUPS, slug, type OrgStructure, type OrgUnit } from "@/lib/orgStructure";
-import { ORG_EVENT, useOrgStructure } from "@/lib/useOrgStructure";
+import { UNIT_GROUPS, clearOrgYear, orgChanges, orgForYear, ownYears, slug, type OrgStructure, type OrgUnit } from "@/lib/orgStructure";
+import { planningYear, putOrgStore, saveOrgYear, useOrgStructure } from "@/lib/useOrgStructure";
 import { useT } from "@/lib/i18n";
 
 const GROUP_TONE: Record<string, string> = {
@@ -23,8 +23,10 @@ const GROUP_TONE: Record<string, string> = {
 export function OrganisationTab() {
   const t = useT();
   const { isAdmin } = useAccess();
-  const { org, meta, loaded } = useOrgStructure();
+  const [year, setYear] = useState(planningYear);
+  const { org, store, source, meta, loaded } = useOrgStructure(year);
   const [draft, setDraft] = useState<OrgStructure | null>(null);
+  const [moreYears, setMoreYears] = useState(0);
   const [view, setView] = useState<"matrix" | "list" | "diagram">("matrix");
   const [saving, setSaving] = useState(false);
   const cur = draft || org;
@@ -36,18 +38,48 @@ export function OrganisationTab() {
   async function save() {
     setSaving(true);
     try {
-      const res = await fetch("/api/team-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "org_structure", value: cur }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "The server didn't accept it");
-      window.dispatchEvent(new Event(ORG_EVENT));
+      await saveOrgYear(year, cur);
       setDraft(null);
-      toast("Organisation saved", { body: "Planning pages use it from now on." });
+      toast(`${year} organisation saved`, { body: "Planning pages for that year use it from now on." });
     } catch (e) {
       toast.error("Couldn't save", { body: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Years: last year to two years ahead, plus any year with its own list.
+  const thisYear = new Date().getFullYear();
+  const own = ownYears(store);
+  const firstYear = Math.min(thisYear - 1, ...own);
+  const lastYear = Math.max(thisYear + 2, ...own) + moreYears;
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => firstYear + i);
+  const changes = orgChanges(orgForYear(store, year - 1), cur);
+
+  async function pickYear(y: number) {
+    if (y === year) return;
+    if (dirty) {
+      const ok = await confirmDialog({ title: "Discard unsaved changes?", body: `Your changes to ${year} aren't saved.`, confirmLabel: "Discard", danger: true });
+      if (!ok) return;
+    }
+    setDraft(null);
+    setYear(y);
+  }
+  async function followEarlier() {
+    const prev = own.filter((y) => y < year).pop();
+    const ok = await confirmDialog({
+      title: `Make ${year} follow ${prev ?? "the default list"}?`,
+      body: `${year}'s own list is removed; it carries on ${prev ?? "the default list"} instead. Saved Target plans keep their numbers.`,
+      confirmLabel: "Follow it",
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await putOrgStore(clearOrgYear(store, year));
+      setDraft(null);
+      toast(`${year} now follows ${prev ?? "the default list"}`);
+    } catch (e) {
+      toast.error("Couldn't change it", { body: e instanceof Error ? e.message : undefined });
     } finally {
       setSaving(false);
     }
@@ -147,10 +179,75 @@ export function OrganisationTab() {
               disabled={!dirty || saving}
               className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-[13px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save {year}
             </button>
           )}
         </div>
+      </div>
+
+      {/* Year */}
+      <div className="rounded-xl border border-slate-200/80 bg-white px-5 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-slate-600">
+            <CalendarDays className="h-4 w-4 text-slate-400" /> Year
+          </span>
+          <div className="flex flex-wrap gap-1" role="tablist" aria-label="Year">
+            {years.map((y) => {
+              const has = own.includes(y);
+              return (
+                <button
+                  key={y}
+                  type="button"
+                  role="tab"
+                  aria-selected={y === year}
+                  onClick={() => void pickYear(y)}
+                  title={has ? `${y} has its own list` : `${y} carries on ${orgSourceLabel(own, y)}`}
+                  className={clsx(
+                    "flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-semibold tabular-nums transition",
+                    y === year ? "border-blue-600 bg-blue-600 text-white" : has ? "border-slate-300 bg-white text-slate-800 hover:border-blue-400" : "border-dashed border-slate-200 bg-white text-slate-400 hover:border-slate-400 hover:text-slate-600"
+                  )}
+                >
+                  {y}
+                  {has && <span className={clsx("h-1.5 w-1.5 rounded-full", y === year ? "bg-white" : "bg-blue-500")} />}
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => setMoreYears((n) => n + 1)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Show another year" title="Show another year">
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+          {isAdmin && source === year && own.length > 0 && (
+            <button type="button" onClick={() => void followEarlier()} disabled={saving} className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+              <Undo2 className="h-3.5 w-3.5" /> Follow {own.filter((y) => y < year).pop() ?? "the default list"} instead
+            </button>
+          )}
+        </div>
+        <p className="mt-2 text-[12.5px] text-slate-500">
+          {source === year ? (
+            <>
+              <span className="font-medium text-slate-800">{year} has its own CoE / SBU list.</span> Years after it without their own carry it on.
+            </>
+          ) : (
+            <>
+              <span className="font-medium text-slate-800">
+                {year} carries on {source === null ? "the default list" : `${source}'s list`}.
+              </span>{" "}
+              {isAdmin ? `Change anything and save to give ${year} its own.` : ""}
+            </>
+          )}{" "}
+          Hospitals are shared by every year.
+        </p>
+        {changes.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[12px]">
+            <span className="text-slate-500">Changes from {year - 1}:</span>
+            {changes.slice(0, 12).map((c) => (
+              <span key={c} className={clsx("rounded-full px-2 py-0.5 font-medium", c.startsWith("+ ") ? "bg-emerald-50 text-emerald-700" : c.startsWith("− ") ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-700")}>
+                {c}
+              </span>
+            ))}
+            {changes.length > 12 && <span className="text-slate-400">+{changes.length - 12} more</span>}
+          </div>
+        )}
       </div>
 
       {ro && (
@@ -161,7 +258,7 @@ export function OrganisationTab() {
 
       {view === "matrix" ? (
         <div className="rounded-xl border border-slate-200/80 bg-white">
-          <p className="border-b border-slate-100 px-5 py-3 text-[12.5px] text-slate-500">Tick the hospitals each CoE / SBU runs in. Save, then use “Apply to this plan” on the Target page to bring an open plan in line.</p>
+          <p className="border-b border-slate-100 px-5 py-3 text-[12.5px] text-slate-500">Tick the hospitals each CoE / SBU runs in during {year}. Save, then use “CoE / SBU” on the Target page to bring an open {year} plan in line.</p>
           <OrgMatrix value={cur} onChange={(o) => setDraft(o)} readOnly={ro} />
         </div>
       ) : view === "diagram" ? (
@@ -311,6 +408,11 @@ export function OrganisationTab() {
       )}
     </div>
   );
+}
+
+function orgSourceLabel(own: number[], y: number) {
+  const prev = own.filter((x) => x < y).pop();
+  return prev === undefined ? "the default list" : `${prev}'s list`;
 }
 
 export function Toggle({ on, onChange, disabled, label }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean; label?: string }) {
