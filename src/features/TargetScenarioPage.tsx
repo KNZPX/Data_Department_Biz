@@ -21,6 +21,7 @@ import {
   Network,
   Plus,
   Redo2,
+  Rocket,
   RotateCcw,
   Save,
   Search,
@@ -72,7 +73,9 @@ import {
   type PlanNode,
   type PlanSnapshot,
 } from "@/lib/targetPlan";
-import { DEFAULT_STEP, blankFromOrg, buildBasePlan, buildBlankPlan, legacyToTargets } from "@/lib/targetPlanBase";
+import { DEFAULT_STEP, blankFromOrg, buildBasePlan, buildBlankPlan, legacyToTargets, unitNumbers } from "@/lib/targetPlanBase";
+import { normalizeEbo, planFigures } from "@/lib/ebo";
+import Link from "next/link";
 import { defaultOrgStructure } from "@/lib/orgStructure";
 import { useOrgStructure } from "@/lib/useOrgStructure";
 import { HOSPITAL_PROFILES, TARGET_META } from "@/data/targetScenarioData";
@@ -213,7 +216,8 @@ function loadScenario(base: Plan, s: SavedScenario): Plan {
 }
 
 export function TargetScenarioPage() {
-  const { can } = useAccess();
+  const { can, canPage } = useAccess();
+  const eboOn = canPage("ebo");
   const t = useT();
   const canEdit = can("target.edit");
   // Older saved scenarios were built on the 2027 planning file; new plans start blank.
@@ -311,6 +315,29 @@ export function TargetScenarioPage() {
   }, [org, orgMeta.saved]);
 
   const issues = useMemo(() => findIssues(plan), [plan]);
+
+  // Each CoE's EBO plan (EBO page) for the year being planned, to show how far it covers the target.
+  const [eboTotals, setEboTotals] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!eboOn) return;
+    let alive = true;
+    fetch(`/api/ebo?year=${plan.targetYear}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { plans?: { unit: string; data: unknown }[] } | null) => {
+        if (!alive) return;
+        const m: Record<string, number> = {};
+        for (const p of j?.plans || []) {
+          const tot = planFigures(normalizeEbo(p.data)).target;
+          if (tot !== null) m[p.unit] = tot;
+        }
+        setEboTotals(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [plan.targetYear, eboOn]);
+  const unitTotals = useMemo(() => unitNumbers(plan), [plan]);
   // The three years on screen: actual two years back, the base year, the year being planned.
   const Y = plan.targetYear;
   const B = Y - 1;
@@ -1129,6 +1156,34 @@ export function TargetScenarioPage() {
                           {n.level === "site" && <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: siteColor(n.site) }} />}
                           <span className={clsx("truncate", n.level === "market" || n.level === "setting" ? "text-slate-600" : "text-slate-900")}>{n.name}</span>
                           {n.level === "coe" && n.group && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-px text-[10.5px] font-medium text-slate-500">{n.group}</span>}
+                          {n.level === "coe" &&
+                            eboOn &&
+                            (() => {
+                              const ebo = eboTotals[n.name];
+                              const tgt = unitTotals[n.name]?.target || 0;
+                              const c = ebo !== undefined && tgt > 0 ? ebo / tgt : null;
+                              return (
+                                <Link
+                                  href={`/ebo?year=${plan.targetYear}&unit=${encodeURIComponent(n.name)}${current.id ? `&scenario=${encodeURIComponent(current.id)}` : ""}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  title={
+                                    c === null
+                                      ? `Open ${n.name}'s EBO plan for ${plan.targetYear}`
+                                      : `EBO plan ${(ebo / 1e6).toFixed(1)} MB covers ${Math.round(c * 100)}% of ${n.name}'s ${(tgt / 1e6).toFixed(1)} MB target (all hospitals)`
+                                  }
+                                  aria-label={`${n.name} EBO plan`}
+                                  className={clsx(
+                                    "shrink-0 items-center gap-0.5 rounded px-1 py-px text-[10.5px] font-medium ring-1 transition hover:brightness-95",
+                                    // No EBO plan yet: only a small icon, shown while the row is hovered.
+                                    c === null ? "hidden bg-white text-slate-400 ring-slate-200 group-hover:inline-flex" : "inline-flex",
+                                    c !== null && (c >= 1 ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : c >= 0.9 ? "bg-amber-50 text-amber-800 ring-amber-200" : "bg-rose-50 text-rose-700 ring-rose-200")
+                                  )}
+                                >
+                                  <Rocket className="h-3 w-3" />
+                                  {c !== null && `${Math.round(c * 100)}%`}
+                                </Link>
+                              );
+                            })()}
                           {n.custom && <span className="shrink-0 rounded bg-violet-50 px-1.5 py-px text-[10.5px] font-medium text-violet-700">added</span>}
                         </div>
                       </td>

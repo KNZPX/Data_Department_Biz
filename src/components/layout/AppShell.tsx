@@ -25,6 +25,7 @@ import {
   Workflow,
   GitFork,
   Flag,
+  Rocket,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -67,6 +68,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Planning",
     items: [
       { href: "/target-scenario", label: "Target scenario", hint: "Yearly revenue targets, delegated down to every unit", icon: TrendingUp },
+      { href: "/ebo", label: "EBO", hint: "Emerging business opportunities per CoE, against its target", icon: Rocket },
       { href: "/okr", label: "EBO & OKR", hint: "Business outcomes and key results for each CoE / SBU", icon: Flag },
       { href: "/whiteboard", label: "Whiteboard", hint: "Plan work together on a canvas", icon: Workflow },
     ],

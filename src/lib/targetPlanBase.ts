@@ -2,7 +2,7 @@
 // agreed "Revise 2027 (V2)" numbers: network 7,550 MB, sites 5,140 / 2,035 / 375 MB,
 // and each CoE/SBU's MB where it was set. Everything below is split by base.
 import { HOSPITAL_PROFILES, TARGET_META, TARGET_SITES, TARGET_UNITS, VERIFIED_BASE_CASE } from "../data/targetScenarioData";
-import { MB, allocate, buildSettingBranch, type BlankStructure, type Plan, type PlanNode } from "./targetPlan";
+import { MB, allocate, buildSettingBranch, fromSnapshot, type BlankStructure, type Plan, type PlanNode, type PlanSnapshot } from "./targetPlan";
 
 // Share of a unit's revenue that is OPD (the rest IPD), by specialty.
 const OPD_RATIO: Record<string, number> = {
@@ -214,4 +214,44 @@ export function buildBlankPlan(structure: BlankStructure, targetYear: number): P
     }
   }
   return plan;
+}
+
+// ---- saved scenarios, read by other pages ---------------------------------------
+
+/** What a saved Target scenario keeps (v2 plans, or older snapshots from earlier tools). */
+export type SavedTargetSnapshot = { plan?: PlanSnapshot; snap?: unknown } & Record<string, unknown>;
+
+/** The year a saved scenario plans for. */
+export function savedPlanYear(snapshot: SavedTargetSnapshot | null | undefined): number {
+  return snapshot?.plan?.targetYear ?? TARGET_META.target_year;
+}
+
+/** Rebuild a saved scenario's plan (same rules the Target page uses to open it). */
+export function planFromSaved(snapshot: SavedTargetSnapshot | null | undefined, base?: () => Plan): Plan {
+  const snap = snapshot || {};
+  if (snap.plan?.version === 2 && snap.plan.blank) return fromSnapshot(buildBlankPlan(snap.plan.blank, snap.plan.targetYear || TARGET_META.target_year), snap.plan);
+  const b = base ? base() : buildBasePlan();
+  if (snap.plan?.version === 2) return fromSnapshot(b, snap.plan);
+  const targets = legacyToTargets(b, snap);
+  if (!targets) return b;
+  return fromSnapshot(b, { version: 2, step: DEFAULT_STEP, targets, locked: [], subs: [] });
+}
+
+export type UnitNumbers = { target: number; base: number; prior: number; sites: Record<string, { target: number; base: number; prior: number }> };
+
+/** Each CoE / SBU's target, base year and prior year, network-wide and per hospital. */
+export function unitNumbers(plan: Plan): Record<string, UnitNumbers> {
+  const out: Record<string, UnitNumbers> = {};
+  for (const n of Object.values(plan.nodes)) {
+    if (n.level !== "coe") continue;
+    const u = (out[n.name] ||= { target: 0, base: 0, prior: 0, sites: {} });
+    u.target += n.target;
+    u.base += n.base26;
+    u.prior += n.prior25;
+    const s = (u.sites[n.site] ||= { target: 0, base: 0, prior: 0 });
+    s.target += n.target;
+    s.base += n.base26;
+    s.prior += n.prior25;
+  }
+  return out;
 }

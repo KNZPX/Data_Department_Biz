@@ -62,6 +62,12 @@ export const PAGES: PageDef[] = [
     modules: [{ id: "target.edit", label: "Save scenarios" }],
   },
   {
+    id: "ebo",
+    label: "EBO",
+    href: "/ebo",
+    modules: [{ id: "ebo.edit", label: "Edit EBO plans" }],
+  },
+  {
     id: "okr",
     label: "EBO & OKR",
     href: "/okr",
