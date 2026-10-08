@@ -98,3 +98,18 @@ create table if not exists public.okr_plans (
 create index if not exists okr_plans_year_idx on public.okr_plans (year);
 alter table public.okr_plans enable row level security;
 create policy "signed-in sessions" on public.okr_plans for all to anon, authenticated using ((select public._request_session_ok())) with check ((select public._request_session_ok()));
+
+-- EBO (emerging business opportunity) plans: one row per CoE / SBU per target year.
+create table if not exists public.ebo_plans (
+  id text primary key,
+  year int not null,
+  unit text not null,
+  data jsonb not null default '{}'::jsonb,
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists ebo_plans_year_idx on public.ebo_plans (year);
+alter table public.ebo_plans enable row level security;
+grant select, insert, update, delete on public.ebo_plans to anon, authenticated;
+create policy "signed-in sessions" on public.ebo_plans for all to anon, authenticated using ((select public._request_session_ok())) with check ((select public._request_session_ok()));

@@ -15,6 +15,7 @@ const RESTORE_MODULE: Record<string, string> = {
   whiteboard_boards: "whiteboard.edit",
   target_scenarios: "target.edit",
   okr_plans: "okr.edit",
+  ebo_plans: "ebo.edit",
 };
 
 export async function GET(request: NextRequest) {
