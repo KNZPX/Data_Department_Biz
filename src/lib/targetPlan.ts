@@ -783,6 +783,14 @@ export function fromSnapshot(base: Plan, snap: PlanSnapshot): Plan {
         baseVisits26: snap.visits?.[n.id] ?? n.baseVisits26,
       };
     }
+    // A save that keeps only the upper levels: split each saved figure down to the
+    // levels below it, the same way a typed figure is split.
+    for (const [field, src] of [["base26", snap.bases], ["prior25", snap.priors]] as const) {
+      if (!src) continue;
+      for (const n of Object.values(plan.nodes)) {
+        if (src[n.id] !== undefined && n.children.length && n.children.every((c) => src[c] === undefined)) rescaleBase(plan, n.id, src[n.id], field);
+      }
+    }
   }
   if (typeof snap.actualMonths === "number") plan.actualMonths = snap.actualMonths;
   for (const [id, v] of Object.entries(snap.priorTyped || {})) if (plan.nodes[id]) plan = setPrior(plan, id, v);
