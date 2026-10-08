@@ -34,7 +34,6 @@ import {
   planFigures,
   productNames,
   resolveTarget,
-  diffTo,
   siteAllocation,
   topItems,
   type EboHorizon,
@@ -88,7 +87,7 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
   const t = useT();
   const { can } = useAccess();
   const canEdit = can("ebo.edit");
-  const { org } = useOrgStructure();
+  const { org } = useOrgStructure(year);
   const [query, setQuery] = useState("");
   const [plans, setPlans] = useState<Record<string, Saved>>({});
   const [okr, setOkr] = useState<Record<string, Objective[]>>({});
@@ -471,7 +470,7 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
               <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
             </div>
           ) : !unit ? (
-            <Overview units={units} plans={plans} keyOf={keyOf} onOpen={setUnitName} year={year} targetOf={targetOf} linkedName={linked?.scenario.name || null} />
+            <Overview units={units} plans={plans} keyOf={keyOf} onOpen={setUnitName} year={year} targetOf={targetOf} forecastOf={(n) => linked?.numbers[n]?.base ?? null} linkedName={linked?.scenario.name || null} />
           ) : (
             <UnitEbo
               key={keyOf(unit.name)}
@@ -504,6 +503,7 @@ function Overview({
   onOpen,
   year,
   targetOf,
+  forecastOf,
   linkedName,
 }: {
   units: Unit[];
@@ -512,6 +512,7 @@ function Overview({
   onOpen: (n: string) => void;
   year: number;
   targetOf: (name: string, d?: EboPlanData) => { value: number | null; from: "plan" | "manual" | "none" };
+  forecastOf: (name: string) => number | null;
   linkedName: string | null;
 }) {
   return (
@@ -553,13 +554,16 @@ function Overview({
                 <div className={clsx("h-full rounded-full transition-[width] duration-700", coverTone(c).bar)} style={{ width: `${Math.min(100, (c || 0) * 100)}%` }} />
               </div>
               {(() => {
-                const df = diffTo(tg.value, tot);
-                return df ? (
-                  <p className={clsx("mt-1.5 text-[12px] font-medium tabular-nums", df.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
-                    Diff from target {df.thb >= 0 ? "+" : "−"}
-                    {thb(Math.abs(df.thb))} THB ({pct(df.pct)})
+                // Next year's target against this year's forecast (from the Target plan).
+                const f = forecastOf(u.name);
+                if (tg.value === null || !f) return null;
+                const d = tg.value - f;
+                return (
+                  <p className={clsx("mt-1.5 text-[12px] font-medium tabular-nums", d >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                    Target vs Forecast {year - 1} {d >= 0 ? "+" : "−"}
+                    {thb(Math.abs(d))} THB ({pct(tg.value / f - 1)})
                   </p>
-                ) : null;
+                );
               })()}
               <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-100" aria-label="Split by horizon">
                 {hsum > 0 && hs.map(({ h, v }) => <div key={h} title={`${h} ${mb(v)} MB`} style={{ width: `${(Math.max(0, v) / hsum) * 100}%`, background: HORIZON_META[h].color }} />)}
@@ -803,50 +807,63 @@ function UnitEbo({
 }
 
 /**
- * How far the unit is from next year's target, in THB and %: what the key products
- * plan for the target year, and what they and the Target plan expect for this year.
+ * How far next year's target is from this year's forecast (the Target plan's
+ * base year: actual + estimate), in THB and %, and where the key products
+ * stand against the same forecast.
  */
 function DiffTable({ year, target, planned, productsBase, forecast }: { year: number; target: number | null; planned: number | null; productsBase: number | null; forecast: number | null }) {
   const B = year - 1;
-  const rows: { label: string; hint: string; amount: number | null; growth: boolean }[] = [
-    { label: `EBO planned ${year}`, hint: planned === null ? `No ${year} numbers typed yet` : "Key products' target-year total", amount: planned, growth: false },
-    { label: `Key products ${B}`, hint: "Their revenue this year", amount: productsBase, growth: true },
-    { label: `Forecast ${B}`, hint: "From the Target plan", amount: forecast, growth: true },
+  // No forecast in the Target plan: measure against the key products' revenue this year instead.
+  const ref = forecast ?? productsBase;
+  const refLabel = forecast !== null ? `Forecast ${B}` : `Key products ${B}`;
+  const rows: { label: string; hint: string; amount: number | null; main?: boolean }[] = [
+    { label: `Target ${year}`, hint: "The CoE / SBU's target", amount: target, main: true },
+    { label: `EBO planned ${year}`, hint: planned === null ? `No ${year} numbers typed yet` : "Key products' target-year total", amount: planned },
+    ...(forecast !== null ? [{ label: `Key products ${B}`, hint: "Their revenue this year", amount: productsBase }] : []),
   ];
+  const vs = (a: number | null) => (a === null || ref === null || ref === 0 ? null : { thb: a - ref, pct: a / ref - 1 });
+  const main = vs(target);
   return (
     <div className="mt-4 border-t border-slate-100 pt-3">
-      <p className="mb-1.5 text-[13px] font-semibold text-slate-900">
-        Diff from Target {year} <span className="font-normal text-slate-400">({thb(target)} THB)</span>
-      </p>
+      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-[13px] font-semibold text-slate-900">
+          Diff: Target {year} vs {refLabel}{" "}
+          <span className="font-normal text-slate-400">
+            ({refLabel} {ref === null ? "—" : `${thb(ref)} THB`}
+            {forecast !== null ? " · actual + estimate, from the Target plan" : " · no forecast in the Target plan"})
+          </span>
+        </p>
+        {main && (
+          <p className={clsx("text-[15px] font-semibold tabular-nums", main.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
+            {main.thb >= 0 ? "+" : "−"}
+            {thb(Math.abs(main.thb))} THB <span className="text-[13px]">({pct(main.pct)})</span>
+          </p>
+        )}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[480px] text-[12.5px]">
           <thead>
             <tr className="text-left text-[11px] text-slate-500">
               <th className="pb-1 pr-3 font-medium" />
               <th className="px-3 pb-1 text-right font-medium">Amount (THB)</th>
-              <th className="px-3 pb-1 text-right font-medium">Diff from target (THB)</th>
-              <th className="px-3 pb-1 text-right font-medium">Diff %</th>
-              <th className="pb-1 pl-3 text-right font-medium">Growth needed</th>
+              <th className="px-3 pb-1 text-right font-medium">Diff vs {refLabel} (THB)</th>
+              <th className="pb-1 pl-3 text-right font-medium">Diff %</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
-              const d = diffTo(target, r.amount === null && r.growth ? null : r.amount);
-              const known = target !== null && (r.amount !== null || !r.growth);
+              const d = vs(r.amount);
               return (
-                <tr key={r.label} className="border-t border-slate-100">
+                <tr key={r.label} className={clsx("border-t border-slate-100", r.main && "bg-slate-50/70")}>
                   <td className="py-1.5 pr-3">
-                    <span className="font-medium text-slate-800">{r.label}</span>
+                    <span className={clsx("text-slate-800", r.main ? "font-semibold" : "font-medium")}>{r.label}</span>
                     <span className="block text-[11px] text-slate-400">{r.hint}</span>
                   </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.amount === null ? (r.growth ? "—" : "0") : thb(r.amount)}</td>
-                  <td className={clsx("px-3 py-1.5 text-right font-semibold tabular-nums", !known || !d ? "text-slate-400" : d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
-                    {known && d ? `${d.thb >= 0 ? "+" : "−"}${thb(Math.abs(d.thb))}` : "—"}
+                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.amount === null ? "—" : thb(r.amount)}</td>
+                  <td className={clsx("px-3 py-1.5 text-right font-semibold tabular-nums", !d ? "text-slate-400" : d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                    {d ? `${d.thb >= 0 ? "+" : "−"}${thb(Math.abs(d.thb))}` : "—"}
                   </td>
-                  <td className={clsx("px-3 py-1.5 text-right font-semibold tabular-nums", !known || !d ? "text-slate-400" : d.pct >= 0 ? "text-emerald-700" : "text-rose-700")}>
-                    {known && d ? pct(d.pct) : "—"}
-                  </td>
-                  <td className="py-1.5 pl-3 text-right tabular-nums text-slate-600">{r.growth && known && d && d.neededPct !== null ? pct(d.neededPct) : ""}</td>
+                  <td className={clsx("py-1.5 pl-3 text-right font-semibold tabular-nums", !d ? "text-slate-400" : d.pct >= 0 ? "text-emerald-700" : "text-rose-700")}>{d ? pct(d.pct) : "—"}</td>
                 </tr>
               );
             })}

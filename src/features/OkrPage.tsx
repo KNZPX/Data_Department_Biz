@@ -11,7 +11,7 @@ import { confirmDialog, toast } from "@/components/feedback";
 import { useOrgStructure } from "@/lib/useOrgStructure";
 import { useT } from "@/lib/i18n";
 import { useTargetLink } from "@/lib/useTargetLink";
-import { HORIZON_IDS, HORIZON_META, diffTo, eboId, horizonFigures, normalizeEbo, planFigures, resolveTarget, type EboPlanData, type EboPlanRow } from "@/lib/ebo";
+import { HORIZON_IDS, HORIZON_META, eboId, horizonFigures, normalizeEbo, planFigures, resolveTarget, type EboPlanData, type EboPlanRow } from "@/lib/ebo";
 import type { TabProps } from "./EboPage";
 import {
   HORIZONS,
@@ -48,7 +48,7 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
   const t = useT();
   const { can } = useAccess();
   const canEdit = can("okr.edit");
-  const { org } = useOrgStructure();
+  const { org } = useOrgStructure(year);
   const [site, setSite] = useState<string>("ALL");
   const [query, setQuery] = useState("");
   const link = useTargetLink(year, preferScenario);
@@ -496,6 +496,7 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
                   year={year}
                   data={ebo[unit.name] || null}
                   planTarget={link.linked?.numbers[unit.name]?.target ?? null}
+                  forecast={link.linked?.numbers[unit.name]?.base ?? null}
                   planName={link.linked?.scenario.name || null}
                   onOpen={onOtherTab}
                 />
@@ -1155,11 +1156,11 @@ function UnitPlan({
   );
 }
 
-/** The unit's EBO against next year's target, with a jump to the EBO tab. */
-function EboStrip({ year, data, planTarget, planName, onOpen }: { year: number; data: EboPlanData | null; planTarget: number | null; planName: string | null; onOpen: () => void }) {
+/** The unit's EBO and next year's target against this year's forecast, with a jump to the EBO tab. */
+function EboStrip({ year, data, planTarget, forecast, planName, onOpen }: { year: number; data: EboPlanData | null; planTarget: number | null; forecast: number | null; planName: string | null; onOpen: () => void }) {
   const target = resolveTarget(planTarget, data);
   const tot = data ? planFigures(data) : null;
-  const d = diffTo(target.value, tot?.target ?? null);
+  const d = target.value !== null && forecast ? { thb: target.value - forecast, pct: target.value / forecast - 1 } : null;
   const mb = (v: number | null) => (v === null ? "—" : (v / 1e6).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
   const thb = (v: number) => Math.round(Math.abs(v)).toLocaleString("en-US");
   return (
@@ -1176,8 +1177,8 @@ function EboStrip({ year, data, planTarget, planName, onOpen }: { year: number; 
           Planned <span className="font-semibold tabular-nums text-slate-900">{mb(tot?.target ?? null)}</span> MB
         </span>
         {d && (
-          <span className={clsx("text-[12.5px] font-semibold tabular-nums", d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
-            Diff {d.thb >= 0 ? "+" : "−"}
+          <span className={clsx("text-[12.5px] font-semibold tabular-nums", d.thb >= 0 ? "text-emerald-700" : "text-rose-700")} title={`Target ${year} against the ${year - 1} forecast (${mb(forecast)} MB) in the Target plan`}>
+            vs Forecast {year - 1} {d.thb >= 0 ? "+" : "−"}
             {thb(d.thb)} THB ({d.pct >= 0 ? "+" : ""}
             {(d.pct * 100).toFixed(1)}%)
           </span>
