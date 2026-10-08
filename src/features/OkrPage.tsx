@@ -233,8 +233,12 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
             product: `${depth ? "    " : ""}${item.name}`,
             type: depth ? "" : item.flagship ? "Flagship" : "Non-flagship",
             prior: f.revPrior,
+            actual: f.revActual,
             base: f.revBase,
             target: f.target,
+            hnP: f.hnPrior,
+            hnA: f.hnActual,
+            hnB: f.hnBase,
           });
         }
     }
@@ -283,9 +287,13 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
               { header: "No.", key: "no", width: 7 },
               { header: "Key product", key: "product", width: 44 },
               { header: "Type", key: "type", width: 14 },
-              { header: `Revenue ${year - 2} (THB)`, key: "prior", width: 18, numFmt: "#,##0" },
-              { header: `Revenue ${year - 1} (THB)`, key: "base", width: 18, numFmt: "#,##0" },
+              { header: `Revenue baseline ${year - 2} (THB)`, key: "prior", width: 18, numFmt: "#,##0" },
+              { header: `Revenue actual ${year - 1} (THB)`, key: "actual", width: 18, numFmt: "#,##0" },
+              { header: `Revenue forecast ${year - 1} (THB)`, key: "base", width: 18, numFmt: "#,##0" },
               { header: `Target ${year} (THB)`, key: "target", width: 18, numFmt: "#,##0" },
+              { header: `HN baseline ${year - 2}`, key: "hnP", width: 12, numFmt: "#,##0" },
+              { header: `HN actual ${year - 1}`, key: "hnA", width: 12, numFmt: "#,##0" },
+              { header: `HN forecast ${year - 1}`, key: "hnB", width: 12, numFmt: "#,##0" },
             ],
             rows: ebos,
           },
