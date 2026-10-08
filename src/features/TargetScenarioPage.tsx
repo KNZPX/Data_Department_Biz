@@ -217,7 +217,7 @@ function loadScenario(base: Plan, s: SavedScenario): Plan {
 
 export function TargetScenarioPage() {
   const { can, canPage } = useAccess();
-  const eboOn = canPage("ebo");
+  const eboOn = canPage("okr");
   const t = useT();
   const canEdit = can("target.edit");
   // Older saved scenarios were built on the 2027 planning file; new plans start blank.
@@ -1164,7 +1164,7 @@ export function TargetScenarioPage() {
                               const c = ebo !== undefined && tgt > 0 ? ebo / tgt : null;
                               return (
                                 <Link
-                                  href={`/ebo?year=${plan.targetYear}&unit=${encodeURIComponent(n.name)}${current.id ? `&scenario=${encodeURIComponent(current.id)}` : ""}`}
+                                  href={`/okr?tab=ebo&year=${plan.targetYear}&unit=${encodeURIComponent(n.name)}${current.id ? `&scenario=${encodeURIComponent(current.id)}` : ""}`}
                                   onClick={(e) => e.stopPropagation()}
                                   title={
                                     c === null

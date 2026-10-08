@@ -4,12 +4,15 @@
 // for the year (EBO), and the objectives and key results that get it there,
 // with the initiatives behind them. Saves automatically; the team sees changes.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleDot, Download, Flag, LayoutGrid, Loader2, Plus, Search, Target, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleDot, Download, Flag, LayoutGrid, Loader2, Plus, Rocket, Search, Target, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, toast } from "@/components/feedback";
 import { useOrgStructure } from "@/lib/useOrgStructure";
 import { useT } from "@/lib/i18n";
+import { useTargetLink } from "@/lib/useTargetLink";
+import { HORIZON_IDS, HORIZON_META, diffTo, eboId, horizonFigures, normalizeEbo, planFigures, resolveTarget, type EboPlanData, type EboPlanRow } from "@/lib/ebo";
+import type { TabProps } from "./EboPage";
 import {
   HORIZONS,
   STATUS,
@@ -41,16 +44,31 @@ const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(/,/g, ""))
 const showNum = (v: number | null) => (v === null || v === undefined || Number.isNaN(v) ? "" : String(v));
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-export function OkrPage() {
+export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScenario, onOtherTab }: TabProps) {
   const t = useT();
   const { can } = useAccess();
   const canEdit = can("okr.edit");
   const { org } = useOrgStructure();
-  const thisYear = new Date().getFullYear();
-  const [year, setYear] = useState(thisYear + 1);
   const [site, setSite] = useState<string>("ALL");
   const [query, setQuery] = useState("");
-  const [unitName, setUnitName] = useState<string | null>(null);
+  const link = useTargetLink(year, preferScenario);
+  // Each unit's EBO plan (read-only here), to show its target gap next to the OKRs.
+  const [ebo, setEbo] = useState<Record<string, EboPlanData>>({});
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/ebo?year=${year}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { plans: [] }))
+      .then((j: { plans: EboPlanRow[] }) => {
+        if (!alive) return;
+        const m: Record<string, EboPlanData> = {};
+        for (const p of j.plans || []) if (p.id === eboId(year, p.unit)) m[p.unit] = normalizeEbo(p.data);
+        setEbo(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [year]);
   const [plans, setPlans] = useState<Record<string, Saved>>({});
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -338,6 +356,7 @@ export function OkrPage() {
     <div className="flex h-full flex-col gap-3 overflow-y-auto lg:overflow-hidden">
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 md:px-4">
+        {tabs}
         <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
           <button
             type="button"
@@ -465,7 +484,23 @@ export function OkrPage() {
           ) : !unit ? (
             <Overview units={units} plans={plans} keyOf={keyOf} onOpen={setUnitName} year={year} />
           ) : (
-            <UnitPlan key={keyOf(unit.name)} unit={unit} year={year} data={current!.data} canEdit={canEdit} update={update} />
+            <UnitPlan
+              key={keyOf(unit.name)}
+              unit={unit}
+              year={year}
+              data={current!.data}
+              canEdit={canEdit}
+              update={update}
+              eboStrip={
+                <EboStrip
+                  year={year}
+                  data={ebo[unit.name] || null}
+                  planTarget={link.linked?.numbers[unit.name]?.target ?? null}
+                  planName={link.linked?.scenario.name || null}
+                  onOpen={onOtherTab}
+                />
+              }
+            />
           )}
         </section>
       </div>
@@ -583,6 +618,7 @@ function UnitPlan({
   data,
   canEdit,
   update,
+  eboStrip,
 }: {
   unit: {
     name: string;
@@ -595,6 +631,7 @@ function UnitPlan({
   data: OkrPlanData;
   canEdit: boolean;
   update: (f: (d: OkrPlanData) => OkrPlanData) => void;
+  eboStrip: React.ReactNode;
 }) {
   const ro = !canEdit;
   // Horizon groups start collapsed.
@@ -644,11 +681,13 @@ function UnitPlan({
         </div>
       </div>
 
+      {eboStrip}
+
       {/* EBO, grouped by horizon */}
       <section>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-            <Target className="h-4 w-4 text-blue-600" /> EBO — expected business outcomes
+            <Target className="h-4 w-4 text-blue-600" /> Outcomes — what the unit commits to, by horizon
           </h3>
           <div className="flex items-center gap-1">
             <button
@@ -854,6 +893,24 @@ function UnitPlan({
                   placeholder="Owner"
                   className={clsx(cell, "w-36")}
                 />
+                <select
+                  disabled={ro}
+                  value={o.horizon || ""}
+                  onChange={(x) => setObj(o.id, (y) => ({ ...y, horizon: (x.target.value || undefined) as Horizon | undefined }))}
+                  title="Which EBO horizon this objective serves (shown on the EBO tab)"
+                  aria-label="EBO horizon"
+                  className={clsx(
+                    "h-7 rounded-full border-0 px-2 text-[11.5px] font-semibold outline-none ring-1",
+                    o.horizon ? HORIZON_META[o.horizon].tone : "bg-white text-slate-400 ring-slate-200"
+                  )}
+                >
+                  <option value="">No horizon</option>
+                  {HORIZON_IDS.map((h) => (
+                    <option key={h} value={h}>
+                      {h} · {HORIZON_META[h].title}
+                    </option>
+                  ))}
+                </select>
                 <span className="flex items-center gap-2 text-[12px] text-slate-500">
                   <span className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
                     <span className="block h-full rounded-full bg-blue-600 transition-[width] duration-500" style={{ width: pct(objectiveProgress(o)) }} />
@@ -1095,6 +1152,49 @@ function UnitPlan({
         />
       </section>
     </div>
+  );
+}
+
+/** The unit's EBO against next year's target, with a jump to the EBO tab. */
+function EboStrip({ year, data, planTarget, planName, onOpen }: { year: number; data: EboPlanData | null; planTarget: number | null; planName: string | null; onOpen: () => void }) {
+  const target = resolveTarget(planTarget, data);
+  const tot = data ? planFigures(data) : null;
+  const d = diffTo(target.value, tot?.target ?? null);
+  const mb = (v: number | null) => (v === null ? "—" : (v / 1e6).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+  const thb = (v: number) => Math.round(Math.abs(v)).toLocaleString("en-US");
+  return (
+    <section className="rounded-xl border border-slate-200/80 bg-gradient-to-r from-emerald-50/50 via-fuchsia-50/40 to-blue-50/50 p-3.5">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <span className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-900">
+          <Rocket className="h-4 w-4 text-blue-600" /> EBO {year}
+        </span>
+        <span className="text-[12.5px] text-slate-600">
+          Target <span className="font-semibold tabular-nums text-slate-900">{mb(target.value)}</span> MB
+          <span className="text-slate-400"> · {target.from === "plan" ? `“${planName}”` : target.from === "manual" ? "typed on the EBO tab" : "no target yet"}</span>
+        </span>
+        <span className="text-[12.5px] text-slate-600">
+          Planned <span className="font-semibold tabular-nums text-slate-900">{mb(tot?.target ?? null)}</span> MB
+        </span>
+        {d && (
+          <span className={clsx("text-[12.5px] font-semibold tabular-nums", d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
+            Diff {d.thb >= 0 ? "+" : "−"}
+            {thb(d.thb)} THB ({d.pct >= 0 ? "+" : ""}
+            {(d.pct * 100).toFixed(1)}%)
+          </span>
+        )}
+        <span className="flex gap-2 text-[11.5px] text-slate-500">
+          {HORIZON_IDS.map((h) => (
+            <span key={h} className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full" style={{ background: HORIZON_META[h].color }} />
+              {h} {data ? mb(horizonFigures(data.horizons[h]).target) : "—"}
+            </span>
+          ))}
+        </span>
+        <button type="button" onClick={onOpen} className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-[12.5px] font-medium text-blue-700 ring-1 ring-blue-200 hover:bg-blue-50">
+          {data ? "Open EBO" : "Start the EBO plan"} <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </section>
   );
 }
 

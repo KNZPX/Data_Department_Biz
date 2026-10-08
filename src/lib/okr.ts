@@ -14,7 +14,8 @@ export const HORIZONS: { id: Horizon; label: string; hint: string; tone: string 
 export type Ebo = { id: string; horizon?: Horizon; outcome: string; measure: string; unit: string; baseline: number | null; target: number | null; actual: number | null; owner: string; note?: string };
 export type KeyResult = { id: string; text: string; unit: string; start: number | null; target: number | null; current: number | null; owner: string; due: string; status: Status };
 export type Initiative = { id: string; text: string; owner: string; due: string; status: Status };
-export type Objective = { id: string; title: string; owner: string; keyResults: KeyResult[]; initiatives: Initiative[] };
+/** horizon: which EBO horizon (H1 / H2 / H3) the objective serves, so the EBO tab can show it. */
+export type Objective = { id: string; title: string; owner: string; horizon?: Horizon; keyResults: KeyResult[]; initiatives: Initiative[] };
 export type OkrPlanData = { ebos: Ebo[]; objectives: Objective[]; notes?: string };
 export type OkrPlanRow = { id: string; year: number; unit: string; site: string; data: OkrPlanData; updated_by: string | null; updated_at: string };
 
