@@ -3,11 +3,12 @@
 // Settings → Organisation: hospitals and the CoE / SBU units in each.
 // The Target planner and the EBO & OKR page are built on this.
 import { useMemo, useState } from "react";
-import { Building2, Check, GitFork, List, Loader2, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
+import { Building2, Check, GitFork, Grid3x3, List, Loader2, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, promptDialog, toast } from "@/components/feedback";
 import { TreeDiagram, type TreeNode } from "@/components/TreeDiagram";
+import { OrgMatrix } from "@/components/OrgMatrix";
 import { UNIT_GROUPS, slug, type OrgStructure, type OrgUnit } from "@/lib/orgStructure";
 import { ORG_EVENT, useOrgStructure } from "@/lib/useOrgStructure";
 import { useT } from "@/lib/i18n";
@@ -24,7 +25,7 @@ export function OrganisationTab() {
   const { isAdmin } = useAccess();
   const { org, meta, loaded } = useOrgStructure();
   const [draft, setDraft] = useState<OrgStructure | null>(null);
-  const [view, setView] = useState<"list" | "diagram">("list");
+  const [view, setView] = useState<"matrix" | "list" | "diagram">("matrix");
   const [saving, setSaving] = useState(false);
   const cur = draft || org;
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(org);
@@ -124,6 +125,7 @@ export function OrganisationTab() {
           <div className="flex rounded-lg bg-slate-100 p-0.5">
             {(
               [
+                ["matrix", Grid3x3, "By hospital"],
                 ["list", List, "List"],
                 ["diagram", GitFork, "Diagram"],
               ] as const
@@ -157,7 +159,12 @@ export function OrganisationTab() {
         </p>
       )}
 
-      {view === "diagram" ? (
+      {view === "matrix" ? (
+        <div className="rounded-xl border border-slate-200/80 bg-white">
+          <p className="border-b border-slate-100 px-5 py-3 text-[12.5px] text-slate-500">Tick the hospitals each CoE / SBU runs in. Save, then use “Apply to this plan” on the Target page to bring an open plan in line.</p>
+          <OrgMatrix value={cur} onChange={(o) => setDraft(o)} readOnly={ro} />
+        </div>
+      ) : view === "diagram" ? (
         <div className="rounded-xl border border-slate-200/80 bg-white p-5">
           <TreeDiagram root={tree} />
         </div>

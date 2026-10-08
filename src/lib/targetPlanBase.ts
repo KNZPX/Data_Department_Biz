@@ -2,7 +2,7 @@
 // agreed "Revise 2027 (V2)" numbers: network 7,550 MB, sites 5,140 / 2,035 / 375 MB,
 // and each CoE/SBU's MB where it was set. Everything below is split by base.
 import { HOSPITAL_PROFILES, TARGET_META, TARGET_SITES, TARGET_UNITS, VERIFIED_BASE_CASE } from "../data/targetScenarioData";
-import { MB, allocate, buildSettingBranch, fromSnapshot, type BlankStructure, type Plan, type PlanNode, type PlanSnapshot } from "./targetPlan";
+import { MB, allocate, buildSettingBranch, fromSnapshot, toSnapshot, type BlankStructure, type Plan, type PlanNode, type PlanSnapshot } from "./targetPlan";
 
 // Share of a unit's revenue that is OPD (the rest IPD), by specialty.
 const OPD_RATIO: Record<string, number> = {
@@ -254,4 +254,45 @@ export function unitNumbers(plan: Plan): Record<string, UnitNumbers> {
     s.prior += n.prior25;
   }
   return out;
+}
+
+/**
+ * Rebuild a plan on a new organisation (hospitals and which CoE / SBU each has):
+ * units that stay keep their numbers, new ones start at zero, removed ones drop
+ * out, and the hospital and network totals are added up again from the units.
+ */
+export function restructurePlan(plan: Plan, structure: BlankStructure): Plan {
+  const snap = toSnapshot(plan);
+  const fresh = buildBlankPlan(structure, plan.targetYear);
+  const keep = <T,>(m: Record<string, T> | undefined) => Object.fromEntries(Object.entries(m || {}).filter(([id]) => fresh.nodes[id]));
+  const targets = keep(snap.targets);
+  // A plan built from the data keeps its base and prior years by node, so they carry over too.
+  const nodes = Object.values(plan.nodes);
+  const bases = keep(snap.bases || Object.fromEntries(nodes.map((n) => [n.id, Math.round(n.base26)])));
+  const priors = keep(snap.priors || Object.fromEntries(nodes.map((n) => [n.id, Math.round(n.prior25)])));
+  const visits = keep(snap.visits || Object.fromEntries(nodes.map((n) => [n.id, Math.round(n.baseVisits26)])));
+  // Totals add up from the units again.
+  for (const field of [targets, bases, priors, visits]) {
+    let net = 0;
+    for (const site of fresh.nodes[fresh.rootId].children) {
+      const t = fresh.nodes[site].children.reduce((a, c) => a + (field[c] || 0), 0);
+      field[site] = t;
+      net += t;
+    }
+    field[fresh.rootId] = net;
+  }
+  return fromSnapshot(fresh, {
+    ...snap,
+    blank: structure,
+    bottomUp: true,
+    targets,
+    bases,
+    priors,
+    visits,
+    locked: (snap.locked || []).filter((id) => fresh.nodes[id]),
+    subs: (snap.subs || []).filter((x) => fresh.nodes[x.coeId]),
+    actuals: keep(snap.actuals),
+    priorTyped: keep(snap.priorTyped),
+    phasing: keep(snap.phasing),
+  });
 }

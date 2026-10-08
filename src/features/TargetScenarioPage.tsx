@@ -16,11 +16,13 @@ import {
   Download,
   FolderOpen,
   Layers,
+  Loader2,
   Lock,
   MoreHorizontal,
   Network,
   Plus,
   Redo2,
+  Grid3x3,
   Rocket,
   RotateCcw,
   Save,
@@ -73,7 +75,10 @@ import {
   type PlanNode,
   type PlanSnapshot,
 } from "@/lib/targetPlan";
-import { DEFAULT_STEP, blankFromOrg, buildBasePlan, buildBlankPlan, legacyToTargets, unitNumbers } from "@/lib/targetPlanBase";
+import { DEFAULT_STEP, blankFromOrg, buildBasePlan, buildBlankPlan, legacyToTargets, restructurePlan, unitNumbers } from "@/lib/targetPlanBase";
+import { OrgMatrix } from "@/components/OrgMatrix";
+import { ORG_EVENT } from "@/lib/useOrgStructure";
+import type { OrgStructure } from "@/lib/orgStructure";
 import { normalizeEbo, planFigures } from "@/lib/ebo";
 import Link from "next/link";
 import { defaultOrgStructure } from "@/lib/orgStructure";
@@ -690,6 +695,14 @@ export function TargetScenarioPage() {
 
   // ---- new plan for any year ----------------------------------------------------
   const [newPlanOpen, setNewPlanOpen] = useState(false);
+  const [orgOpen, setOrgOpen] = useState(false);
+  /** Bring the open plan in line with the organisation (which hospital has which CoE / SBU). */
+  function applyOrg(o: OrgStructure) {
+    const next = restructurePlan(plan, blankFromOrg(o));
+    commit(next);
+    setExpanded(new Set(["PKT", ...next.nodes.PKT.children]));
+    toast("Plan updated to the organisation", { body: "Units kept their numbers; new ones start at zero. Undo brings the old structure back." });
+  }
   async function createPlan(year: number, from: "current" | "blank", growth: number) {
     if (dirty) {
       const ok = await confirmDialog({ title: "Discard unsaved changes?", body: `You have changes to “${current.name}” that aren't saved.`, confirmLabel: "Discard", danger: true });
@@ -846,6 +859,14 @@ export function TargetScenarioPage() {
         )}
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setOrgOpen(true)}
+            title="Which hospital has which CoE / SBU"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Grid3x3 className="h-4 w-4 text-blue-600" /> CoE / SBU
+          </button>
           <div className="flex rounded-lg border border-slate-200 p-0.5">
             <button type="button" onClick={undo} disabled={!past.length} className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-30" title="Undo (Ctrl Z)" aria-label="Undo">
               <Undo2 className="h-4 w-4" />
@@ -1423,6 +1444,7 @@ export function TargetScenarioPage() {
           {!canEdit && <span className="ml-auto font-medium text-slate-600">View only — ask an admin for “Save scenarios” to edit.</span>}
         </div>
       </div>
+      {orgOpen && <OrgDialog org={org} plan={plan} canEditPlan={canEdit} onApply={applyOrg} onClose={() => setOrgOpen(false)} />}
       {newPlanOpen && <NewPlanDialog fromYear={plan.targetYear} orgUnits={blankFromOrg(org).units.length} currentName={current.name} onCreate={(y, f, g) => void createPlan(y, f, g)} onClose={() => setNewPlanOpen(false)} />}
     </div>
     </UnitContext.Provider>
@@ -2145,6 +2167,103 @@ function CoeView({ plan, siteFilter }: { plan: Plan; siteFilter: string }) {
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+/** What bringing `plan` in line with `structure` would add and remove (hospital · unit). */
+function structureChanges(plan: Plan, structure: ReturnType<typeof blankFromOrg>) {
+  const now = new Map(Object.values(plan.nodes).filter((n) => n.level === "coe").map((n) => [n.id, n]));
+  const want = new Set(structure.units.flatMap((u) => u.sites.map((s) => `${s}||${u.name}`)));
+  const label = (id: string) => {
+    const [site, name] = id.split("||");
+    return `${site.replace(" (Premium)", "")} · ${name}`;
+  };
+  return {
+    adds: [...want].filter((id) => !now.has(id)).map(label),
+    removes: [...now.values()].filter((n) => !want.has(n.id)).map((n) => ({ label: label(n.id), target: n.target })),
+  };
+}
+
+function OrgDialog({ org, plan, canEditPlan, onApply, onClose }: { org: OrgStructure; plan: Plan; canEditPlan: boolean; onApply: (o: OrgStructure) => void; onClose: () => void }) {
+  const { isAdmin } = useAccess();
+  const [draft, setDraft] = useState<OrgStructure>(org);
+  const [apply, setApply] = useState(canEditPlan);
+  const [saving, setSaving] = useState(false);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(org);
+  const changes = structureChanges(plan, blankFromOrg(draft));
+  const planChanges = changes.adds.length + changes.removes.length > 0;
+
+  async function save() {
+    setSaving(true);
+    try {
+      if (dirty) {
+        const res = await fetch("/api/team-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "org_structure", value: draft }) });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || "The server didn't accept it");
+        window.dispatchEvent(new Event(ORG_EVENT));
+      }
+      if (apply && planChanges) onApply(draft);
+      if (dirty) toast("Organisation saved", { body: "Planning pages use it from now on." });
+      onClose();
+    } catch (e) {
+      toast.error("Couldn't save the organisation", { body: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fade-enter fixed inset-0 z-[70] grid place-items-center bg-slate-900/35 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="org-title" className="pop-in flex max-h-[88vh] w-full max-w-4xl flex-col rounded-xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div>
+            <h3 id="org-title" className="text-[15px] font-semibold text-slate-900">
+              CoE / SBU by hospital
+            </h3>
+            <p className="mt-0.5 text-[12.5px] text-slate-500">
+              Tick the hospitals each unit runs in. {isAdmin ? "Saving updates the organisation for the whole team (Settings → Organisation)." : "Only admins can change the organisation; you can still bring this plan in line with it."}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-slate-100" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <OrgMatrix value={draft} onChange={setDraft} readOnly={!isAdmin} />
+        </div>
+        <div className="space-y-2 border-t border-slate-100 px-5 py-3">
+          {planChanges ? (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
+              <p className="font-medium">The open plan “{plan.targetYear}” differs from this:</p>
+              {changes.adds.length > 0 && <p>Adds (start at 0): {changes.adds.join(", ")}</p>}
+              {changes.removes.length > 0 && <p>Removes: {changes.removes.map((r) => `${r.label} (${(r.target / 1e6).toFixed(1)} MB)`).join(", ")}</p>}
+            </div>
+          ) : (
+            <p className="text-[12.5px] text-slate-500">The open plan already matches.</p>
+          )}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {canEditPlan && planChanges && (
+              <label className="mr-auto flex items-center gap-2 text-[13px] text-slate-700">
+                <input type="checkbox" checked={apply} onChange={(e) => setApply(e.target.checked)} />
+                Apply to the open plan (undo brings it back)
+              </label>
+            )}
+            <button type="button" onClick={onClose} className="h-9 rounded-lg px-3 text-[13px] font-medium text-slate-600 hover:bg-slate-100">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving || (!dirty && !(apply && planChanges))}
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-[13px] font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {dirty ? (apply && planChanges ? "Save & apply" : "Save") : "Apply to plan"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
