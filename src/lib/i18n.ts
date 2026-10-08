@@ -27,7 +27,7 @@ const TH: Record<string, string> = {
   "EBO & OKR": "EBO & OKR",
   "Business outcomes and key results for each CoE / SBU": "ผลลัพธ์ทางธุรกิจและ Key Result ของแต่ละ CoE / SBU",
   EBO: "EBO",
-  "Emerging business opportunities per CoE, against its target": "โอกาสธุรกิจใหม่ (EBO) ของแต่ละ CoE เทียบกับเป้า",
+  "Emerging business opportunities and OKRs for each CoE / SBU": "โอกาสธุรกิจใหม่ (EBO) และ OKR ของแต่ละ CoE / SBU",
   "Plan work together on a canvas": "วางแผนงานร่วมกันบนแคนวาส",
   "Yearly revenue targets, delegated down to every unit": "เป้ารายได้รายปี กระจายลงทุกหน่วย",
   "Workflow and data-flow canvases": "ผังงานและผังการไหลของข้อมูล",

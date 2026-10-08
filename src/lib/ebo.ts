@@ -40,8 +40,10 @@ export type EboHorizon = { title: string; focus: string; items: EboItem[] };
 export type EboPlanData = {
   horizons: Record<HorizonId, EboHorizon>;
   milestone?: string;
-  /** Used only when no Target plan covers this unit yet. */
+  /** A target typed on this page (e.g. the CoE's own sheet). */
   manualTarget?: number | null;
+  /** Which target the plan is measured against: the linked Target plan (default) or the typed one. */
+  targetSource?: "plan" | "manual";
   notes?: string;
 };
 export type EboPlanRow = { id: string; year: number; unit: string; data: EboPlanData; updated_by: string | null; updated_at: string };
@@ -101,6 +103,7 @@ export function normalizeEbo(raw: unknown): EboPlanData {
     ...base,
     milestone: typeof r?.milestone === "string" ? r.milestone : undefined,
     manualTarget: numOrNull(r?.manualTarget),
+    targetSource: r?.targetSource === "manual" ? "manual" : undefined,
     notes: typeof r?.notes === "string" ? r.notes : undefined,
   };
 }
@@ -206,4 +209,22 @@ export function siteAllocation(d: EboPlanData, fallback: Record<string, number>)
 export function productNames(h: EboHorizon) {
   const tops = topItems(h.items).filter((i) => i.name.trim());
   return { flagship: tops.filter((i) => i.flagship).map((i) => i.name.trim()), other: tops.filter((i) => !i.flagship).map((i) => i.name.trim()) };
+}
+
+export type ResolvedTarget = { value: number | null; from: "plan" | "manual" | "none"; plan: number | null; manual: number | null };
+
+/** The target a unit is measured against: the Target plan's, unless the typed one is chosen (or the plan has none). */
+export function resolveTarget(planTarget: number | null | undefined, d?: EboPlanData | null): ResolvedTarget {
+  const plan = planTarget && planTarget > 0 ? planTarget : null;
+  const manual = d?.manualTarget ?? null;
+  if (d?.targetSource === "manual" || (plan === null && manual !== null)) return { value: manual, from: "manual", plan, manual };
+  if (plan !== null) return { value: plan, from: "plan", plan, manual };
+  return { value: null, from: "none", plan, manual };
+}
+
+/** How far `amount` is from `target`: THB (negative = short) and as a share of the target. */
+export function diffTo(target: number | null, amount: number | null) {
+  if (target === null || target === 0) return null;
+  const a = amount ?? 0;
+  return { thb: a - target, pct: (a - target) / target, needed: target - a, neededPct: a ? target / a - 1 : null };
 }

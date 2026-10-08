@@ -62,16 +62,13 @@ export const PAGES: PageDef[] = [
     modules: [{ id: "target.edit", label: "Save scenarios" }],
   },
   {
-    id: "ebo",
-    label: "EBO",
-    href: "/ebo",
-    modules: [{ id: "ebo.edit", label: "Edit EBO plans" }],
-  },
-  {
     id: "okr",
     label: "EBO & OKR",
     href: "/okr",
-    modules: [{ id: "okr.edit", label: "Edit EBOs and OKRs" }],
+    modules: [
+      { id: "ebo.edit", label: "Edit EBO plans" },
+      { id: "okr.edit", label: "Edit OKRs" },
+    ],
   },
   { id: "users", label: "People & access", href: "/users", adminOnly: true, modules: [] },
   { id: "changelog", label: "Activity log", href: "/changelog", modules: [] },
@@ -134,7 +131,7 @@ const RELATED: Record<string, string[]> = {
 
 function pageOfModule(moduleId: string) {
   const p = moduleId.split(".")[0];
-  return p === "target" ? "target-scenario" : p;
+  return p === "target" ? "target-scenario" : p === "ebo" ? "okr" : p;
 }
 
 /** A page switched off for the team in Settings → Pages & access. */
@@ -159,6 +156,6 @@ export function canModule(access: Access | null, moduleId: string) {
 export function pageForPath(pathname: string): PageDef | undefined {
   if (pathname === "/") return PAGES[0];
   // DAX diagrams are part of the DAX dictionary, so they follow its access.
-  const path = pathname === "/dax-diagrams" || pathname.startsWith("/dax-diagrams/") ? "/dax" : pathname;
+  const path = pathname === "/dax-diagrams" || pathname.startsWith("/dax-diagrams/") ? "/dax" : pathname === "/ebo" ? "/okr" : pathname;
   return PAGES.find((p) => p.href !== "/" && (path === p.href || path.startsWith(p.href + "/")));
 }

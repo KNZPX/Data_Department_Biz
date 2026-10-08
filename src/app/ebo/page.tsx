@@ -1,11 +1,10 @@
-import { Metadata } from "next";
-import { EboPage } from "@/features/EboPage";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "EBO | Power BI Portal",
-  description: "Emerging business opportunities for each CoE / SBU, against its target",
-};
-
-export default function Page() {
-  return <EboPage />;
+// EBO now lives on the EBO & OKR page; keep old links working.
+export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const sp = await searchParams;
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) if (typeof v === "string") q.set(k, v);
+  q.set("tab", "ebo");
+  redirect(`/okr?${q.toString()}`);
 }

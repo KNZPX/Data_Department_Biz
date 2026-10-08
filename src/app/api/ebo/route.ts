@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // GET ?year=2027 → every unit's EBO plan that year.
 export async function GET(request: NextRequest) {
-  const g = await requirePage("ebo");
+  const g = await requirePage("okr");
   if (g.deny) return g.deny;
   const year = parseInt(request.nextUrl.searchParams.get("year") || "", 10);
   if (!Number.isFinite(year)) return Response.json({ error: "Pick a year." }, { status: 400 });

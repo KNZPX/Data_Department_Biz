@@ -24,7 +24,6 @@ import {
   Users,
   Workflow,
   GitFork,
-  Flag,
   Rocket,
   X,
   type LucideIcon,
@@ -68,8 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Planning",
     items: [
       { href: "/target-scenario", label: "Target scenario", hint: "Yearly revenue targets, delegated down to every unit", icon: TrendingUp },
-      { href: "/ebo", label: "EBO", hint: "Emerging business opportunities per CoE, against its target", icon: Rocket },
-      { href: "/okr", label: "EBO & OKR", hint: "Business outcomes and key results for each CoE / SBU", icon: Flag },
+      { href: "/okr", label: "EBO & OKR", hint: "Emerging business opportunities and OKRs for each CoE / SBU", icon: Rocket },
       { href: "/whiteboard", label: "Whiteboard", hint: "Plan work together on a canvas", icon: Workflow },
     ],
   },

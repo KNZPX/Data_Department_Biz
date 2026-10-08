@@ -8,14 +8,15 @@
 // three-horizon chart. Saves automatically; the team sees changes.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, CornerDownRight, Download, ExternalLink, LayoutGrid, Link2, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, CornerDownRight, Download, ExternalLink, Flag, LayoutGrid, Link2, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, toast } from "@/components/feedback";
 import { useOrgStructure } from "@/lib/useOrgStructure";
-import { usePersonalPref } from "@/lib/usePersonalPref";
 import { useT } from "@/lib/i18n";
-import { planFromSaved, savedPlanYear, unitNumbers, type SavedTargetSnapshot, type UnitNumbers } from "@/lib/targetPlanBase";
+import { type UnitNumbers } from "@/lib/targetPlanBase";
+import { useTargetLink } from "@/lib/useTargetLink";
+import { normalizePlan as normalizeOkr, objectiveProgress, okrId, type Objective, type OkrPlanRow } from "@/lib/okr";
 import {
   HORIZON_IDS,
   HORIZON_META,
@@ -32,6 +33,8 @@ import {
   per,
   planFigures,
   productNames,
+  resolveTarget,
+  diffTo,
   siteAllocation,
   topItems,
   type EboHorizon,
@@ -40,10 +43,10 @@ import {
   type EboPlanRow,
   type Figures,
   type HorizonId,
+  type ResolvedTarget,
 } from "@/lib/ebo";
 
 type Saved = { data: EboPlanData; updatedAt: string | null; updatedBy: string | null };
-type Scenario = { id: string; name: string; updated_at: string; created_by?: string | null; snapshot: SavedTargetSnapshot };
 type Unit = { id: string; name: string; group: string; lead?: string; sites: string[] };
 
 // ---- formatting ----------------------------------------------------------------
@@ -70,37 +73,33 @@ function coverTone(c: number | null) {
   return { bar: "bg-rose-500", text: "text-rose-700" };
 }
 
-export function EboPage() {
+/** Shared with the OKR tab: year, open unit, the tab switch, and the scenario a link asked for. */
+export type TabProps = {
+  year: number;
+  setYear: (f: (y: number) => number) => void;
+  unitName: string | null;
+  setUnitName: (n: string | null) => void;
+  tabs: React.ReactNode;
+  preferScenario: string | null;
+  onOtherTab: () => void;
+};
+
+export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScenario, onOtherTab }: TabProps) {
   const t = useT();
   const { can } = useAccess();
   const canEdit = can("ebo.edit");
   const { org } = useOrgStructure();
-  const thisYear = new Date().getFullYear();
-  const [year, setYear] = useState(thisYear + 1);
   const [query, setQuery] = useState("");
-  const [unitName, setUnitName] = useState<string | null>(null);
   const [plans, setPlans] = useState<Record<string, Saved>>({});
+  const [okr, setOkr] = useState<Record<string, Objective[]>>({});
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
-  const [urlScenario, setUrlScenario] = useState<string | null>(null);
-  const [linkPref, setLinkPref] = usePersonalPref<Record<string, string>>("ebo_target_link", "ebo_target_link");
+  const link = useTargetLink(year, preferScenario);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const plansRef = useRef(plans);
   useEffect(() => {
     plansRef.current = plans;
   }, [plans]);
-
-  // Deep link from the Target page: /ebo?year=2027&unit=CoE%20Neurology&scenario=…
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search);
-    const y = parseInt(q.get("year") || "", 10);
-    /* eslint-disable react-hooks/set-state-in-effect */
-    if (Number.isFinite(y)) setYear(y);
-    if (q.get("unit")) setUnitName(q.get("unit"));
-    if (q.get("scenario")) setUrlScenario(q.get("scenario"));
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
 
   const units: Unit[] = useMemo(
     () => org.units.filter((u) => u.active && (!query.trim() || u.name.toLowerCase().includes(query.trim().toLowerCase()))),
@@ -125,34 +124,23 @@ export function EboPage() {
         setLoading(false);
       })
       .catch(() => alive && setLoading(false));
+    // Each unit's network-wide OKRs, to show next to the horizons they serve.
+    fetch(`/api/okr?year=${year}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { plans: [] }))
+      .then((j: { plans: OkrPlanRow[] }) => {
+        if (!alive) return;
+        const map: Record<string, Objective[]> = {};
+        for (const p of j.plans || []) if (p.id === okrId(year, p.unit, "ALL")) map[p.unit] = normalizeOkr(p.data).objectives;
+        setOkr(map);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, [year]);
 
-  useEffect(() => {
-    fetch("/api/target-scenario?only=scenarios", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => setScenarios(j?.scenarios || []))
-      .catch(() => setScenarios([]));
-  }, []);
-
   // ---- the Target plan this year's EBO is measured against ----------------------------
-  const yearScenarios = useMemo(
-    () => (scenarios || []).filter((s) => savedPlanYear(s.snapshot) === year).sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at)),
-    [scenarios, year]
-  );
-  const pick = [urlScenario, linkPref?.[String(year)]].find((id) => id && yearScenarios.some((s) => s.id === id));
-  const linkedId = pick || yearScenarios[0]?.id || null;
-  const linked = useMemo(() => {
-    const s = yearScenarios.find((x) => x.id === linkedId);
-    if (!s) return null;
-    try {
-      return { scenario: s, numbers: unitNumbers(planFromSaved(s.snapshot)) };
-    } catch {
-      return null;
-    }
-  }, [yearScenarios, linkedId]);
+  const { yearScenarios, linkedId, linked } = link;
   const numbersOf = (name: string): UnitNumbers | null => linked?.numbers[name] || null;
 
   // ---- saving --------------------------------------------------------------------------
@@ -214,16 +202,8 @@ export function EboPage() {
 
   const current: Saved | null = unit ? plans[keyOf(unit.name)] || { data: emptyEbo(), updatedAt: null, updatedBy: null } : null;
 
-  /** The unit's target: from the linked Target plan, else the number typed on this page. */
-  const targetOf = useCallback(
-    (name: string, d?: EboPlanData) => {
-      const n = linked?.numbers[name];
-      if (n && n.target > 0) return { value: n.target, from: "plan" as const };
-      if (d?.manualTarget) return { value: d.manualTarget, from: "manual" as const };
-      return { value: null, from: "none" as const };
-    },
-    [linked]
-  );
+  /** The unit's target: the linked Target plan's, or the one typed on this page when chosen. */
+  const targetOf = useCallback((name: string, d?: EboPlanData) => resolveTarget(linked?.numbers[name]?.target, d), [linked]);
 
   // ---- export --------------------------------------------------------------------------
   async function exportExcel() {
@@ -364,6 +344,7 @@ export function EboPage() {
     <div className="flex h-full flex-col gap-3 overflow-y-auto lg:overflow-hidden">
       {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2.5 md:px-4">
+        {tabs}
         <div className="flex items-center gap-1 rounded-lg border border-slate-200 p-0.5">
           <button type="button" onClick={() => setYear((y) => y - 1)} className="grid h-8 w-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100" aria-label="Previous year">
             <ChevronLeft className="h-4 w-4" />
@@ -376,16 +357,13 @@ export function EboPage() {
         <label className="flex min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 py-0.5 pl-2.5 pr-1 text-[12.5px]">
           <Link2 className="h-3.5 w-3.5 shrink-0 text-blue-600" />
           <span className="shrink-0 text-slate-500">Target plan</span>
-          {scenarios === null ? (
+          {link.loading ? (
             <Loader2 className="mx-2 h-3.5 w-3.5 animate-spin text-slate-400" />
           ) : yearScenarios.length ? (
             <select
               aria-label="Target plan to measure against"
               value={linkedId || ""}
-              onChange={(e) => {
-                setUrlScenario(null);
-                setLinkPref({ ...(linkPref || {}), [String(year)]: e.target.value });
-              }}
+              onChange={(e) => link.choose(e.target.value)}
               className="h-7 max-w-[220px] truncate rounded-md bg-transparent pr-1 font-medium text-slate-900 outline-none hover:bg-slate-50"
             >
               {yearScenarios.map((s) => (
@@ -507,6 +485,8 @@ export function EboPage() {
               linkedName={linked?.scenario.name || null}
               onPickUnit={setUnitName}
               units={units}
+              objectives={okr[unit.name] || []}
+              onOpenOkr={onOtherTab}
             />
           )}
         </section>
@@ -572,6 +552,15 @@ function Overview({
               <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div className={clsx("h-full rounded-full transition-[width] duration-700", coverTone(c).bar)} style={{ width: `${Math.min(100, (c || 0) * 100)}%` }} />
               </div>
+              {(() => {
+                const df = diffTo(tg.value, tot);
+                return df ? (
+                  <p className={clsx("mt-1.5 text-[12px] font-medium tabular-nums", df.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                    Diff from target {df.thb >= 0 ? "+" : "−"}
+                    {thb(Math.abs(df.thb))} THB ({pct(df.pct)})
+                  </p>
+                ) : null;
+              })()}
               <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-100" aria-label="Split by horizon">
                 {hsum > 0 && hs.map(({ h, v }) => <div key={h} title={`${h} ${mb(v)} MB`} style={{ width: `${(Math.max(0, v) / hsum) * 100}%`, background: HORIZON_META[h].color }} />)}
               </div>
@@ -607,6 +596,8 @@ function UnitEbo({
   linkedName,
   units,
   onPickUnit,
+  objectives,
+  onOpenOkr,
 }: {
   unit: Unit;
   year: number;
@@ -614,10 +605,12 @@ function UnitEbo({
   canEdit: boolean;
   update: (f: (d: EboPlanData) => EboPlanData) => void;
   numbers: UnitNumbers | null;
-  target: { value: number | null; from: "plan" | "manual" | "none" };
+  target: ResolvedTarget;
   linkedName: string | null;
   units: Unit[];
   onPickUnit: (n: string) => void;
+  objectives: Objective[];
+  onOpenOkr: () => void;
 }) {
   const P = year - 2;
   const B = year - 1;
@@ -661,7 +654,7 @@ function UnitEbo({
       </div>
 
       {/* Against the target */}
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="rounded-xl border border-slate-200/80 p-4">
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
             <Stat label={`Revenue ${P}`} value={mb(numbers?.prior ?? null)} unit="MB" hint="From the Target plan" />
@@ -676,17 +669,47 @@ function UnitEbo({
                 <NumInput
                   value={data.manualTarget ?? null}
                   disabled={!canEdit}
-                  placeholder="Type a target"
+                  placeholder="Type a target (THB)"
                   onChange={(v) => update((d) => ({ ...d, manualTarget: v }))}
-                  className="h-8 w-full rounded-md border border-slate-200 px-2 text-[14px] font-semibold"
+                  className="h-8 w-full rounded-md border border-slate-200 px-2 text-[14px] font-semibold tabular-nums"
                 />
               )}
-              <p className="truncate text-[11px] text-slate-400" title={linkedName || undefined}>
-                {target.from === "plan" ? `From “${linkedName}”` : linkedName ? "Not in the linked plan — typed here" : "No Target plan for this year — typed here"}
+              <p className="text-[11px] leading-snug text-slate-400">
+                {target.from === "plan" && (
+                  <>
+                    <span className="block truncate" title={linkedName || undefined}>
+                      From “{linkedName}”
+                    </span>
+                    {canEdit && (
+                      <button type="button" onClick={() => update((d) => ({ ...d, targetSource: "manual" }))} className="text-blue-600 hover:underline">
+                        Use a typed target{target.manual !== null ? ` (${mb(target.manual)} MB)` : ""}
+                      </button>
+                    )}
+                  </>
+                )}
+                {target.from === "manual" && (
+                  <>
+                    Typed here
+                    {target.plan !== null && (
+                      <>
+                        {" · "}
+                        {canEdit ? (
+                          <button type="button" onClick={() => update((d) => ({ ...d, targetSource: undefined }))} className="text-blue-600 hover:underline">
+                            use the Target plan ({mb(target.plan)} MB)
+                          </button>
+                        ) : (
+                          `Target plan says ${mb(target.plan)} MB`
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+                {target.from === "none" && (linkedName ? "Not in the linked Target plan — type it" : "No Target plan for this year — type it")}
               </p>
             </div>
             <Stat label={`Growth vs ${B}`} value={pct(growth(tgt, numbers?.base ?? null))} hint="Target against the base year" />
           </div>
+          <DiffTable year={year} target={tgt} planned={total.target} productsBase={total.revBase} forecast={numbers?.base ?? null} />
           <div className="mt-4 border-t border-slate-100 pt-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
               <span className="text-slate-600">
@@ -738,7 +761,8 @@ function UnitEbo({
             </thead>
             <tbody>
               {sites.map((s) => {
-                const st = numbers?.sites[s]?.target ?? (target.from === "manual" && tgt ? tgt * (fallback[s] || 0) : null);
+                // A typed target is split by the CoE's shares in the Target plan, so the rows add up to it.
+                const st = target.from === "manual" ? (tgt ? tgt * (fallback[s] || 0) : null) : (numbers?.sites[s]?.target ?? null);
                 const e = alloc[s] ?? null;
                 const g = st !== null && e !== null ? e - st : null;
                 return (
@@ -759,8 +783,76 @@ function UnitEbo({
       <HorizonChart unit={unit.name} year={year} data={data} hf={hf} target={tgt} total={total.target} canEdit={canEdit} onMilestone={(v) => update((d) => ({ ...d, milestone: v || undefined }))} />
 
       {HORIZON_IDS.map((h) => (
-        <HorizonTable key={h} h={h} hz={data.horizons[h]} f={hf[h]} year={year} target={tgt} sites={sites} fallback={fallback} canEdit={canEdit} setH={(f) => setH(h, f)} />
+        <HorizonTable
+          key={h}
+          h={h}
+          hz={data.horizons[h]}
+          f={hf[h]}
+          year={year}
+          target={tgt}
+          sites={sites}
+          fallback={fallback}
+          canEdit={canEdit}
+          setH={(f) => setH(h, f)}
+          objectives={objectives.filter((o) => o.horizon === h)}
+          onOpenOkr={onOpenOkr}
+        />
       ))}
+    </div>
+  );
+}
+
+/**
+ * How far the unit is from next year's target, in THB and %: what the key products
+ * plan for the target year, and what they and the Target plan expect for this year.
+ */
+function DiffTable({ year, target, planned, productsBase, forecast }: { year: number; target: number | null; planned: number | null; productsBase: number | null; forecast: number | null }) {
+  const B = year - 1;
+  const rows: { label: string; hint: string; amount: number | null; growth: boolean }[] = [
+    { label: `EBO planned ${year}`, hint: planned === null ? `No ${year} numbers typed yet` : "Key products' target-year total", amount: planned, growth: false },
+    { label: `Key products ${B}`, hint: "Their revenue this year", amount: productsBase, growth: true },
+    { label: `Forecast ${B}`, hint: "From the Target plan", amount: forecast, growth: true },
+  ];
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-3">
+      <p className="mb-1.5 text-[13px] font-semibold text-slate-900">
+        Diff from Target {year} <span className="font-normal text-slate-400">({thb(target)} THB)</span>
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-[12.5px]">
+          <thead>
+            <tr className="text-left text-[11px] text-slate-500">
+              <th className="pb-1 pr-3 font-medium" />
+              <th className="px-3 pb-1 text-right font-medium">Amount (THB)</th>
+              <th className="px-3 pb-1 text-right font-medium">Diff from target (THB)</th>
+              <th className="px-3 pb-1 text-right font-medium">Diff %</th>
+              <th className="pb-1 pl-3 text-right font-medium">Growth needed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const d = diffTo(target, r.amount === null && r.growth ? null : r.amount);
+              const known = target !== null && (r.amount !== null || !r.growth);
+              return (
+                <tr key={r.label} className="border-t border-slate-100">
+                  <td className="py-1.5 pr-3">
+                    <span className="font-medium text-slate-800">{r.label}</span>
+                    <span className="block text-[11px] text-slate-400">{r.hint}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.amount === null ? (r.growth ? "—" : "0") : thb(r.amount)}</td>
+                  <td className={clsx("px-3 py-1.5 text-right font-semibold tabular-nums", !known || !d ? "text-slate-400" : d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                    {known && d ? `${d.thb >= 0 ? "+" : "−"}${thb(Math.abs(d.thb))}` : "—"}
+                  </td>
+                  <td className={clsx("px-3 py-1.5 text-right font-semibold tabular-nums", !known || !d ? "text-slate-400" : d.pct >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                    {known && d ? pct(d.pct) : "—"}
+                  </td>
+                  <td className="py-1.5 pl-3 text-right tabular-nums text-slate-600">{r.growth && known && d && d.neededPct !== null ? pct(d.neededPct) : ""}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -924,6 +1016,8 @@ function HorizonTable({
   fallback,
   canEdit,
   setH,
+  objectives,
+  onOpenOkr,
 }: {
   h: HorizonId;
   hz: EboHorizon;
@@ -934,6 +1028,8 @@ function HorizonTable({
   fallback: Record<string, number>;
   canEdit: boolean;
   setH: (f: (hz: EboHorizon) => EboHorizon) => void;
+  objectives: Objective[];
+  onOpenOkr: () => void;
 }) {
   const P = year - 2;
   const B = year - 1;
@@ -1006,6 +1102,17 @@ function HorizonTable({
             Growth <span className={clsx("font-semibold tabular-nums", (growth(f.target, f.revBase) ?? 0) >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(growth(f.target, f.revBase))}</span>
           </span>
         </div>
+        <button
+          type="button"
+          onClick={onOpenOkr}
+          title={objectives.length ? objectives.map((o) => o.title || "Untitled objective").join("\n") : `Tag an objective with ${h} on the OKR tab to see it here`}
+          className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[12px] font-medium text-slate-600 ring-1 ring-slate-200 transition hover:text-blue-700 hover:ring-blue-300"
+        >
+          <Flag className="h-3.5 w-3.5" />
+          {objectives.length
+            ? `${objectives.length} OKR ${objectives.length === 1 ? "objective" : "objectives"} · ${Math.round((objectives.reduce((a, o) => a + objectiveProgress(o), 0) / objectives.length) * 100)}% done`
+            : "Add OKR"}
+        </button>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-separate border-spacing-0 text-[12.5px]">
