@@ -3,9 +3,10 @@
 // The unit's business is split into three horizons:
 //   H1 mature business (today's core), H2 growth business, H3 future business.
 // Each horizon lists key products (flagship or not, with optional sub-items):
-// revenue two years back and the base year, the target-year plan as
-// cases × average revenue per case, patients (HN) per year, and how the
-// target splits across hospitals. The CoE's own target comes from the saved
+// revenue and patients (HN) as a baseline two years back, this year's actual
+// so far (for a stated number of months or days) and full-year forecast, the
+// target-year plan as cases × average revenue per case, and how the target
+// splits across hospitals. The CoE's own target comes from the saved
 // Target plan, so the page shows how far the products cover it.
 // Pure functions only — no React — so the numbers are easy to check.
 
@@ -24,19 +25,25 @@ export type EboItem = {
   /** Set on a sub-item (1.1 under 1.); a parent's numbers add up from its sub-items. */
   parentId?: string;
   flagship: boolean;
-  revPrior: number | null; // THB, two years before the target year
-  revBase: number | null; // THB, the year before (actual + forecast)
+  revPrior: number | null; // THB, two years before the target year (baseline)
+  /** THB, this year's actual so far (the plan's actualPeriod). */
+  revActual?: number | null;
+  revBase: number | null; // THB, this year's full-year forecast (actual + estimate)
   vol: number | null; // target-year cases
   avg: number | null; // target-year average revenue per case
   /** Target revenue typed directly when there's no case count to multiply. */
   revTarget?: number | null;
-  hnBase: number | null; // patients (HN) in the base year
-  hnPrior: number | null; // patients (HN) two years back
+  hnBase: number | null; // patients (HN), this year's full-year forecast
+  /** Patients (HN) this year so far. */
+  hnActual?: number | null;
+  hnPrior: number | null; // patients (HN) two years back (baseline)
   /** % of the target per hospital code; empty = follow the CoE's split in the Target plan. */
   split: Record<string, number>;
   note?: string;
 };
 export type EboHorizon = { title: string; focus: string; items: EboItem[] };
+/** How much of this year the actual columns cover: N months from January, or N days. */
+export type ActualPeriod = { unit: "months" | "days"; n: number };
 export type EboPlanData = {
   horizons: Record<HorizonId, EboHorizon>;
   milestone?: string;
@@ -44,6 +51,8 @@ export type EboPlanData = {
   manualTarget?: number | null;
   /** Which target the plan is measured against: the linked Target plan (default) or the typed one. */
   targetSource?: "plan" | "manual";
+  /** What the actual-this-year columns cover. */
+  actualPeriod?: ActualPeriod;
   notes?: string;
 };
 export type EboPlanRow = { id: string; year: number; unit: string; data: EboPlanData; updated_by: string | null; updated_at: string };
@@ -62,7 +71,7 @@ export function emptyEbo(): EboPlanData {
 }
 
 export function blankItem(parentId?: string): EboItem {
-  return { id: newId(), name: "", parentId, flagship: !parentId, revPrior: null, revBase: null, vol: null, avg: null, hnBase: null, hnPrior: null, split: {} };
+  return { id: newId(), name: "", parentId, flagship: !parentId, revPrior: null, revActual: null, revBase: null, vol: null, avg: null, hnBase: null, hnActual: null, hnPrior: null, split: {} };
 }
 
 const numOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -88,11 +97,13 @@ export function normalizeEbo(raw: unknown): EboPlanData {
           parentId: i.parentId && ids.has(i.parentId) ? i.parentId : undefined,
           flagship: Boolean(i.flagship),
           revPrior: numOrNull(i.revPrior),
+          revActual: numOrNull(i.revActual),
           revBase: numOrNull(i.revBase),
           vol: numOrNull(i.vol),
           avg: numOrNull(i.avg),
           revTarget: numOrNull(i.revTarget),
           hnBase: numOrNull(i.hnBase),
+          hnActual: numOrNull(i.hnActual),
           hnPrior: numOrNull(i.hnPrior),
           split: Object.fromEntries(Object.entries(i.split || {}).filter(([, v]) => typeof v === "number" && Number.isFinite(v))),
           note: i.note ? String(i.note) : undefined,
@@ -104,6 +115,7 @@ export function normalizeEbo(raw: unknown): EboPlanData {
     milestone: typeof r?.milestone === "string" ? r.milestone : undefined,
     manualTarget: numOrNull(r?.manualTarget),
     targetSource: r?.targetSource === "manual" ? "manual" : undefined,
+    actualPeriod: normalizePeriod(r?.actualPeriod),
     notes: typeof r?.notes === "string" ? r.notes : undefined,
   };
 }
@@ -113,10 +125,12 @@ export function normalizeEbo(raw: unknown): EboPlanData {
 /** One line's figures; null where nothing is known yet. */
 export type Figures = {
   revPrior: number | null;
+  revActual: number | null;
   revBase: number | null;
   vol: number | null;
   target: number | null;
   hnBase: number | null;
+  hnActual: number | null;
   hnPrior: number | null;
 };
 
@@ -126,13 +140,15 @@ function sumFigures(list: Figures[]): Figures {
   return list.reduce<Figures>(
     (acc, f) => ({
       revPrior: add(acc.revPrior, f.revPrior),
+      revActual: add(acc.revActual, f.revActual),
       revBase: add(acc.revBase, f.revBase),
       vol: add(acc.vol, f.vol),
       target: add(acc.target, f.target),
       hnBase: add(acc.hnBase, f.hnBase),
+      hnActual: add(acc.hnActual, f.hnActual),
       hnPrior: add(acc.hnPrior, f.hnPrior),
     }),
-    { revPrior: null, revBase: null, vol: null, target: null, hnBase: null, hnPrior: null }
+    { revPrior: null, revActual: null, revBase: null, vol: null, target: null, hnBase: null, hnActual: null, hnPrior: null }
   );
 }
 
@@ -150,7 +166,7 @@ export const topItems = (items: EboItem[]) => items.filter((i) => !i.parentId);
 export function itemFigures(items: EboItem[], it: EboItem): Figures {
   const kids = childrenOf(items, it.id);
   if (kids.length) return sumFigures(kids.map((k) => itemFigures(items, k)));
-  return { revPrior: it.revPrior, revBase: it.revBase, vol: it.vol, target: lineTarget(it), hnBase: it.hnBase, hnPrior: it.hnPrior };
+  return { revPrior: it.revPrior, revActual: it.revActual ?? null, revBase: it.revBase, vol: it.vol, target: lineTarget(it), hnBase: it.hnBase, hnActual: it.hnActual ?? null, hnPrior: it.hnPrior };
 }
 
 export function horizonFigures(h: EboHorizon): Figures {
@@ -227,4 +243,38 @@ export function diffTo(target: number | null, amount: number | null) {
   if (target === null || target === 0) return null;
   const a = amount ?? 0;
   return { thb: a - target, pct: (a - target) / target, needed: target - a, neededPct: a ? target / a - 1 : null };
+}
+
+// ---- this year's actual so far ------------------------------------------------------
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function normalizePeriod(raw: unknown): ActualPeriod | undefined {
+  const r = raw as Partial<ActualPeriod> | null;
+  if (!r || (r.unit !== "months" && r.unit !== "days") || typeof r.n !== "number" || !Number.isFinite(r.n)) return undefined;
+  const n = Math.round(r.n);
+  return r.unit === "months" ? { unit: "months", n: Math.max(1, Math.min(12, n)) } : { unit: "days", n: Math.max(1, Math.min(366, n)) };
+}
+
+/** Until someone says otherwise: the whole months of `year` that are over by `today`. */
+export function defaultPeriod(year: number, today = new Date()): ActualPeriod {
+  if (year < today.getFullYear()) return { unit: "months", n: 12 };
+  if (year > today.getFullYear()) return { unit: "months", n: 1 };
+  return { unit: "months", n: Math.max(1, today.getMonth()) };
+}
+
+export const periodOf = (d: Pick<EboPlanData, "actualPeriod">, year: number) => d.actualPeriod ?? defaultPeriod(year);
+
+/** "Jan–Sep · 9 mo" or "273 days". */
+export function periodLabel(p: ActualPeriod) {
+  if (p.unit === "days") return `${p.n} days`;
+  return p.n === 1 ? "Jan · 1 mo" : `Jan–${MONTHS[p.n - 1]} · ${p.n} mo`;
+}
+
+const daysIn = (year: number) => (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 366 : 365);
+
+/** The full year at the pace of the actual so far (the run-rate), or null. */
+export function runRate(actual: number | null | undefined, p: ActualPeriod, year: number): number | null {
+  if (actual === null || actual === undefined || p.n <= 0) return null;
+  return p.unit === "months" ? (actual * 12) / p.n : (actual * daysIn(year)) / p.n;
 }

@@ -8,7 +8,7 @@
 // three-horizon chart. Saves automatically; the team sees changes.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, CornerDownRight, Download, ExternalLink, Flag, LayoutGrid, Link2, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Flag, LayoutGrid, Link2, Loader2, Plus, Search } from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, toast } from "@/components/feedback";
@@ -16,6 +16,8 @@ import { useOrgStructure } from "@/lib/useOrgStructure";
 import { useT } from "@/lib/i18n";
 import { type UnitNumbers } from "@/lib/targetPlanBase";
 import { useTargetLink } from "@/lib/useTargetLink";
+import { usePersonalPref } from "@/lib/usePersonalPref";
+import { DEFAULT_VIEW, EboGrid, NumInput, TextInput, gridTsv, type GridView } from "./EboGrid";
 import { normalizePlan as normalizeOkr, objectiveProgress, okrId, type Objective, type OkrPlanRow } from "@/lib/okr";
 import {
   HORIZON_IDS,
@@ -27,17 +29,18 @@ import {
   growth,
   horizonFigures,
   itemFigures,
-  lineTarget,
   normalizeEbo,
   numbered,
   per,
+  periodLabel,
+  periodOf,
   planFigures,
   productNames,
   resolveTarget,
+  runRate,
   siteAllocation,
   topItems,
   type EboHorizon,
-  type EboItem,
   type EboPlanData,
   type EboPlanRow,
   type Figures,
@@ -54,16 +57,6 @@ const mb = (v: number | null, d = 1) => (v === null ? "—" : (v / 1e6).toLocale
 const pct = (g: number | null, sign = true) => (g === null || !Number.isFinite(g) ? "—" : `${sign && g > 0 ? "+" : ""}${(g * 100).toFixed(1)}%`);
 const share = (x: number | null) => (x === null || !Number.isFinite(x) ? "—" : `${(x * 100).toFixed(1)}%`);
 const siteLabel = (code: string) => code.replace(" (Premium)", "");
-
-/** "1,234", "1.5m", "250k", "-3,000" → number; blank → null. */
-function parseNum(raw: string): number | null {
-  const s = raw.replace(/[,\s฿]/g, "").toLowerCase();
-  if (!s) return null;
-  const m = s.match(/^(-?\d*\.?\d+)(k|m|mb)?$/);
-  if (!m) return null;
-  const n = Number(m[1]) * (m[2] === "k" ? 1e3 : m[2] ? 1e6 : 1);
-  return Number.isFinite(n) ? n : null;
-}
 
 function coverTone(c: number | null) {
   if (c === null) return { bar: "bg-slate-300", text: "text-slate-500" };
@@ -90,6 +83,9 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
   const t = useT();
   const { can } = useAccess();
   const canEdit = can("ebo.edit");
+  // What the key-product tables show (each person's own choice).
+  const [viewPref, saveView] = usePersonalPref<GridView>("eboGridView", "ebo:gridView");
+  const view: GridView = { ...DEFAULT_VIEW, ...(viewPref || {}) };
   const { org } = useOrgStructure(year);
   const [query, setQuery] = useState("");
   const [plans, setPlans] = useState<Record<string, Saved>>({});
@@ -255,7 +251,8 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
         const hz = d.horizons[h];
         if (!hz.items.length) continue;
         const hf = horizonFigures(hz);
-        rows.push({ unit: u.name, horizon: h, no: "", name: `${h} · ${hz.title}`, type: hz.focus ? `Focus: ${hz.focus}` : "", prior: hf.revPrior, base: hf.revBase, g1: growth(hf.revBase, hf.revPrior), vol: hf.vol, avg: per(hf.target, hf.vol), target: hf.target, g2: growth(hf.target, hf.revBase), hnB: hf.hnBase, perB: per(hf.revBase, hf.hnBase), hnP: hf.hnPrior, perP: per(hf.revPrior, hf.hnPrior) });
+        const period = periodLabel(periodOf(d, year - 1));
+        rows.push({ unit: u.name, horizon: h, no: "", name: `${h} · ${hz.title}`, type: hz.focus ? `Focus: ${hz.focus}` : "", period, prior: hf.revPrior, actual: hf.revActual, base: hf.revBase, g1: growth(hf.revBase, hf.revPrior), vol: hf.vol, avg: per(hf.target, hf.vol), target: hf.target, g2: growth(hf.target, hf.revBase), hnP: hf.hnPrior, hnA: hf.hnActual, hnB: hf.hnBase, gHn: growth(hf.hnBase, hf.hnPrior), perB: per(hf.revBase, hf.hnBase), perP: per(hf.revPrior, hf.hnPrior) });
         levels.push(0);
         bold.push(true);
         for (const { item, no, depth } of numbered(hz.items)) {
@@ -266,16 +263,20 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
             no,
             name: item.name,
             type: depth ? "" : item.flagship ? "Flagship" : "Non-flagship",
+            period,
             prior: f.revPrior,
+            actual: f.revActual,
             base: f.revBase,
             g1: growth(f.revBase, f.revPrior),
             vol: f.vol,
-            avg: childrenOf(hz.items, item.id).length ? per(f.target, f.vol) : item.avg,
+            avg: per(f.target, f.vol),
             target: f.target,
             g2: growth(f.target, f.revBase),
-            hnB: f.hnBase,
-            perB: per(f.revBase, f.hnBase),
             hnP: f.hnPrior,
+            hnA: f.hnActual,
+            hnB: f.hnBase,
+            gHn: growth(f.hnBase, f.hnPrior),
+            perB: per(f.revBase, f.hnBase),
             perP: per(f.revPrior, f.hnPrior),
           });
           levels.push(depth + 1);
@@ -318,16 +319,20 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
               { header: "No.", key: "no", width: 6 },
               { header: "Key product", key: "name", width: 40 },
               { header: "Type", key: "type", width: 16 },
-              { header: `Rev ${P}`, key: "prior", width: 15, numFmt: money },
-              { header: `Rev ${B}`, key: "base", width: 15, numFmt: money },
-              { header: `Growth ${B}`, key: "g1", width: 10, numFmt: pc },
+              { header: `Rev baseline ${P}`, key: "prior", width: 16, numFmt: money },
+              { header: `Rev actual ${B}`, key: "actual", width: 16, numFmt: money },
+              { header: "Actual covers", key: "period", width: 15 },
+              { header: `Rev forecast ${B}`, key: "base", width: 16, numFmt: money },
+              { header: `Growth ${B}F`, key: "g1", width: 10, numFmt: pc },
               { header: `Cases ${year}`, key: "vol", width: 10, numFmt: money },
               { header: "Avg rev / case", key: "avg", width: 14, numFmt: money },
               { header: `Target ${year}`, key: "target", width: 15, numFmt: money },
               { header: `Growth ${year}`, key: "g2", width: 10, numFmt: pc },
-              { header: `HN ${B}`, key: "hnB", width: 10, numFmt: money },
-              { header: `Rev / HN ${B}`, key: "perB", width: 14, numFmt: money },
-              { header: `HN ${P}`, key: "hnP", width: 10, numFmt: money },
+              { header: `HN baseline ${P}`, key: "hnP", width: 12, numFmt: money },
+              { header: `HN actual ${B}`, key: "hnA", width: 12, numFmt: money },
+              { header: `HN forecast ${B}`, key: "hnB", width: 12, numFmt: money },
+              { header: `HN growth ${B}F`, key: "gHn", width: 10, numFmt: pc },
+              { header: `Rev / HN ${B}F`, key: "perB", width: 14, numFmt: money },
               { header: `Rev / HN ${P}`, key: "perP", width: 14, numFmt: money },
             ],
             rows,
@@ -509,6 +514,8 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
               units={units}
               objectives={okr[unit.name] || []}
               onOpenOkr={onOtherTab}
+              view={view}
+              setView={saveView}
             />
           )}
         </section>
@@ -626,6 +633,8 @@ function UnitEbo({
   onPickUnit,
   objectives,
   onOpenOkr,
+  view,
+  setView,
 }: {
   unit: Unit;
   year: number;
@@ -639,6 +648,8 @@ function UnitEbo({
   onPickUnit: (n: string) => void;
   objectives: Objective[];
   onOpenOkr: () => void;
+  view: GridView;
+  setView: (v: GridView) => void;
 }) {
   const P = year - 2;
   const B = year - 1;
@@ -659,7 +670,6 @@ function UnitEbo({
   })();
   const alloc = siteAllocation(data, fallback);
 
-  const setH = (h: HorizonId, f: (hz: EboHorizon) => EboHorizon) => update((d) => ({ ...d, horizons: { ...d.horizons, [h]: f(d.horizons[h]) } }));
 
   return (
     <div className="space-y-4 p-4 md:p-5">
@@ -810,22 +820,150 @@ function UnitEbo({
 
       <HorizonChart unit={unit.name} year={year} data={data} hf={hf} target={tgt} total={total.target} canEdit={canEdit} onMilestone={(v) => update((d) => ({ ...d, milestone: v || undefined }))} />
 
-      {HORIZON_IDS.map((h) => (
-        <HorizonTable
-          key={h}
-          h={h}
-          hz={data.horizons[h]}
-          f={hf[h]}
-          year={year}
-          target={tgt}
-          sites={sites}
-          fallback={fallback}
-          canEdit={canEdit}
-          setH={(f) => setH(h, f)}
-          objectives={objectives.filter((o) => o.horizon === h)}
-          onOpenOkr={onOpenOkr}
-        />
-      ))}
+      <KeyProductsBar year={year} data={data} view={view} setView={setView} canEdit={canEdit} update={update} sites={sites} fallback={fallback} />
+      {view.mode === "table" ? (
+        <div className="overflow-hidden rounded-xl border border-slate-200/80">
+          <EboGrid year={year} data={data} horizons={HORIZON_IDS} withHorizon view={view} setView={setView} sites={sites} fallback={fallback} canEdit={canEdit} update={update} />
+        </div>
+      ) : (
+        HORIZON_IDS.map((h) => (
+          <HorizonTable
+            key={h}
+            h={h}
+            data={data}
+            f={hf[h]}
+            year={year}
+            target={tgt}
+            sites={sites}
+            fallback={fallback}
+            canEdit={canEdit}
+            update={update}
+            view={view}
+            setView={setView}
+            objectives={objectives.filter((o) => o.horizon === h)}
+            onOpenOkr={onOpenOkr}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+/** Above the key-product tables: one table or one per horizon, what "actual" covers, and what's shown. */
+function KeyProductsBar({
+  year,
+  data,
+  view,
+  setView,
+  canEdit,
+  update,
+  sites,
+  fallback,
+}: {
+  year: number;
+  data: EboPlanData;
+  view: GridView;
+  setView: (v: GridView) => void;
+  canEdit: boolean;
+  update: (f: (d: EboPlanData) => EboPlanData) => void;
+  sites: string[];
+  fallback: Record<string, number>;
+}) {
+  const B = year - 1;
+  const p = periodOf(data, B);
+  // Lines with an actual but no full-year forecast yet.
+  const blanks = HORIZON_IDS.flatMap((h) => data.horizons[h].items.filter((i) => !childrenOf(data.horizons[h].items, i.id).length)).filter(
+    (i) => (i.revBase === null && i.revActual != null) || (i.hnBase === null && i.hnActual != null)
+  ).length;
+  const chip = (on: boolean, label: string, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={clsx("flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-medium ring-1 transition", on ? "bg-blue-50 text-blue-700 ring-blue-200" : "bg-white text-slate-500 ring-slate-200 hover:text-slate-800")}
+    >
+      <span className={clsx("h-2 w-2 rounded-full", on ? "bg-blue-600" : "bg-slate-300")} />
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-2">
+      <span className="mr-1 text-[14px] font-semibold text-slate-900">Key products</span>
+      <div className="flex rounded-lg bg-slate-100 p-0.5 text-[12.5px]" role="radiogroup" aria-label="Layout">
+        {(
+          [
+            ["horizon", "By horizon"],
+            ["table", "One table"],
+          ] as const
+        ).map(([m, label]) => (
+          <button key={m} type="button" role="radio" aria-checked={view.mode === m} onClick={() => setView({ ...view, mode: m })} className={clsx("rounded-md px-2.5 py-1 font-medium", view.mode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <label className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12.5px] text-slate-600" title={`How much of ${B} the actual columns cover`}>
+        Actual {B} covers
+        <select
+          value={p.unit === "months" ? String(p.n) : "days"}
+          disabled={!canEdit}
+          onChange={(e) => update((d) => ({ ...d, actualPeriod: e.target.value === "days" ? { unit: "days", n: p.unit === "days" ? p.n : Math.round(p.n * 30.4) } : { unit: "months", n: Number(e.target.value) } }))}
+          className="bg-transparent font-medium text-slate-900 outline-none"
+          aria-label={`Actual ${B} covers`}
+        >
+          {Array.from({ length: 12 }, (_, i) => (
+            <option key={i + 1} value={i + 1}>
+              {periodLabel({ unit: "months", n: i + 1 })}
+            </option>
+          ))}
+          <option value="days">Days…</option>
+        </select>
+        {p.unit === "days" && (
+          <>
+            <NumInput value={p.n} disabled={!canEdit} onChange={(v) => v && update((d) => ({ ...d, actualPeriod: { unit: "days", n: Math.max(1, Math.min(366, Math.round(v))) } }))} className="h-6 w-14 rounded border border-slate-200 px-1 text-right tabular-nums" />
+            days
+          </>
+        )}
+      </label>
+      {chip(view.revActual, `Actual ${B} · revenue`, () => setView({ ...view, revActual: !view.revActual }))}
+      {chip(view.hnActual, `Actual ${B} · HN`, () => setView({ ...view, hnActual: !view.hnActual }))}
+      {chip(view.split, "Hospital split", () => setView({ ...view, split: !view.split }))}
+      <span className="ml-auto flex items-center gap-1.5">
+        {canEdit && blanks > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              update((d) => {
+                for (const h of HORIZON_IDS)
+                  for (const i of d.horizons[h].items) {
+                    if (childrenOf(d.horizons[h].items, i.id).length) continue;
+                    if (i.revBase === null && i.revActual != null) i.revBase = Math.round(runRate(i.revActual, p, B) ?? 0);
+                    if (i.hnBase === null && i.hnActual != null) i.hnBase = Math.round(runRate(i.hnActual, p, B) ?? 0);
+                  }
+                return d;
+              });
+              toast(`Filled ${blanks} forecast${blanks === 1 ? "" : "s"} from the actual so far`, { body: `${periodLabel(p)} scaled to the full year.` });
+            }}
+            className="h-8 rounded-lg border border-slate-200 px-2.5 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
+            title="Blank full-year forecasts get the actual so far, scaled to 12 months"
+          >
+            Fill {blanks} forecast{blanks === 1 ? "" : "s"} from actual
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() =>
+            void navigator.clipboard
+              .writeText(gridTsv(data, year, view, sites, fallback))
+              .then(() => toast("Table copied", { body: "Paste it into Excel or Google Sheets." }))
+              .catch(() => toast.error("Couldn't copy"))
+          }
+          className="h-8 rounded-lg border border-slate-200 px-2.5 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
+          title="Copy every key product as a table, to paste into Excel"
+        >
+          Copy table
+        </button>
+      </span>
+      {canEdit && <p className="w-full text-[11.5px] text-slate-400">Tip: paste cells copied from Excel into any cell — a row, a column or a whole block. Rows past the end become new key products. Enter / ↑ / ↓ move between rows.</p>}
     </div>
   );
 }
@@ -912,8 +1050,9 @@ function DiffTable({ year, products, byHorizon, forecast }: { year: number; prod
  */
 export function EboReadOnly({ year, data, target, objectives, canEdit, onEdit }: { year: number; data: EboPlanData | null; target: number | null; objectives: Objective[]; canEdit: boolean; onEdit: () => void }) {
   const [closed, setClosed] = useState<Set<HorizonId>>(() => new Set());
-  const P = year - 2;
-  const B = year - 1;
+  // Same columns as the EBO tab (the person's own choice there), without the hospital split.
+  const [viewPref, saveView] = usePersonalPref<GridView>("eboGridView", "ebo:gridView");
+  const view: GridView = { ...DEFAULT_VIEW, ...(viewPref || {}), split: false };
   const has = !!data && HORIZON_IDS.some((h) => data.horizons[h].items.length);
   if (!data || !has)
     return (
@@ -932,7 +1071,6 @@ export function EboReadOnly({ year, data, target, objectives, canEdit, onEdit }:
         const f = horizonFigures(hz);
         const open = !closed.has(h);
         const objs = objectives.filter((o) => o.horizon === h);
-        const rows = numbered(hz.items);
         return (
           <div key={h} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white">
             <button
@@ -971,79 +1109,8 @@ export function EboReadOnly({ year, data, target, objectives, canEdit, onEdit }:
               </span>
             </button>
             <div className={clsx("grid transition-[grid-template-rows] duration-300 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
-              <div className="min-h-0 overflow-hidden">
-                <div className="overflow-x-auto border-t border-slate-100">
-                  <table className="w-full min-w-[740px] border-separate border-spacing-0 text-[12px]">
-                    <thead>
-                      <tr>
-                        <th className={clsx(th, "min-w-[170px] text-left")}>Key product</th>
-                        <th className={clsx(th, "text-left")}>Type</th>
-                        <th className={th}>Y{P} (THB)</th>
-                        <th className={th}>Y{B} (THB)</th>
-                        <th className={th}>%Growth</th>
-                        <th className={th}>Cases</th>
-                        <th className={th}>Avg / case</th>
-                        <th className={th} style={{ background: `color-mix(in srgb, ${meta.color} 10%, white)` }}>
-                          Target Y{year} (THB)
-                        </th>
-                        <th className={th}>%Growth</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.length === 0 && (
-                        <tr>
-                          <td colSpan={9} className="px-3 py-3 text-center text-[12.5px] text-slate-400">
-                            No {h} key products.
-                          </td>
-                        </tr>
-                      )}
-                      {rows.map(({ item, no, depth }) => {
-                        const fig = itemFigures(hz.items, item);
-                        const g1 = growth(fig.revBase, fig.revPrior);
-                        const g2 = growth(fig.target, fig.revBase);
-                        return (
-                          <tr key={item.id} className={clsx(depth === 0 && childrenOf(hz.items, item.id).length > 0 && "bg-slate-50/60")}>
-                            <td className="border-b border-slate-100 px-2 py-1.5">
-                              <span className="flex items-center gap-1" style={{ paddingLeft: depth * 18 }}>
-                                {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />}
-                                <span className="w-7 shrink-0 text-[11.5px] tabular-nums text-slate-400">{no}</span>
-                                <span className={clsx("text-slate-900", !depth && "font-medium")}>{item.name || <span className="text-slate-400">Untitled</span>}</span>
-                              </span>
-                            </td>
-                            <td className="border-b border-slate-100 px-2 py-1.5">
-                              {depth === 0 && (
-                                <span className={clsx("whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px] font-medium ring-1", item.flagship ? meta.tone : "bg-slate-50 text-slate-500 ring-slate-200")}>
-                                  {item.flagship ? "Flagship" : "Non-flagship"}
-                                </span>
-                              )}
-                            </td>
-                            <td className={clsx(td, "px-2 py-1.5 text-slate-600")}>{thb(fig.revPrior)}</td>
-                            <td className={clsx(td, "px-2 py-1.5 text-slate-700")}>{thb(fig.revBase)}</td>
-                            <td className={clsx(td, "px-2 text-[12px]", g1 === null ? "text-slate-300" : g1 >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(g1)}</td>
-                            <td className={clsx(td, "px-2 text-slate-600")}>{fig.vol === null ? "—" : thb(fig.vol)}</td>
-                            <td className={clsx(td, "px-2 text-slate-600")}>{thb(per(fig.target, fig.vol))}</td>
-                            <td className={clsx(td, "px-2 font-medium text-slate-900")}>{thb(fig.target)}</td>
-                            <td className={clsx(td, "px-2 text-[12px]", g2 === null ? "text-slate-300" : g2 >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(g2)}</td>
-                          </tr>
-                        );
-                      })}
-                      {rows.length > 0 && (
-                        <tr className="font-semibold">
-                          <td className="px-2 py-1.5 text-slate-900" colSpan={2}>
-                            {h} total
-                          </td>
-                          <td className={clsx(td, "border-b-0 px-2 py-1.5 text-slate-700")}>{thb(f.revPrior)}</td>
-                          <td className={clsx(td, "border-b-0 px-2 py-1.5 text-slate-800")}>{thb(f.revBase)}</td>
-                          <td className={clsx(td, "border-b-0 px-2 text-[12px]", (growth(f.revBase, f.revPrior) ?? 0) >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(growth(f.revBase, f.revPrior))}</td>
-                          <td className={clsx(td, "border-b-0 px-2 text-slate-700")}>{f.vol === null ? "—" : thb(f.vol)}</td>
-                          <td className={clsx(td, "border-b-0 px-2 text-slate-700")}>{thb(per(f.target, f.vol))}</td>
-                          <td className={clsx(td, "border-b-0 px-2 text-slate-900")}>{thb(f.target)}</td>
-                          <td className={clsx(td, "border-b-0 px-2 text-[12px]", (growth(f.target, f.revBase) ?? 0) >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(growth(f.target, f.revBase))}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="min-h-0 overflow-hidden border-t border-slate-100">
+                <EboGrid year={year} data={data} horizons={[h]} withHorizon={false} view={view} setView={saveView} sites={[]} fallback={{}} canEdit={false} />
                 {objs.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2 text-[12px] text-slate-500">
                     <Flag className="h-3.5 w-3.5 text-slate-400" /> OKR for {h}:
@@ -1084,10 +1151,12 @@ function growthText(f: Figures) {
   return f.target ? "New business" : "No target yet";
 }
 
+// Three S-curves, each starting above the one before and never crossing it:
+// H1 rises and levels off low, H2 starts above H1 and levels off higher, H3 above H2.
 const CURVES: Record<HorizonId, string> = {
-  H1: "M44 486 C 90 400, 200 365, 420 352 S 860 362, 980 384",
-  H2: "M175 420 C 200 300, 260 262, 420 250 S 820 226, 980 232",
-  H3: "M400 250 C 420 195, 470 160, 600 150 S 860 138, 975 140",
+  H1: "M44 566 C 110 505, 230 476, 470 470 S 860 474, 985 486",
+  H2: "M215 440 C 255 360, 335 326, 530 314 S 860 300, 985 296",
+  H3: "M480 282 C 520 215, 600 185, 730 176 S 900 166, 985 162",
 };
 
 function HorizonChart({
@@ -1112,37 +1181,41 @@ function HorizonChart({
   const block = (h: HorizonId, style: React.CSSProperties) => {
     const hz = data.horizons[h];
     const names = productNames(hz);
+    // At most four names (flagship first), one line each, so the text stays clear of the curves.
+    const fl = names.flagship.slice(0, 4);
+    const ot = names.other.slice(0, 4 - fl.length);
+    const more = names.flagship.length + names.other.length - fl.length - ot.length;
     const list = (xs: string[]) => (
       <ul className="leading-snug">
-        {xs.slice(0, 4).map((n) => (
-          <li key={n} className="line-clamp-2 break-words">
+        {xs.map((n) => (
+          <li key={n} className="truncate" title={n}>
             - {n}
           </li>
         ))}
-        {xs.length > 4 && <li className="text-slate-400">+{xs.length - 4} more</li>}
       </ul>
     );
     return (
       <div className="absolute text-[11.5px] text-slate-700" style={style}>
-        <p className="text-[13px] font-semibold" style={{ color: HORIZON_META[h].color }}>
+        <p className="truncate text-[13px] font-semibold" style={{ color: HORIZON_META[h].color }}>
           {hz.title || HORIZON_META[h].title}
         </p>
-        {names.flagship.length > 0 && (
+        {fl.length > 0 && (
           <>
             <p className="font-semibold" style={{ color: HORIZON_META[h].color }}>
               Flagship
             </p>
-            {list(names.flagship)}
+            {list(fl)}
           </>
         )}
-        {names.other.length > 0 && (
+        {ot.length > 0 && (
           <>
             <p className="font-semibold" style={{ color: HORIZON_META[h].color }}>
               Non-flagship
             </p>
-            {list(names.other)}
+            {list(ot)}
           </>
         )}
+        {more > 0 && <p className="text-slate-400">+{more} more</p>}
         {!names.flagship.length && !names.other.length && <p className="text-slate-400">No key products yet</p>}
       </div>
     );
@@ -1175,21 +1248,22 @@ function HorizonChart({
         </label>
       </div>
       <div className="overflow-x-auto">
-        <div className="relative min-w-[860px]" style={{ aspectRatio: "1000 / 520" }}>
-          <svg viewBox="0 0 1000 520" className="absolute inset-0 h-full w-full" aria-hidden>
-            <path d="M40 8 V490 H992" fill="none" stroke="var(--color-slate-300)" strokeWidth={2} />
+        <div className="relative min-w-[860px]" style={{ aspectRatio: "1000 / 600" }}>
+          <svg viewBox="0 0 1000 600" className="absolute inset-0 h-full w-full" aria-hidden>
+            <path d="M40 8 V570 H992" fill="none" stroke="var(--color-slate-300)" strokeWidth={2} />
             {HORIZON_IDS.map((h, i) => (
               <path key={h} d={CURVES[h]} pathLength={1} fill="none" stroke={HORIZON_META[h].color} strokeWidth={4} strokeLinecap="round" className={clsx("ebo-curve", i === 1 && "ebo-curve-2", i === 2 && "ebo-curve-3")} />
             ))}
           </svg>
           <span className="absolute left-[4.6%] top-0 text-[11px] text-slate-400">Revenue / HN</span>
           {data.milestone && <div className="absolute right-[1%] top-[1%] max-w-[24%] rounded-md bg-blue-700 px-2.5 py-1 text-[11.5px] font-medium text-white">Milestone: {data.milestone}</div>}
-          {block("H3", { left: "44%", top: "1%", width: "30%" })}
-          {stats("H3", { left: "66%", top: "30%", width: "30%" })}
-          {block("H2", { left: "19%", top: "18%", width: "24%" })}
-          {stats("H2", { left: "31%", top: "53%", width: "34%" })}
-          {block("H1", { left: "5%", top: "36%", width: "13.5%" })}
-          {stats("H1", { left: "22%", top: "77%", width: "40%" })}
+          {/* Text sits in the open space between the curves, never on them. */}
+          {block("H3", { left: "48%", top: "1%", width: "26%" })}
+          {stats("H3", { left: "68%", top: "33%", width: "30%" })}
+          {block("H2", { left: "21%", top: "14%", width: "25%" })}
+          {stats("H2", { left: "55%", top: "57%", width: "40%" })}
+          {block("H1", { left: "5%", top: "42%", width: "15%" })}
+          {stats("H1", { left: "49%", top: "84%", width: "48%" })}
           <span className="absolute bottom-0 right-[1%] text-[11px] text-slate-400">Time</span>
         </div>
       </div>
@@ -1207,95 +1281,47 @@ function HorizonChart({
 
 // ---- one horizon's key products -----------------------------------------------------------------
 
-const th = "border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-right text-[11px] font-medium text-slate-500 whitespace-nowrap";
-const td = "border-b border-slate-100 px-1 py-0.5 text-right tabular-nums";
-const numCls =
-  "h-7 w-full min-w-[86px] rounded-md border border-transparent bg-transparent px-1.5 text-right text-[12.5px] tabular-nums text-slate-800 outline-none transition hover:border-slate-200 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 read-only:hover:border-transparent placeholder:text-slate-300";
-
 function HorizonTable({
   h,
-  hz,
+  data,
   f,
   year,
   target,
   sites,
   fallback,
   canEdit,
-  setH,
+  update,
+  view,
+  setView,
   objectives,
   onOpenOkr,
 }: {
   h: HorizonId;
-  hz: EboHorizon;
+  data: EboPlanData;
   f: Figures;
   year: number;
   target: number | null;
   sites: string[];
   fallback: Record<string, number>;
   canEdit: boolean;
-  setH: (f: (hz: EboHorizon) => EboHorizon) => void;
+  update: (f: (d: EboPlanData) => EboPlanData) => void;
+  view: GridView;
+  setView: (v: GridView) => void;
   objectives: Objective[];
   onOpenOkr: () => void;
 }) {
-  const P = year - 2;
-  const B = year - 1;
   const meta = HORIZON_META[h];
+  const hz = data.horizons[h];
   const ro = !canEdit;
-  const setItem = (id: string, p: Partial<EboItem>) => setH((x) => ({ ...x, items: x.items.map((i) => (i.id === id ? { ...i, ...p } : i)) }));
-  const addItem = (parentId?: string) =>
-    setH((x) => {
-      const it = blankItem(parentId);
-      if (!parentId) return { ...x, items: [...x.items, it] };
-      // Sub-items go right after their parent's last sub-item.
-      const kids = childrenOf(x.items, parentId);
-      const after = kids.length ? kids[kids.length - 1].id : parentId;
-      const at = x.items.findIndex((i) => i.id === after) + 1;
-      return { ...x, items: [...x.items.slice(0, at), it, ...x.items.slice(at)] };
-    });
-  const removeItem = async (it: EboItem) => {
-    const kids = childrenOf(hz.items, it.id);
-    if (kids.length || it.name || lineTarget(it) !== null) {
-      const ok = await confirmDialog({
-        title: `Remove ${it.name || "this line"}?`,
-        body: kids.length ? `Its ${kids.length} sub-item${kids.length > 1 ? "s go" : " goes"} too. You can restore it from the Activity log.` : "You can restore it from the Activity log.",
-        confirmLabel: "Remove",
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    setH((x) => ({ ...x, items: x.items.filter((i) => i.id !== it.id && i.parentId !== it.id) }));
-  };
-  /** Move a line (with its sub-items) one place up or down among its siblings. */
-  const move = (it: EboItem, dir: -1 | 1) =>
-    setH((x) => {
-      const sibs = x.items.filter((i) => (i.parentId || null) === (it.parentId || null));
-      const k = sibs.findIndex((i) => i.id === it.id);
-      const other = sibs[k + dir];
-      if (!other) return x;
-      const block = (id: string) => x.items.filter((i) => i.id === id || i.parentId === id);
-      const order = it.parentId ? null : topItems(x.items);
-      if (order) {
-        const tops = [...order];
-        [tops[k], tops[k + dir]] = [tops[k + dir], tops[k]];
-        return { ...x, items: tops.flatMap((tp) => block(tp.id)) };
-      }
-      const items = [...x.items];
-      const a = items.findIndex((i) => i.id === it.id);
-      const b = items.findIndex((i) => i.id === other.id);
-      [items[a], items[b]] = [items[b], items[a]];
-      return { ...x, items };
-    });
-
-  const rows = numbered(hz.items);
-  const cols = 15 + sites.length;
+  const setH = (p: Partial<EboHorizon>) => update((d) => ({ ...d, horizons: { ...d.horizons, [h]: { ...d.horizons[h], ...p } } }));
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200/80">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200/80 px-4 py-3" style={{ background: `color-mix(in srgb, ${meta.color} 6%, transparent)` }}>
         <span className={clsx("rounded-md px-2 py-0.5 text-[12px] font-bold ring-1", meta.tone)}>{h}</span>
-        <TextInput value={hz.title} disabled={ro} onChange={(v) => setH((x) => ({ ...x, title: v }))} placeholder={meta.title} className="h-8 w-48 rounded-md border border-transparent bg-transparent px-1.5 text-[14px] font-semibold text-slate-900 hover:border-slate-200 focus:border-blue-400 focus:bg-white" />
+        <TextInput value={hz.title} disabled={ro} onChange={(v) => setH({ title: v })} placeholder={meta.title} className="h-8 w-48 rounded-md border border-transparent bg-transparent px-1.5 text-[14px] font-semibold text-slate-900 hover:border-slate-200 focus:border-blue-400 focus:bg-white" />
         <label className="flex min-w-[220px] flex-1 items-center gap-1.5 text-[12px] text-slate-500">
           Focus
-          <TextInput value={hz.focus} disabled={ro} onChange={(v) => setH((x) => ({ ...x, focus: v }))} placeholder={meta.focus} className="h-8 w-full rounded-md border border-transparent bg-transparent px-1.5 text-[12.5px] text-blue-700 hover:border-slate-200 focus:border-blue-400 focus:bg-white" />
+          <TextInput value={hz.focus} disabled={ro} onChange={(v) => setH({ focus: v })} placeholder={meta.focus} className="h-8 w-full rounded-md border border-transparent bg-transparent px-1.5 text-[12.5px] text-blue-700 hover:border-slate-200 focus:border-blue-400 focus:bg-white" />
         </label>
         <div className="flex items-baseline gap-4 text-[12px] text-slate-500">
           <span>
@@ -1320,206 +1346,14 @@ function HorizonTable({
             : "Add OKR"}
         </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-separate border-spacing-0 text-[12.5px]">
-          <thead>
-            <tr>
-              <th rowSpan={2} className={clsx(th, "sticky left-0 z-10 min-w-[260px] text-left")}>
-                Key product
-              </th>
-              <th rowSpan={2} className={clsx(th, "text-left")}>
-                Type
-              </th>
-              <th className={th}>Y{P}</th>
-              <th className={th}>Y{B}</th>
-              <th className={th} />
-              <th colSpan={4} className={clsx(th, "text-center")} style={{ background: `color-mix(in srgb, ${meta.color} 10%, white)` }}>
-                Target Y{year}
-              </th>
-              <th colSpan={2} className={clsx(th, "text-center")}>
-                Y{B}
-              </th>
-              <th colSpan={2} className={clsx(th, "text-center")}>
-                Y{P}
-              </th>
-              {sites.length > 0 && (
-                <th colSpan={sites.length} className={clsx(th, "text-center")}>
-                  Hospital split %
-                </th>
-              )}
-              <th rowSpan={2} className={th} />
-            </tr>
-            <tr>
-              <th className={th}>Rev (THB)</th>
-              <th className={th}>Rev (THB)</th>
-              <th className={th}>%Growth</th>
-              <th className={th}>Cases</th>
-              <th className={th}>Avg rev / case</th>
-              <th className={th}>Total rev</th>
-              <th className={th}>%Growth</th>
-              <th className={th}>HN</th>
-              <th className={th}>Avg rev / HN</th>
-              <th className={th}>HN</th>
-              <th className={th}>Avg rev / HN</th>
-              {sites.map((s) => (
-                <th key={s} className={th}>
-                  {siteLabel(s)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ item, no, depth }) => {
-              const kids = childrenOf(hz.items, item.id);
-              const parent = kids.length > 0;
-              const fig = itemFigures(hz.items, item);
-              const g1 = growth(fig.revBase, fig.revPrior);
-              const g2 = growth(fig.target, fig.revBase);
-              const sum = (v: number | null) => <span className="block px-1.5 py-1 font-medium text-slate-700">{v === null ? "—" : thb(v)}</span>;
-              return (
-                <tr key={item.id} className={clsx("group", parent && "bg-slate-50/60")}>
-                  <td className="sticky left-0 z-[1] border-b border-slate-100 bg-white px-2 py-0.5 group-hover:bg-slate-50" style={parent ? { background: "var(--color-slate-50)" } : undefined}>
-                    <div className="flex items-center gap-1" style={{ paddingLeft: depth * 18 }}>
-                      {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />}
-                      <span className="w-7 shrink-0 text-[11.5px] tabular-nums text-slate-400">{no}</span>
-                      <TextInput
-                        value={item.name}
-                        disabled={ro}
-                        placeholder={depth ? "Sub-item" : "Key product"}
-                        onChange={(v) => setItem(item.id, { name: v })}
-                        className={clsx("h-7 w-full min-w-[160px] rounded-md border border-transparent bg-transparent px-1.5 text-[12.5px] text-slate-900 hover:border-slate-200 focus:border-blue-400 focus:bg-white", !depth && "font-medium")}
-                      />
-                    </div>
-                  </td>
-                  <td className="border-b border-slate-100 px-1 py-0.5">
-                    {depth === 0 && (
-                      <button
-                        type="button"
-                        disabled={ro}
-                        onClick={() => setItem(item.id, { flagship: !item.flagship })}
-                        className={clsx(
-                          "whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 transition",
-                          item.flagship ? meta.tone : "bg-slate-50 text-slate-500 ring-slate-200",
-                          !ro && "hover:brightness-95"
-                        )}
-                        title={ro ? undefined : "Switch flagship / non-flagship"}
-                      >
-                        {item.flagship ? "Flagship" : "Non-flagship"}
-                      </button>
-                    )}
-                  </td>
-                  <td className={td}>{parent ? sum(fig.revPrior) : <NumInput value={item.revPrior} disabled={ro} onChange={(v) => setItem(item.id, { revPrior: v })} className={numCls} />}</td>
-                  <td className={td}>{parent ? sum(fig.revBase) : <NumInput value={item.revBase} disabled={ro} onChange={(v) => setItem(item.id, { revBase: v })} className={numCls} />}</td>
-                  <td className={clsx(td, "px-2 text-[12px]", g1 === null ? "text-slate-300" : g1 >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(g1)}</td>
-                  <td className={td}>{parent ? sum(fig.vol) : <NumInput value={item.vol} disabled={ro} onChange={(v) => setItem(item.id, { vol: v })} className={numCls} />}</td>
-                  <td className={td}>
-                    {parent ? (
-                      sum(per(fig.target, fig.vol))
-                    ) : (
-                      <NumInput value={item.revTarget !== null && item.revTarget !== undefined ? per(item.revTarget, item.vol) : item.avg} disabled={ro} onChange={(v) => setItem(item.id, { avg: v, revTarget: null })} className={numCls} />
-                    )}
-                  </td>
-                  <td className={td}>
-                    {parent ? (
-                      sum(fig.target)
-                    ) : (
-                      <NumInput
-                        value={lineTarget(item)}
-                        disabled={ro}
-                        onChange={(v) =>
-                          // Typing the total: with cases set, it becomes the average per case; otherwise it's kept as typed.
-                          setItem(item.id, v !== null && item.vol ? { avg: v / item.vol, revTarget: null } : { revTarget: v })
-                        }
-                        className={clsx(numCls, "font-medium")}
-                      />
-                    )}
-                  </td>
-                  <td className={clsx(td, "px-2 text-[12px]", g2 === null ? "text-slate-300" : g2 >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(g2)}</td>
-                  <td className={td}>{parent ? sum(fig.hnBase) : <NumInput value={item.hnBase} disabled={ro} onChange={(v) => setItem(item.id, { hnBase: v })} className={numCls} />}</td>
-                  <td className={clsx(td, "px-2 text-slate-600")}>{thb(per(fig.revBase, fig.hnBase))}</td>
-                  <td className={td}>{parent ? sum(fig.hnPrior) : <NumInput value={item.hnPrior} disabled={ro} onChange={(v) => setItem(item.id, { hnPrior: v })} className={numCls} />}</td>
-                  <td className={clsx(td, "px-2 text-slate-600")}>{thb(per(fig.revPrior, fig.hnPrior))}</td>
-                  {sites.map((s) => {
-                    const own = item.split[s];
-                    const inherited = Object.keys(item.split).length === 0;
-                    const shown = inherited ? null : own ?? 0;
-                    // Blank = follows the parent line, or the CoE's split in the Target plan (shown faintly).
-                    const ph = inherited ? (item.parentId ? "—" : `${Math.round((fallback[s] || 0) * 100)}`) : "0";
-                    return (
-                      <td key={s} className={td}>
-                        <NumInput
-                          value={shown}
-                          disabled={ro}
-                          placeholder={ph}
-                          decimals={1}
-                          onChange={(v) => {
-                            const next = { ...item.split };
-                            if (v === null) delete next[s];
-                            else next[s] = v;
-                            setItem(item.id, { split: next });
-                          }}
-                          className={clsx(numCls, "min-w-[56px]")}
-                        />
-                      </td>
-                    );
-                  })}
-                  <td className="border-b border-slate-100 px-1 py-0.5">
-                    {!ro && (
-                      <div className="flex items-center justify-end gap-0.5 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-                        {depth === 0 && (
-                          <IconBtn label="Add a sub-item" onClick={() => addItem(item.id)}>
-                            <Plus className="h-3.5 w-3.5" />
-                          </IconBtn>
-                        )}
-                        <IconBtn label="Move up" onClick={() => move(item, -1)}>
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </IconBtn>
-                        <IconBtn label="Move down" onClick={() => move(item, 1)}>
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </IconBtn>
-                        <IconBtn label="Remove" danger onClick={() => void removeItem(item)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </IconBtn>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={cols} className="px-4 py-6 text-center text-[12.5px] text-slate-400">
-                  No key products in {h} yet.
-                </td>
-              </tr>
-            )}
-            {rows.length > 0 && (
-              <tr className="font-semibold">
-                <td className="sticky left-0 z-[1] border-t border-slate-200 bg-white px-2 py-1.5 text-[12.5px] text-slate-900">Total {h}</td>
-                <td className="border-t border-slate-200" />
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(f.revPrior)}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(f.revBase)}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2 text-[12px]")}>{pct(growth(f.revBase, f.revPrior))}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(f.vol)}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(per(f.target, f.vol))}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(f.target)}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2 text-[12px]")}>{pct(growth(f.target, f.revBase))}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(f.hnBase)}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(per(f.revBase, f.hnBase))}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(f.hnPrior)}</td>
-                <td className={clsx(td, "border-t border-slate-200 px-2")}>{thb(per(f.revPrior, f.hnPrior))}</td>
-                {sites.map((s) => (
-                  <td key={s} className="border-t border-slate-200" />
-                ))}
-                <td className="border-t border-slate-200" />
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <EboGrid year={year} data={data} horizons={[h]} withHorizon={false} view={view} setView={setView} sites={sites} fallback={fallback} canEdit={canEdit} update={update} />
       {!ro && (
         <div className="border-t border-slate-100 px-3 py-2">
-          <button type="button" onClick={() => addItem()} className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium text-blue-700 hover:bg-blue-50">
+          <button
+            type="button"
+            onClick={() => update((d) => ({ ...d, horizons: { ...d.horizons, [h]: { ...d.horizons[h], items: [...d.horizons[h].items, blankItem()] } } }))}
+            className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium text-blue-700 hover:bg-blue-50"
+          >
             <Plus className="h-4 w-4" /> Add key product to {h}
           </button>
         </div>
@@ -1527,103 +1361,3 @@ function HorizonTable({
     </div>
   );
 }
-
-function IconBtn({ label, onClick, danger, children }: { label: string; onClick: () => void; danger?: boolean; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className={clsx("grid h-6 w-6 place-items-center rounded-md text-slate-400", danger ? "hover:bg-rose-50 hover:text-rose-600" : "hover:bg-slate-100 hover:text-slate-800")}
-    >
-      {children}
-    </button>
-  );
-}
-
-// ---- inputs that save on blur -------------------------------------------------------------------
-
-function NumInput({
-  value,
-  onChange,
-  disabled,
-  placeholder,
-  decimals = 0,
-  className,
-}: {
-  value: number | null;
-  onChange: (v: number | null) => void;
-  disabled?: boolean;
-  placeholder?: string;
-  decimals?: number;
-  className?: string;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const cancel = useRef(false);
-  const shown = draft ?? (value === null ? "" : value.toLocaleString("en-US", { maximumFractionDigits: decimals }));
-  return (
-    <input
-      inputMode="decimal"
-      value={shown}
-      readOnly={disabled}
-      placeholder={placeholder}
-      onFocus={(e) => {
-        if (disabled) return;
-        cancel.current = false;
-        setDraft(value === null ? "" : String(Math.round(value * 10 ** Math.max(decimals, 2)) / 10 ** Math.max(decimals, 2)));
-        const el = e.target;
-        requestAnimationFrame(() => el.select());
-      }}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft !== null && !cancel.current) {
-          const v = parseNum(draft);
-          const bad = draft.trim() !== "" && v === null;
-          if (bad) toast.error("That isn't a number", { body: "Type digits, e.g. 1,250,000 or 1.25m" });
-          else if (v !== value) onChange(v);
-        }
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") {
-          cancel.current = true;
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      className={className}
-    />
-  );
-}
-
-function TextInput({ value, onChange, disabled, placeholder, className }: { value: string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string; className?: string }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const cancel = useRef(false);
-  return (
-    <input
-      value={draft ?? value}
-      readOnly={disabled}
-      placeholder={placeholder}
-      onFocus={() => {
-        if (disabled) return;
-        cancel.current = false;
-        setDraft(value);
-      }}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft !== null && !cancel.current && draft.trim() !== value) onChange(draft.trim());
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") {
-          cancel.current = true;
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      className={clsx("outline-none transition", className)}
-    />
-  );
-}
-
