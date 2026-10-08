@@ -1,20 +1,19 @@
 "use client";
 
-// EBO & OKR planning for each CoE / SBU: the business outcomes a unit commits to
-// for the year (EBO), and the objectives and key results that get it there,
-// with the initiatives behind them. Saves automatically; the team sees changes.
+// OKR planning for each CoE / SBU: the objectives and key results for the year,
+// with the initiatives behind them. The unit's EBO (key products by horizon) is
+// shown exactly as set on the EBO tab. Saves automatically; the team sees changes.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleDot, Download, Flag, LayoutGrid, Loader2, Plus, Rocket, Search, Target, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleDot, Download, Flag, LayoutGrid, Loader2, Plus, Rocket, Search, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
 import { useAccess } from "@/components/auth/LoginGate";
 import { confirmDialog, toast } from "@/components/feedback";
 import { useOrgStructure } from "@/lib/useOrgStructure";
 import { useT } from "@/lib/i18n";
 import { useTargetLink } from "@/lib/useTargetLink";
-import { HORIZON_IDS, HORIZON_META, eboId, horizonFigures, normalizeEbo, planFigures, resolveTarget, type EboPlanData, type EboPlanRow } from "@/lib/ebo";
-import type { TabProps } from "./EboPage";
+import { HORIZON_IDS, HORIZON_META, eboId, horizonFigures, itemFigures, normalizeEbo, numbered, planFigures, resolveTarget, type EboPlanData, type EboPlanRow } from "@/lib/ebo";
+import { EBO_SAVED, EboReadOnly, type TabProps } from "./EboPage";
 import {
-  HORIZONS,
   STATUS,
   emptyPlan,
   krProgress,
@@ -23,7 +22,6 @@ import {
   objectiveProgress,
   okrId,
   planProgress,
-  type Ebo,
   type Horizon,
   type Initiative,
   type KeyResult,
@@ -40,6 +38,9 @@ type Saved = {
 };
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
 
+/** How many key products (top-level lines) a unit's EBO plan has. */
+const eboProducts = (d?: EboPlanData) => (d ? HORIZON_IDS.reduce((a, h) => a + d.horizons[h].items.filter((i) => !i.parentId).length, 0) : 0);
+
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(/,/g, "")));
 const showNum = (v: number | null) => (v === null || v === undefined || Number.isNaN(v) ? "" : String(v));
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -52,21 +53,27 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
   const [site, setSite] = useState<string>("ALL");
   const [query, setQuery] = useState("");
   const link = useTargetLink(year, preferScenario);
-  // Each unit's EBO plan (read-only here), to show its target gap next to the OKRs.
+  // Each unit's EBO plan, shown here exactly as set on the EBO tab (read-only).
   const [ebo, setEbo] = useState<Record<string, EboPlanData>>({});
   useEffect(() => {
     let alive = true;
-    fetch(`/api/ebo?year=${year}`, { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { plans: [] }))
-      .then((j: { plans: EboPlanRow[] }) => {
-        if (!alive) return;
-        const m: Record<string, EboPlanData> = {};
-        for (const p of j.plans || []) if (p.id === eboId(year, p.unit)) m[p.unit] = normalizeEbo(p.data);
-        setEbo(m);
-      })
-      .catch(() => {});
+    const load = () =>
+      fetch(`/api/ebo?year=${year}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : { plans: [] }))
+        .then((j: { plans: EboPlanRow[] }) => {
+          if (!alive) return;
+          const m: Record<string, EboPlanData> = {};
+          for (const p of j.plans || []) if (p.id === eboId(year, p.unit)) m[p.unit] = normalizeEbo(p.data);
+          setEbo(m);
+        })
+        .catch(() => {});
+    void load();
+    // A save that was still on its way when the EBO tab closed.
+    const onSaved = (e: Event) => (e as CustomEvent<{ year: number }>).detail?.year === year && void load();
+    window.addEventListener(EBO_SAVED, onSaved);
     return () => {
       alive = false;
+      window.removeEventListener(EBO_SAVED, onSaved);
     };
   }, [year]);
   const [plans, setPlans] = useState<Record<string, Saved>>({});
@@ -211,22 +218,30 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
     const ebos: Record<string, string | number | null>[] = [];
     const krs: Record<string, string | number | null>[] = [];
     const inits: Record<string, string | number | null>[] = [];
+    // EBO: the key products set on the EBO tab.
+    for (const u of units) {
+      const e = ebo[u.name];
+      if (!e) continue;
+      for (const h of HORIZON_IDS)
+        for (const { item, no, depth } of numbered(e.horizons[h].items)) {
+          const f = itemFigures(e.horizons[h].items, item);
+          ebos.push({
+            unit: u.name,
+            group: u.group,
+            horizon: h,
+            no,
+            product: `${depth ? "    " : ""}${item.name}`,
+            type: depth ? "" : item.flagship ? "Flagship" : "Non-flagship",
+            prior: f.revPrior,
+            base: f.revBase,
+            target: f.target,
+          });
+        }
+    }
     for (const u of units) {
       const d = plans[keyOf(u.name)]?.data;
       if (!d) continue;
-      for (const e of d.ebos)
-        ebos.push({
-          unit: u.name,
-          group: u.group,
-          horizon: e.horizon || "H1",
-          outcome: e.outcome,
-          measure: e.measure,
-          u: e.unit,
-          baseline: e.baseline,
-          target: e.target,
-          actual: e.actual,
-          owner: e.owner,
-        });
+
       for (const o of d.objectives) {
         for (const k of o.keyResults)
           krs.push({
@@ -265,28 +280,12 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
               { header: "CoE / SBU", key: "unit", width: 26 },
               { header: "Group", key: "group", width: 14 },
               { header: "Horizon", key: "horizon", width: 10 },
-              { header: "Outcome", key: "outcome", width: 40 },
-              { header: "Measure", key: "measure", width: 26 },
-              { header: "Unit", key: "u", width: 10 },
-              {
-                header: `Baseline ${year - 1}`,
-                key: "baseline",
-                width: 14,
-                numFmt: "#,##0.##",
-              },
-              {
-                header: `Target ${year}`,
-                key: "target",
-                width: 14,
-                numFmt: "#,##0.##",
-              },
-              {
-                header: "Actual",
-                key: "actual",
-                width: 12,
-                numFmt: "#,##0.##",
-              },
-              { header: "Owner", key: "owner", width: 18 },
+              { header: "No.", key: "no", width: 7 },
+              { header: "Key product", key: "product", width: 44 },
+              { header: "Type", key: "type", width: 14 },
+              { header: `Revenue ${year - 2} (THB)`, key: "prior", width: 18, numFmt: "#,##0" },
+              { header: `Revenue ${year - 1} (THB)`, key: "base", width: 18, numFmt: "#,##0" },
+              { header: `Target ${year} (THB)`, key: "target", width: 18, numFmt: "#,##0" },
             ],
             rows: ebos,
           },
@@ -342,7 +341,7 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
   }
 
   const summary = useMemo(() => {
-    const withPlan = units.filter((u) => plans[keyOf(u.name)]?.data.objectives.length || plans[keyOf(u.name)]?.data.ebos.length);
+    const withPlan = units.filter((u) => plans[keyOf(u.name)]?.data.objectives.length || eboProducts(ebo[u.name]) > 0);
     const krs = units.flatMap((u) => plans[keyOf(u.name)]?.data.objectives.flatMap((o) => o.keyResults) || []);
     return {
       withPlan: withPlan.length,
@@ -350,7 +349,7 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
       atRisk: krs.filter((k) => k.status === "at_risk" || k.status === "off_track").length,
       krs: krs.length,
     };
-  }, [units, plans, keyOf]);
+  }, [units, plans, keyOf, ebo]);
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto lg:overflow-hidden">
@@ -450,7 +449,7 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
                   .map((u) => {
                     const d = plans[keyOf(u.name)]?.data;
                     const p = d ? planProgress(d) : 0;
-                    const has = !!(d && (d.objectives.length || d.ebos.length));
+                    const has = !!(d && d.objectives.length) || eboProducts(ebo[u.name]) > 0;
                     return (
                       <button
                         key={u.id}
@@ -482,7 +481,7 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
               <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
             </div>
           ) : !unit ? (
-            <Overview units={units} plans={plans} keyOf={keyOf} onOpen={setUnitName} year={year} />
+            <Overview units={units} plans={plans} ebo={ebo} keyOf={keyOf} onOpen={setUnitName} year={year} />
           ) : (
             <UnitPlan
               key={keyOf(unit.name)}
@@ -501,6 +500,18 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
                   onOpen={onOtherTab}
                 />
               }
+              eboSection={
+                <EboReadOnly
+                  year={year}
+                  data={ebo[unit.name] || null}
+                  target={resolveTarget(link.linked?.numbers[unit.name]?.target, ebo[unit.name]).value}
+                  objectives={current!.data.objectives}
+                  canEdit={can("ebo.edit")}
+                  onEdit={onOtherTab}
+                />
+              }
+              canEditEbo={can("ebo.edit")}
+              onOpenEbo={onOtherTab}
             />
           )}
         </section>
@@ -512,6 +523,7 @@ export function OkrPage({ year, setYear, unitName, setUnitName, tabs, preferScen
 function Overview({
   units,
   plans,
+  ebo,
   keyOf,
   onOpen,
   year,
@@ -524,6 +536,7 @@ function Overview({
     sites: string[];
   }[];
   plans: Record<string, Saved>;
+  ebo: Record<string, EboPlanData>;
   keyOf: (n: string) => string;
   onOpen: (n: string) => void;
   year: number;
@@ -559,8 +572,8 @@ function Overview({
                 <Ring value={p} empty={!krs.length} />
               </div>
               <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-slate-500">
-                <span>
-                  <span className="font-medium text-slate-800">{d?.ebos.length || 0}</span> outcomes
+                <span title="Key products on the EBO tab">
+                  <span className="font-medium text-slate-800">{eboProducts(ebo[u.name])}</span> EBO key products
                 </span>
                 <span>
                   <span className="font-medium text-slate-800">{d?.objectives.length || 0}</span> objectives
@@ -615,11 +628,13 @@ const cell =
 
 function UnitPlan({
   unit,
-  year,
   data,
   canEdit,
   update,
   eboStrip,
+  eboSection,
+  canEditEbo,
+  onOpenEbo,
 }: {
   unit: {
     name: string;
@@ -633,22 +648,13 @@ function UnitPlan({
   canEdit: boolean;
   update: (f: (d: OkrPlanData) => OkrPlanData) => void;
   eboStrip: React.ReactNode;
+  eboSection: React.ReactNode;
+  canEditEbo: boolean;
+  onOpenEbo: () => void;
 }) {
   const ro = !canEdit;
-  // Horizon groups start collapsed.
-  const [openH, setOpenH] = useState<Set<Horizon>>(() => new Set());
-  const toggleH = (h: Horizon) =>
-    setOpenH((prev) => {
-      const n = new Set(prev);
-      if (n.has(h)) n.delete(h);
-      else n.add(h);
-      return n;
-    });
-  const setEbo = (id: string, p: Partial<Ebo>) =>
-    update((d) => ({
-      ...d,
-      ebos: d.ebos.map((e) => (e.id === id ? { ...e, ...p } : e)),
-    }));
+  // Outcomes typed on this tab before it showed the EBO plan (empty rows dropped).
+  const legacy = data.ebos.filter((e) => e.outcome.trim() || e.measure.trim() || e.target !== null || e.baseline !== null);
   const setObj = (id: string, f: (o: Objective) => Objective) =>
     update((d) => ({
       ...d,
@@ -684,162 +690,46 @@ function UnitPlan({
 
       {eboStrip}
 
-      {/* EBO, grouped by horizon */}
+      {/* EBO: the same key products as the EBO tab, read-only here */}
       <section>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
-            <Target className="h-4 w-4 text-blue-600" /> Outcomes — what the unit commits to, by horizon
+            <Rocket className="h-4 w-4 text-blue-600" /> EBO — key products by horizon
+            <span className="text-[12px] font-normal text-slate-400">same as the EBO tab</span>
           </h3>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setOpenH(new Set(HORIZONS.map((h) => h.id)))}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-slate-600 hover:bg-slate-100"
-            >
-              <ChevronsUpDown className="h-3.5 w-3.5" /> Expand all
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpenH(new Set())}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-slate-600 hover:bg-slate-100"
-            >
-              <ChevronsDownUp className="h-3.5 w-3.5" /> Collapse all
-            </button>
+          <button type="button" onClick={onOpenEbo} className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-blue-600 hover:bg-blue-50">
+            {canEditEbo ? "Edit on the EBO tab" : "Open the EBO tab"} <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {eboSection}
+        {legacy.length > 0 && (
+          <div className="mt-3 rounded-xl border border-slate-200/80 bg-white">
+            <p className="border-b border-slate-100 px-3 py-2 text-[12.5px] text-slate-500">Outcomes typed on this tab before it showed the EBO plan</p>
+            <ul className="divide-y divide-slate-100 text-[13px]">
+              {legacy.map((e) => (
+                <li key={e.id} className="group flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2">
+                  <span className={clsx("rounded px-1.5 text-[11px] font-bold ring-1", HORIZON_META[e.horizon || "H1"].tone)}>{e.horizon || "H1"}</span>
+                  <span className="font-medium text-slate-800">{e.outcome || "Untitled"}</span>
+                  {e.measure && <span className="text-slate-500">{e.measure}</span>}
+                  <span className="tabular-nums text-slate-500">
+                    {showNum(e.baseline) || "–"} → {showNum(e.target) || "–"} {e.unit}
+                  </span>
+                  {e.owner && <span className="text-slate-400">{e.owner}</span>}
+                  {!ro && (
+                    <button
+                      type="button"
+                      onClick={() => update((d) => ({ ...d, ebos: d.ebos.filter((x) => x.id !== e.id) }))}
+                      className="ml-auto grid h-7 w-7 place-items-center rounded-md text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"
+                      aria-label="Remove outcome"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
-        <div className="space-y-2">
-          {HORIZONS.map((h) => {
-            const list = data.ebos.filter((e) => (e.horizon || "H1") === h.id);
-            const open = openH.has(h.id);
-            const withTarget = list.filter((e) => e.target !== null).length;
-            return (
-              <div key={h.id} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white">
-                <button
-                  type="button"
-                  onClick={() => toggleH(h.id)}
-                  aria-expanded={open}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50"
-                >
-                  <ChevronRight className={clsx("h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200", open && "rotate-90")} />
-                  <span className={clsx("rounded-md px-1.5 py-0.5 text-[12px] font-bold ring-1 ring-inset", h.tone)}>{h.id}</span>
-                  <span className="min-w-0">
-                    <span className="block text-[13.5px] font-semibold text-slate-900">{h.label}</span>
-                    <span className="block truncate text-[12px] text-slate-500">{h.hint}</span>
-                  </span>
-                  <span className="ml-auto shrink-0 text-[12px] text-slate-500">
-                    {list.length} {list.length === 1 ? "outcome" : "outcomes"}
-                    {list.length > 0 && <span className="text-slate-400"> · {withTarget} with a target</span>}
-                  </span>
-                </button>
-                <div className={clsx("grid transition-[grid-template-rows] duration-300 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
-                  <div className="min-h-0 overflow-hidden">
-                    <div className="overflow-x-auto border-t border-slate-100">
-                      <table className="w-full min-w-[960px] border-separate border-spacing-0 text-[13px]">
-                        <thead className="bg-slate-50 text-[11.5px] text-slate-500">
-                          <tr>
-                            <th className="min-w-[220px] px-2 py-2 text-left font-medium">Outcome</th>
-                            <th className="min-w-[150px] px-2 py-2 text-left font-medium">Measure</th>
-                            <th className="w-20 px-2 py-2 text-left font-medium">Unit</th>
-                            <th className="w-28 px-2 py-2 text-right font-medium">{year - 1} baseline</th>
-                            <th className="w-28 px-2 py-2 text-right font-medium">{year} target</th>
-                            <th className="w-28 px-2 py-2 text-right font-medium">Actual</th>
-                            <th className="w-32 px-2 py-2 text-left font-medium">Owner</th>
-                            <th className="w-16 px-2 py-2 text-left font-medium">Horizon</th>
-                            <th className="w-9" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {list.length === 0 && (
-                            <tr>
-                              <td colSpan={9} className="px-3 py-4 text-center text-[12.5px] text-slate-400">
-                                No {h.id} outcomes yet{h.id === "H1" ? <> — e.g. &ldquo;Grow trauma revenue&rdquo;, measure &ldquo;Net revenue&rdquo;, unit &ldquo;MB&rdquo;.</> : "."}
-                              </td>
-                            </tr>
-                          )}
-                          {list.map((e) => (
-                            <tr key={e.id} className="group">
-                              <td className="border-t border-slate-100 px-1 py-1">
-                                <input readOnly={ro} value={e.outcome} onChange={(x) => setEbo(e.id, { outcome: x.target.value })} placeholder="What the unit will achieve" className={clsx(cell, "font-medium")} />
-                              </td>
-                              <td className="border-t border-slate-100 px-1 py-1">
-                                <input readOnly={ro} value={e.measure} onChange={(x) => setEbo(e.id, { measure: x.target.value })} placeholder="How it's measured" className={cell} />
-                              </td>
-                              <td className="border-t border-slate-100 px-1 py-1">
-                                <input readOnly={ro} value={e.unit} onChange={(x) => setEbo(e.id, { unit: x.target.value })} placeholder="MB, %, cases" className={cell} />
-                              </td>
-                              {(["baseline", "target", "actual"] as const).map((k) => (
-                                <td key={k} className="border-t border-slate-100 px-1 py-1">
-                                  <input
-                                    readOnly={ro}
-                                    inputMode="decimal"
-                                    value={showNum(e[k])}
-                                    onChange={(x) => setEbo(e.id, { [k]: num(x.target.value) })}
-                                    placeholder="–"
-                                    className={clsx(cell, "text-right tabular-nums")}
-                                  />
-                                </td>
-                              ))}
-                              <td className="border-t border-slate-100 px-1 py-1">
-                                <input readOnly={ro} value={e.owner} onChange={(x) => setEbo(e.id, { owner: x.target.value })} placeholder="Owner" className={cell} />
-                              </td>
-                              <td className="border-t border-slate-100 px-1 py-1">
-                                <select
-                                  disabled={ro}
-                                  value={e.horizon || "H1"}
-                                  onChange={(x) => {
-                                    const to = x.target.value as Horizon;
-                                    setEbo(e.id, { horizon: to });
-                                    setOpenH((prev) => new Set(prev).add(to));
-                                  }}
-                                  className="h-8 w-full rounded-md border border-transparent bg-transparent px-1 text-[12.5px] text-slate-700 outline-none hover:border-slate-200 focus:border-blue-400"
-                                  aria-label="Horizon"
-                                >
-                                  {HORIZONS.map((o) => (
-                                    <option key={o.id} value={o.id}>
-                                      {o.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="border-t border-slate-100 px-1 py-1">
-                                {!ro && (
-                                  <button
-                                    type="button"
-                                    onClick={() => update((d) => ({ ...d, ebos: d.ebos.filter((x) => x.id !== e.id) }))}
-                                    className="grid h-7 w-7 place-items-center rounded-md text-slate-300 opacity-0 hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100"
-                                    aria-label="Remove outcome"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {!ro && (
-                      <div className="border-t border-slate-100 px-2 py-1.5">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            update((d) => ({
-                              ...d,
-                              ebos: [...d.ebos, { id: newId("ebo"), horizon: h.id, outcome: "", measure: "", unit: "", baseline: null, target: null, actual: null, owner: "" }],
-                            }))
-                          }
-                          className="flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-medium text-blue-600 hover:bg-blue-50"
-                        >
-                          <Plus className="h-3.5 w-3.5" /> Add {h.id} outcome
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        )}
       </section>
 
       {/* OKRs */}
@@ -1156,11 +1046,13 @@ function UnitPlan({
   );
 }
 
-/** The unit's EBO and next year's target against this year's forecast, with a jump to the EBO tab. */
+/** The unit's EBO: target, planned, and the key products against this year's forecast, with a jump to the EBO tab. */
 function EboStrip({ year, data, planTarget, forecast, planName, onOpen }: { year: number; data: EboPlanData | null; planTarget: number | null; forecast: number | null; planName: string | null; onOpen: () => void }) {
   const target = resolveTarget(planTarget, data);
   const tot = data ? planFigures(data) : null;
-  const d = target.value !== null && forecast ? { thb: target.value - forecast, pct: target.value / forecast - 1 } : null;
+  // The key products' revenue this year against this year's forecast in the Target plan.
+  const kp = tot?.revBase ?? null;
+  const d = kp !== null && forecast ? { thb: kp - forecast, pct: kp / forecast - 1 } : null;
   const mb = (v: number | null) => (v === null ? "—" : (v / 1e6).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
   const thb = (v: number) => Math.round(Math.abs(v)).toLocaleString("en-US");
   return (
@@ -1177,8 +1069,8 @@ function EboStrip({ year, data, planTarget, forecast, planName, onOpen }: { year
           Planned <span className="font-semibold tabular-nums text-slate-900">{mb(tot?.target ?? null)}</span> MB
         </span>
         {d && (
-          <span className={clsx("text-[12.5px] font-semibold tabular-nums", d.thb >= 0 ? "text-emerald-700" : "text-rose-700")} title={`Target ${year} against the ${year - 1} forecast (${mb(forecast)} MB) in the Target plan`}>
-            vs Forecast {year - 1} {d.thb >= 0 ? "+" : "−"}
+          <span className={clsx("text-[12.5px] font-semibold tabular-nums", d.thb >= 0 ? "text-emerald-700" : "text-rose-700")} title={`Key products ${year - 1} (${mb(kp)} MB) against the ${year - 1} forecast (${mb(forecast)} MB) in the Target plan`}>
+            Key products vs Forecast {year - 1} {d.thb >= 0 ? "+" : "−"}
             {thb(d.thb)} THB ({d.pct >= 0 ? "+" : ""}
             {(d.pct * 100).toFixed(1)}%)
           </span>

@@ -72,6 +72,9 @@ function coverTone(c: number | null) {
   return { bar: "bg-rose-500", text: "text-rose-700" };
 }
 
+/** Fired after an EBO plan is saved, so the OKR tab (which shows it) can reload. */
+export const EBO_SAVED = "ebo-plan-saved";
+
 /** Shared with the OKR tab: year, open unit, the tab switch, and the scenario a link asked for. */
 export type TabProps = {
   year: number;
@@ -177,6 +180,8 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
           if (!res.ok) throw new Error(json.error || "The server didn't accept it");
           setPlans((prev) => ({ ...prev, [key]: { ...prev[key], updatedAt: json.updatedAt, updatedBy: json.updatedBy } }));
           setSaveState("saved");
+          // The OKR tab shows the same plan; let it reload.
+          window.dispatchEvent(new CustomEvent(EBO_SAVED, { detail: { year } }));
         } catch (e) {
           setSaveState("error");
           toast.error("Couldn't save the EBO plan", { body: e instanceof Error ? e.message : undefined });
@@ -196,8 +201,26 @@ export function EboPage({ year, setYear, unitName, setUnitName, tabs, preferScen
     setSaveState("saving");
     clearTimeout(timers.current[key]);
     const name = unit.name;
-    timers.current[key] = setTimeout(() => void persist(name, key), 900);
+    timers.current[key] = setTimeout(() => {
+      delete timers.current[key];
+      void persist(name, key);
+    }, 900);
   }
+  // Leaving the tab (e.g. for OKR): save what's still waiting right away.
+  const persistRef = useRef(persist);
+  useEffect(() => {
+    persistRef.current = persist;
+  }, [persist]);
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const [key, id] of Object.entries(pending)) {
+        clearTimeout(id);
+        delete pending[key];
+        void persistRef.current(key.slice(key.indexOf("::") + 2), key);
+      }
+    };
+  }, []);
 
   const current: Saved | null = unit ? plans[keyOf(unit.name)] || { data: emptyEbo(), updatedAt: null, updatedBy: null } : null;
 
@@ -554,14 +577,15 @@ function Overview({
                 <div className={clsx("h-full rounded-full transition-[width] duration-700", coverTone(c).bar)} style={{ width: `${Math.min(100, (c || 0) * 100)}%` }} />
               </div>
               {(() => {
-                // Next year's target against this year's forecast (from the Target plan).
+                // The key products' revenue this year against this year's forecast (from the Target plan).
                 const f = forecastOf(u.name);
-                if (tg.value === null || !f) return null;
-                const d = tg.value - f;
+                const kp = d ? planFigures(d).revBase : null;
+                if (kp === null || !f) return null;
+                const df = kp - f;
                 return (
-                  <p className={clsx("mt-1.5 text-[12px] font-medium tabular-nums", d >= 0 ? "text-emerald-700" : "text-rose-700")}>
-                    Target vs Forecast {year - 1} {d >= 0 ? "+" : "−"}
-                    {thb(Math.abs(d))} THB ({pct(tg.value / f - 1)})
+                  <p className={clsx("mt-1.5 text-[12px] font-medium tabular-nums", df >= 0 ? "text-emerald-700" : "text-rose-700")}>
+                    Key products vs Forecast {year - 1} {df >= 0 ? "+" : "−"}
+                    {thb(Math.abs(df))} THB ({pct(kp / f - 1)})
                   </p>
                 );
               })()}
@@ -713,7 +737,7 @@ function UnitEbo({
             </div>
             <Stat label={`Growth vs ${B}`} value={pct(growth(tgt, numbers?.base ?? null))} hint="Target against the base year" />
           </div>
-          <DiffTable year={year} target={tgt} planned={total.target} productsBase={total.revBase} forecast={numbers?.base ?? null} />
+          <DiffTable year={year} products={total.revBase} byHorizon={HORIZON_IDS.map((h) => ({ h, title: data.horizons[h].title || HORIZON_META[h].title, amount: hf[h].revBase }))} forecast={numbers?.base ?? null} />
           <div className="mt-4 border-t border-slate-100 pt-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
               <span className="text-slate-600">
@@ -807,69 +831,234 @@ function UnitEbo({
 }
 
 /**
- * How far next year's target is from this year's forecast (the Target plan's
- * base year: actual + estimate), in THB and %, and where the key products
- * stand against the same forecast.
+ * How far the key products' revenue this year is from the unit's forecast for
+ * this year (the Target plan's base year: actual + estimate), in THB and %:
+ * whether the product list covers the whole business, horizon by horizon.
  */
-function DiffTable({ year, target, planned, productsBase, forecast }: { year: number; target: number | null; planned: number | null; productsBase: number | null; forecast: number | null }) {
+function DiffTable({ year, products, byHorizon, forecast }: { year: number; products: number | null; byHorizon: { h: HorizonId; title: string; amount: number | null }[]; forecast: number | null }) {
   const B = year - 1;
-  // No forecast in the Target plan: measure against the key products' revenue this year instead.
-  const ref = forecast ?? productsBase;
-  const refLabel = forecast !== null ? `Forecast ${B}` : `Key products ${B}`;
-  const rows: { label: string; hint: string; amount: number | null; main?: boolean }[] = [
-    { label: `Target ${year}`, hint: "The CoE / SBU's target", amount: target, main: true },
-    { label: `EBO planned ${year}`, hint: planned === null ? `No ${year} numbers typed yet` : "Key products' target-year total", amount: planned },
-    ...(forecast !== null ? [{ label: `Key products ${B}`, hint: "Their revenue this year", amount: productsBase }] : []),
-  ];
-  const vs = (a: number | null) => (a === null || ref === null || ref === 0 ? null : { thb: a - ref, pct: a / ref - 1 });
-  const main = vs(target);
+  const d = products !== null && forecast ? { thb: products - forecast, pct: products / forecast - 1 } : null;
   return (
     <div className="mt-4 border-t border-slate-100 pt-3">
       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="text-[13px] font-semibold text-slate-900">
-          Diff: Target {year} vs {refLabel}{" "}
-          <span className="font-normal text-slate-400">
-            ({refLabel} {ref === null ? "—" : `${thb(ref)} THB`}
-            {forecast !== null ? " · actual + estimate, from the Target plan" : " · no forecast in the Target plan"})
-          </span>
+          Diff: Key products {B} vs Forecast {B}{" "}
+          <span className="font-normal text-slate-400">({forecast ? "forecast = actual + estimate, from the Target plan" : `no ${B} forecast for this unit in the linked Target plan`})</span>
         </p>
-        {main && (
-          <p className={clsx("text-[15px] font-semibold tabular-nums", main.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
-            {main.thb >= 0 ? "+" : "−"}
-            {thb(Math.abs(main.thb))} THB <span className="text-[13px]">({pct(main.pct)})</span>
+        {d && (
+          <p className={clsx("text-[15px] font-semibold tabular-nums", d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
+            {d.thb >= 0 ? "+" : "−"}
+            {thb(Math.abs(d.thb))} THB <span className="text-[13px]">({pct(d.pct)})</span>
           </p>
         )}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[480px] text-[12.5px]">
+        <table className="w-full min-w-[520px] text-[12.5px]">
           <thead>
             <tr className="text-left text-[11px] text-slate-500">
               <th className="pb-1 pr-3 font-medium" />
-              <th className="px-3 pb-1 text-right font-medium">Amount (THB)</th>
-              <th className="px-3 pb-1 text-right font-medium">Diff vs {refLabel} (THB)</th>
+              <th className="px-3 pb-1 text-right font-medium">Revenue {B} (THB)</th>
+              <th className="px-3 pb-1 text-right font-medium">Share of forecast</th>
+              <th className="px-3 pb-1 text-right font-medium">Diff vs forecast (THB)</th>
               <th className="pb-1 pl-3 text-right font-medium">Diff %</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
-              const d = vs(r.amount);
-              return (
-                <tr key={r.label} className={clsx("border-t border-slate-100", r.main && "bg-slate-50/70")}>
-                  <td className="py-1.5 pr-3">
-                    <span className={clsx("text-slate-800", r.main ? "font-semibold" : "font-medium")}>{r.label}</span>
-                    <span className="block text-[11px] text-slate-400">{r.hint}</span>
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{r.amount === null ? "—" : thb(r.amount)}</td>
-                  <td className={clsx("px-3 py-1.5 text-right font-semibold tabular-nums", !d ? "text-slate-400" : d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>
-                    {d ? `${d.thb >= 0 ? "+" : "−"}${thb(Math.abs(d.thb))}` : "—"}
-                  </td>
-                  <td className={clsx("py-1.5 pl-3 text-right font-semibold tabular-nums", !d ? "text-slate-400" : d.pct >= 0 ? "text-emerald-700" : "text-rose-700")}>{d ? pct(d.pct) : "—"}</td>
-                </tr>
-              );
-            })}
+            <tr className="border-t border-slate-100">
+              <td className="py-1.5 pr-3">
+                <span className="font-medium text-slate-800">Forecast {B}</span>
+                <span className="block text-[11px] text-slate-400">The whole CoE / SBU, from the Target plan</span>
+              </td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{thb(forecast)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{forecast ? "100.0%" : "—"}</td>
+              <td className="px-3 py-1.5 text-right text-slate-300">—</td>
+              <td className="py-1.5 pl-3 text-right text-slate-300">—</td>
+            </tr>
+            <tr className="border-t border-slate-100 bg-slate-50/70">
+              <td className="py-1.5 pr-3">
+                <span className="font-semibold text-slate-900">Key products {B}</span>
+                <span className="block text-[11px] text-slate-400">{products === null ? `No ${B} revenue typed yet` : "All horizons, their revenue this year"}</span>
+              </td>
+              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-900">{thb(products)}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{products !== null && forecast ? share(products / forecast) : "—"}</td>
+              <td className={clsx("px-3 py-1.5 text-right font-semibold tabular-nums", !d ? "text-slate-400" : d.thb >= 0 ? "text-emerald-700" : "text-rose-700")}>{d ? `${d.thb >= 0 ? "+" : "−"}${thb(Math.abs(d.thb))}` : "—"}</td>
+              <td className={clsx("py-1.5 pl-3 text-right font-semibold tabular-nums", !d ? "text-slate-400" : d.pct >= 0 ? "text-emerald-700" : "text-rose-700")}>{d ? pct(d.pct) : "—"}</td>
+            </tr>
+            {byHorizon.map((x) => (
+              <tr key={x.h} className="border-t border-slate-100 text-slate-500">
+                <td className="py-1 pl-4 pr-3">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full" style={{ background: HORIZON_META[x.h].color }} />
+                    {x.h} {x.title}
+                  </span>
+                </td>
+                <td className="px-3 py-1 text-right tabular-nums">{thb(x.amount)}</td>
+                <td className="px-3 py-1 text-right tabular-nums">{x.amount !== null && forecast ? share(x.amount / forecast) : "—"}</td>
+                <td />
+                <td />
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The unit's EBO plan as the OKR tab shows it: the same horizons, titles, focus
+ * and key products as the EBO tab (read-only), with the OKR objectives tagged
+ * to each horizon. Editing happens on the EBO tab.
+ */
+export function EboReadOnly({ year, data, target, objectives, canEdit, onEdit }: { year: number; data: EboPlanData | null; target: number | null; objectives: Objective[]; canEdit: boolean; onEdit: () => void }) {
+  const [closed, setClosed] = useState<Set<HorizonId>>(() => new Set());
+  const P = year - 2;
+  const B = year - 1;
+  const has = !!data && HORIZON_IDS.some((h) => data.horizons[h].items.length);
+  if (!data || !has)
+    return (
+      <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-[13px] text-slate-500">
+        No key products for {year} yet. What you set on the EBO tab shows up here.
+        <button type="button" onClick={onEdit} className="ml-2 font-medium text-blue-600 hover:underline">
+          {canEdit ? "Start on the EBO tab" : "Open the EBO tab"}
+        </button>
+      </div>
+    );
+  return (
+    <div className="space-y-2">
+      {HORIZON_IDS.map((h) => {
+        const hz = data.horizons[h];
+        const meta = HORIZON_META[h];
+        const f = horizonFigures(hz);
+        const open = !closed.has(h);
+        const objs = objectives.filter((o) => o.horizon === h);
+        const rows = numbered(hz.items);
+        return (
+          <div key={h} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white">
+            <button
+              type="button"
+              onClick={() =>
+                setClosed((prev) => {
+                  const n = new Set(prev);
+                  if (n.has(h)) n.delete(h);
+                  else n.add(h);
+                  return n;
+                })
+              }
+              aria-expanded={open}
+              className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left transition hover:brightness-[0.98]"
+              style={{ background: `color-mix(in srgb, ${meta.color} 6%, white)` }}
+            >
+              <ChevronRight className={clsx("h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200", open && "rotate-90")} />
+              <span className={clsx("rounded-md px-1.5 py-0.5 text-[12px] font-bold ring-1", meta.tone)}>{h}</span>
+              <span className="min-w-0">
+                <span className="block text-[13.5px] font-semibold text-slate-900">{hz.title || meta.title}</span>
+                <span className="block truncate text-[12px] text-blue-700">{hz.focus || meta.focus}</span>
+              </span>
+              <span className="ml-auto flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-[12px] text-slate-500">
+                <span>
+                  Target <span className="text-[14px] font-semibold tabular-nums text-slate-900">{mb(f.target)}</span> MB
+                </span>
+                <span>
+                  Portion <span className="font-semibold tabular-nums text-slate-900">{target ? share((f.target || 0) / target) : "—"}</span>
+                </span>
+                <span>
+                  Growth <span className={clsx("font-semibold tabular-nums", (growth(f.target, f.revBase) ?? 0) >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(growth(f.target, f.revBase))}</span>
+                </span>
+                <span>
+                  {topItems(hz.items).length} key products · {objs.length} {objs.length === 1 ? "objective" : "objectives"}
+                </span>
+              </span>
+            </button>
+            <div className={clsx("grid transition-[grid-template-rows] duration-300 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+              <div className="min-h-0 overflow-hidden">
+                <div className="overflow-x-auto border-t border-slate-100">
+                  <table className="w-full min-w-[740px] border-separate border-spacing-0 text-[12px]">
+                    <thead>
+                      <tr>
+                        <th className={clsx(th, "min-w-[170px] text-left")}>Key product</th>
+                        <th className={clsx(th, "text-left")}>Type</th>
+                        <th className={th}>Y{P} (THB)</th>
+                        <th className={th}>Y{B} (THB)</th>
+                        <th className={th}>%Growth</th>
+                        <th className={th}>Cases</th>
+                        <th className={th}>Avg / case</th>
+                        <th className={th} style={{ background: `color-mix(in srgb, ${meta.color} 10%, white)` }}>
+                          Target Y{year} (THB)
+                        </th>
+                        <th className={th}>%Growth</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="px-3 py-3 text-center text-[12.5px] text-slate-400">
+                            No {h} key products.
+                          </td>
+                        </tr>
+                      )}
+                      {rows.map(({ item, no, depth }) => {
+                        const fig = itemFigures(hz.items, item);
+                        const g1 = growth(fig.revBase, fig.revPrior);
+                        const g2 = growth(fig.target, fig.revBase);
+                        return (
+                          <tr key={item.id} className={clsx(depth === 0 && childrenOf(hz.items, item.id).length > 0 && "bg-slate-50/60")}>
+                            <td className="border-b border-slate-100 px-2 py-1.5">
+                              <span className="flex items-center gap-1" style={{ paddingLeft: depth * 18 }}>
+                                {depth > 0 && <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />}
+                                <span className="w-7 shrink-0 text-[11.5px] tabular-nums text-slate-400">{no}</span>
+                                <span className={clsx("text-slate-900", !depth && "font-medium")}>{item.name || <span className="text-slate-400">Untitled</span>}</span>
+                              </span>
+                            </td>
+                            <td className="border-b border-slate-100 px-2 py-1.5">
+                              {depth === 0 && (
+                                <span className={clsx("whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px] font-medium ring-1", item.flagship ? meta.tone : "bg-slate-50 text-slate-500 ring-slate-200")}>
+                                  {item.flagship ? "Flagship" : "Non-flagship"}
+                                </span>
+                              )}
+                            </td>
+                            <td className={clsx(td, "px-2 py-1.5 text-slate-600")}>{thb(fig.revPrior)}</td>
+                            <td className={clsx(td, "px-2 py-1.5 text-slate-700")}>{thb(fig.revBase)}</td>
+                            <td className={clsx(td, "px-2 text-[12px]", g1 === null ? "text-slate-300" : g1 >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(g1)}</td>
+                            <td className={clsx(td, "px-2 text-slate-600")}>{fig.vol === null ? "—" : thb(fig.vol)}</td>
+                            <td className={clsx(td, "px-2 text-slate-600")}>{thb(per(fig.target, fig.vol))}</td>
+                            <td className={clsx(td, "px-2 font-medium text-slate-900")}>{thb(fig.target)}</td>
+                            <td className={clsx(td, "px-2 text-[12px]", g2 === null ? "text-slate-300" : g2 >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(g2)}</td>
+                          </tr>
+                        );
+                      })}
+                      {rows.length > 0 && (
+                        <tr className="font-semibold">
+                          <td className="px-2 py-1.5 text-slate-900" colSpan={2}>
+                            {h} total
+                          </td>
+                          <td className={clsx(td, "border-b-0 px-2 py-1.5 text-slate-700")}>{thb(f.revPrior)}</td>
+                          <td className={clsx(td, "border-b-0 px-2 py-1.5 text-slate-800")}>{thb(f.revBase)}</td>
+                          <td className={clsx(td, "border-b-0 px-2 text-[12px]", (growth(f.revBase, f.revPrior) ?? 0) >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(growth(f.revBase, f.revPrior))}</td>
+                          <td className={clsx(td, "border-b-0 px-2 text-slate-700")}>{f.vol === null ? "—" : thb(f.vol)}</td>
+                          <td className={clsx(td, "border-b-0 px-2 text-slate-700")}>{thb(per(f.target, f.vol))}</td>
+                          <td className={clsx(td, "border-b-0 px-2 text-slate-900")}>{thb(f.target)}</td>
+                          <td className={clsx(td, "border-b-0 px-2 text-[12px]", (growth(f.target, f.revBase) ?? 0) >= 0 ? "text-emerald-700" : "text-rose-700")}>{pct(growth(f.target, f.revBase))}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {objs.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 px-3 py-2 text-[12px] text-slate-500">
+                    <Flag className="h-3.5 w-3.5 text-slate-400" /> OKR for {h}:
+                    {objs.map((o) => (
+                      <span key={o.id} className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                        {o.title || "Untitled objective"} · {Math.round(objectiveProgress(o) * 100)}%
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
