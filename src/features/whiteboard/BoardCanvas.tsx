@@ -65,6 +65,18 @@ import {
   PanelLeft,
   PanelRight,
   PanelTop,
+  Command as CommandIcon,
+  ExternalLink,
+  FileDown,
+  FileUp,
+  Grid3x3,
+  Link2,
+  Menu as MenuIcon,
+  Moon,
+  Paintbrush,
+  Search,
+  WandSparkles,
+  Zap,
 } from "lucide-react";
 import { clsx } from "clsx";
 import {
@@ -95,16 +107,29 @@ import {
   type ShapeKind,
   type Side,
   type TextFmt,
+  normalizeElements,
+  type ShapeEl,
 } from "./model";
+import { needsRough, roughLine, roughShape, seedOf } from "./sketch";
+import { fromExcalidraw, parseExcalidraw, toExcalidraw, type XScene } from "./excalidraw";
+import { mermaidToElements } from "./mermaid";
+import { ExportDialog } from "./ExportDialog";
+import { CommandPalette, type Command } from "./CommandPalette";
+import { MermaidDialog } from "./MermaidDialog";
+import { DEFAULT_STYLE, SKETCH_STYLE, StylePanel, type CurStyle } from "./StylePanel";
+import { promptDialog } from "@/components/feedback";
 import { fitShape, recognizeShape, type Recognized } from "./recognize";
 import { useBoardRealtime, type Ops } from "./useRealtime";
 import { initialsOf } from "@/components/layout/Presence";
+import { ACTIVE_BTN, ICON_BTN, PANEL, POPOVER } from "./ui";
 
-type Tool = "select" | "hand" | "sticky" | "shape" | "text" | "frame" | "connector" | "pen" | "eraser";
+type Tool = "select" | "hand" | "sticky" | "shape" | "text" | "frame" | "connector" | "pen" | "eraser" | "laser";
 type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 type Interaction =
   | { type: "pan"; sx: number; sy: number; cam: Camera }
+  // Laser pointer: a fading red trail for presenting (not saved).
+  | { type: "laser" }
   // Two fingers on a touch screen: zoom and pan together.
   | { type: "pinch" }
   // Right button: pans once dragged past a few px, otherwise opens the menu on release.
@@ -297,6 +322,27 @@ function readPencilPref() {
   }
 }
 
+// Excalidraw-style defaults for new items, and how the canvas looks (both per browser).
+const STYLE_KEY = "wb_style";
+function readStylePref(): CurStyle {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STYLE_KEY) || "null");
+    if (raw && typeof raw === "object") return { ...DEFAULT_STYLE, ...raw };
+  } catch {}
+  return DEFAULT_STYLE;
+}
+type ViewPrefs = { grid: boolean; dark: boolean };
+const VIEW_KEY = "wb_view";
+function readViewPref(): ViewPrefs {
+  try {
+    const raw = JSON.parse(localStorage.getItem(VIEW_KEY) || "null");
+    if (raw && typeof raw === "object") return { grid: raw.grid !== false, dark: raw.dark === true };
+  } catch {}
+  return { grid: true, dark: false };
+}
+/** How long a laser-pointer trail stays on screen (ms). */
+const LASER_MS = 1100;
+
 /** The app's motion setting (Settings → Appearance) or the OS asks for less movement. */
 function reducedMotion() {
   if (typeof window === "undefined") return true;
@@ -304,10 +350,6 @@ function reducedMotion() {
   return m === "off" || m === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-const PANEL = "rounded-lg bg-white shadow-[0_0_0_1px_rgba(34,36,40,.05),0_2px_8px_rgba(34,36,40,.14)]";
-const POPOVER = "wb-pop rounded-lg bg-white shadow-[0_0_0_1px_rgba(34,36,40,.06),0_6px_24px_rgba(34,36,40,.18)]";
-const ICON_BTN = "wb-btn grid h-10 w-10 place-items-center rounded-md text-[#1C1C1E] hover:bg-[#F1F2F5]";
-const ACTIVE_BTN = "bg-[#E6EAFF] text-[#4262FF] hover:bg-[#E6EAFF]";
 const PEN_COLORS = ["#1A1A1A", "#F24726", "#FAC710", "#8FD14F", "#2D9BF0", "#652CB3", "#808080", "#FFFFFF"];
 const PEN_WIDTHS = [2, 4, 8];
 const ERASER_SIZES = [12, 24, 48];
@@ -410,6 +452,17 @@ const SHORTCUTS: [string, string][] = [
   ["Zoom to fit / selection", "Shift+1 / Shift+2"],
   ["Zoom to 100%", "Shift+0"],
   ["Nudge", "Arrows (Shift = 10px)"],
+  ["Excalidraw tools (nothing selected)", "1 select · 2 □ · 3 ◇ · 4 ○ · 5 arrow · 6 line · 7 draw · 8 text · 9 image · 0 eraser"],
+  ["Laser pointer", "K"],
+  ["Command palette", "Ctrl+/"],
+  ["Find on board", "Ctrl+F"],
+  ["Copy / paste style", "Ctrl+Alt+C / Ctrl+Alt+V"],
+  ["Add link", "Alt+K"],
+  ["Export image", "Ctrl+Shift+E"],
+  ["Open .excalidraw / file", "Ctrl+O"],
+  ["Show grid", "Ctrl+'"],
+  ["Dark canvas", "Alt+Shift+D"],
+  ["Zen mode", "Alt+Z"],
 ];
 const MIN_ZOOM = 0.08;
 const MAX_ZOOM = 4;
@@ -697,6 +750,54 @@ export function BoardCanvas({
   /** Where the eraser ring is drawn (board px), while the eraser hovers or rubs. */
   const [eraserAt, setEraserAt] = useState<{ x: number; y: number } | null>(null);
   const [penDash, setPenDash] = useState<PenDash>("solid");
+  // Excalidraw extras: the style new items start with, the canvas look, and the dialogs.
+  const [cur, setCurState] = useState<CurStyle>(readStylePref);
+  const setCur = (patch: Partial<CurStyle>) =>
+    setCurState((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem(STYLE_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  const [look, setLookState] = useState<ViewPrefs>(readViewPref);
+  const setLook = (patch: Partial<ViewPrefs>) =>
+    setLookState((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem(VIEW_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  const toggleLook = (key: keyof ViewPrefs) =>
+    setLookState((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(VIEW_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  const [zen, setZen] = useState(false);
+  const [mainMenu, setMainMenu] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [mermaidOpen, setMermaidOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQ, setFindQ] = useState("");
+  const [findAt, setFindAt] = useState(0);
+  /** The connector tool draws arrows (5 / L) or plain lines (6). */
+  const [lineArrow, setLineArrow] = useState(true);
+  /** Copied look (Ctrl+Alt+C), pasted onto other items with Ctrl+Alt+V. */
+  const styleClip = useRef<El | null>(null);
+  const [styleCopied, setStyleCopied] = useState(false);
+  /** Laser pointer trails (screen-independent: board units with a timestamp). */
+  const laserTrail = useRef<{ x: number; y: number; t: number }[]>([]);
+  const peerTrails = useRef(new Map<string, { x: number; y: number; t: number }[]>());
+  /** What's drawn this frame: every live trail, and the frame's time. */
+  const [laserFrame, setLaserFrame] = useState<{ now: number; trails: { x: number; y: number; t: number }[][] }>({ now: 0, trails: [] });
+  const laserRaf = useRef<number | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
   // Drawing panel (pen, highlighter, eraser, colours, sizes, line style, settings)
   // docks opposite the main toolbar while a drawing tool is on.
   /** Open popover on the drawing bar (compact colour / width / line type, or settings). */
@@ -895,6 +996,47 @@ export function BoardCanvas({
       return true;
     });
   }, [rt.peers, rt.me]);
+
+  // ---------------------------------------------------------------- laser pointer
+  /** Keep redrawing while any trail (yours or a collaborator's) is still fading. */
+  function kickLaser() {
+    if (laserRaf.current !== null) return;
+    const step = () => {
+      const now = performance.now();
+      laserTrail.current = laserTrail.current.filter((q) => now - q.t < LASER_MS);
+      for (const [k, tr] of peerTrails.current) {
+        const left = tr.filter((q) => now - q.t < LASER_MS);
+        if (left.length) peerTrails.current.set(k, left);
+        else peerTrails.current.delete(k);
+      }
+      setLaserFrame({ now, trails: [laserTrail.current.slice(), ...peerTrails.current.values()].filter((t) => t.length > 1) });
+      laserRaf.current = laserTrail.current.length || peerTrails.current.size ? requestAnimationFrame(step) : null;
+    };
+    laserRaf.current = requestAnimationFrame(step);
+  }
+  const kickLaserRef = useRef(kickLaser);
+  useLayoutEffect(() => {
+    kickLaserRef.current = kickLaser;
+  });
+  // A collaborator pointing with the laser: their cursor leaves a trail too.
+  useEffect(() => {
+    let any = false;
+    for (const p of peers) {
+      if (!p.laser || !p.cursor) continue;
+      const tr = peerTrails.current.get(p.key) || [];
+      const last = tr[tr.length - 1];
+      if (!last || last.x !== p.cursor.x || last.y !== p.cursor.y) tr.push({ ...p.cursor, t: performance.now() });
+      peerTrails.current.set(p.key, tr);
+      any = true;
+    }
+    if (any) kickLaserRef.current();
+  }, [peers]);
+  useEffect(
+    () => () => {
+      if (laserRaf.current !== null) cancelAnimationFrame(laserRaf.current);
+    },
+    []
+  );
 
   // ---------------------------------------------------------------- persistence
   const save = useCallback(
@@ -1181,14 +1323,14 @@ export function BoardCanvas({
     const z = maxZ() + 1;
     switch (kind) {
       case "sticky":
-        return { id: uid(), kind: "sticky", x: at.x - 90, y: at.y - 90, w: 180, h: 180, z, text: "", color: stickyColor };
+        return { id: uid(), kind: "sticky", x: at.x - 90, y: at.y - 90, w: 180, h: 180, z, text: "", color: stickyColor, ...fontLook() };
       case "shape": {
         const d = shapeSize(shapeKind);
         const r = size || { x: at.x - d.w / 2, y: at.y - d.h / 2, ...d };
-        return { id: uid(), kind: "shape", shape: shapeKind, ...r, z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16 };
+        return { id: uid(), kind: "shape", shape: shapeKind, ...r, z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16, ...shapeLook() };
       }
       case "text":
-        return { id: uid(), kind: "text", x: at.x, y: at.y - 16, w: 260, h: 40, z, text: "", color: INK, fontSize: 22 };
+        return { id: uid(), kind: "text", x: at.x, y: at.y - 16, w: 260, h: 40, z, text: "", color: INK, fontSize: 22, ...fontLook() };
       case "frame": {
         const r = size || { x: at.x - 300, y: at.y - 200, w: 600, h: 400 };
         return { id: uid("fr"), kind: "frame", ...r, z: minZ() - 1, title: "Frame", fill: "#FFFFFF" };
@@ -1405,7 +1547,27 @@ export function BoardCanvas({
   }
 
   function newConnector(from: ConnectorEl["from"], to: ConnectorEl["to"]): ConnectorEl {
-    return { id: uid("cx"), kind: "connector", z: maxZ() + 1, from, to, route: "curve", stroke: INK, width: 2, arrowEnd: true, arrowStart: false };
+    return { id: uid("cx"), kind: "connector", z: maxZ() + 1, from, to, route: "curve", stroke: INK, width: cur.strokeWidth ?? 2, arrowEnd: lineArrow, arrowStart: false, ...lineLook() };
+  }
+
+  /** The current Excalidraw-style look for a new shape (nothing extra while it's the clean default). */
+  function shapeLook(): Partial<ShapeEl> {
+    return {
+      ...(cur.rough ? { rough: cur.rough } : {}),
+      ...(cur.fillStyle !== "solid" ? { fillStyle: cur.fillStyle } : {}),
+      ...(cur.strokeStyle !== "solid" ? { strokeStyle: cur.strokeStyle } : {}),
+      ...(cur.strokeWidth ? { strokeWidth: cur.strokeWidth } : {}),
+      ...fontLook(),
+    };
+  }
+  function fontLook(): { fmt?: TextFmt } {
+    return cur.font !== "normal" ? { fmt: { font: cur.font } } : {};
+  }
+  function lineLook(): Partial<ConnectorEl> {
+    return {
+      ...(cur.rough ? { rough: cur.rough } : {}),
+      ...(cur.strokeStyle === "dashed" ? { dashed: true } : cur.strokeStyle === "dotted" ? { dotted: true } : {}),
+    };
   }
 
   /** Miro's "+" on a side: add the next item on that side and start typing in it.
@@ -1445,6 +1607,58 @@ export function BoardCanvas({
       if (e.code === "Space") {
         setSpaceDown(true);
         e.preventDefault();
+        return;
+      }
+      // Excalidraw-style commands (e.code, so Option on a Mac doesn't change the letter).
+      if (mod && (e.key === "/" || (e.shiftKey && e.code === "KeyP"))) {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+      if (mod && !e.shiftKey && !e.altKey && e.code === "KeyF") {
+        e.preventDefault();
+        setFindOpen(true);
+        return;
+      }
+      if (mod && e.shiftKey && e.code === "KeyE") {
+        e.preventDefault();
+        setExportOpen(true);
+        return;
+      }
+      if (mod && !e.shiftKey && e.code === "KeyO" && !readOnly) {
+        e.preventDefault();
+        fileInput.current?.click();
+        return;
+      }
+      if (mod && e.altKey && e.code === "KeyC") {
+        e.preventDefault();
+        copyStyle();
+        return;
+      }
+      if (mod && e.altKey && e.code === "KeyV") {
+        e.preventDefault();
+        pasteStyle();
+        return;
+      }
+      // Alt+K (Ctrl+K is the app's search).
+      if (e.altKey && !mod && !e.shiftKey && e.code === "KeyK" && selRef.current.length) {
+        e.preventDefault();
+        void editLink();
+        return;
+      }
+      if (mod && e.code === "Quote") {
+        e.preventDefault();
+        toggleLook("grid");
+        return;
+      }
+      if (e.altKey && !mod && !e.shiftKey && e.code === "KeyZ") {
+        e.preventDefault();
+        setZen((z) => !z);
+        return;
+      }
+      if (e.altKey && e.shiftKey && !mod && e.code === "KeyD") {
+        e.preventDefault();
+        toggleLook("dark");
         return;
       }
       if (mod && k === "z") {
@@ -1504,6 +1718,7 @@ export function BoardCanvas({
         setCropId(null);
         setLayersOpen(false);
         setTbMore(false);
+        setMainMenu(false);
       } else if (e.shiftKey && !mod && k === "s" && !readOnly && elRef.current.some((x) => selRef.current.includes(x.id) && x.kind === "draw")) {
         e.preventDefault();
         convertSelectionToShapes();
@@ -1544,13 +1759,34 @@ export function BoardCanvas({
           if (el.kind === "image") setCropId(el.id);
           else setEditingId(el.id);
         }
+      } else if (!mod && !e.altKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
+        // Excalidraw's number keys: 1 select, 2 rectangle, 3 diamond, 4 ellipse, 5 arrow, 6 line, 7 draw, 8 text, 9 image, 0 eraser.
+        const d = e.code.slice(5);
+        const pick = (t: Tool) => {
+          setTool(t);
+          if (t !== "select") setSelection([]);
+        };
+        if (d === "1") pick("select");
+        else if (d === "2" || d === "3" || d === "4") {
+          pick("shape");
+          setShapeKind(d === "2" ? "rect" : d === "3" ? "diamond" : "ellipse");
+        } else if (d === "5" || d === "6") {
+          pick("connector");
+          setLineArrow(d === "5");
+        } else if (d === "7") {
+          pick("pen");
+          setPenMode("pen");
+        } else if (d === "8") pick("text");
+        else if (d === "9" && !readOnly) imageInput.current?.click();
+        else if (d === "0") pick("eraser");
       } else if (!mod) {
         if (k === "b") setLibraryOpen((v) => !v);
-        const map: Record<string, Tool> = { v: "select", h: "hand", n: "sticky", s: "shape", r: "shape", t: "text", f: "frame", l: "connector", p: "pen", e: "eraser" };
+        const map: Record<string, Tool> = { v: "select", h: "hand", n: "sticky", s: "shape", r: "shape", t: "text", f: "frame", l: "connector", p: "pen", e: "eraser", k: "laser" };
         if (map[k]) {
           setTool(map[k]);
           if (map[k] !== "select" && map[k] !== "hand") setSelection([]);
           if (k === "r") setShapeKind("rect");
+          if (k === "l") setLineArrow(true);
         }
         if (k === "o") {
           setTool("shape");
@@ -1574,6 +1810,13 @@ export function BoardCanvas({
         return;
       }
       const text = e.clipboardData?.getData("text/plain") ?? "";
+      // Copied in Excalidraw (or a .excalidraw file's text): bring it in where the pointer is.
+      const scene = text.trimStart().startsWith('{"type":"excalidraw') || text.includes('"excalidraw') ? parseExcalidraw(text) : null;
+      if (scene) {
+        e.preventDefault();
+        importScene(scene, lastPointer.current || viewCenter());
+        return;
+      }
       const ours = clipboard.current.length > 0 && (!text || copiedText.current === null || text === copiedText.current);
       if (ours) {
         e.preventDefault();
@@ -1712,6 +1955,12 @@ export function BoardCanvas({
     }
     if (e.button === 1 || spaceDown || tool === "hand") {
       setInteraction({ type: "pan", sx: e.clientX, sy: e.clientY, cam: camRef.current });
+      return;
+    }
+    if (tool === "laser") {
+      laserTrail.current.push({ x: p.x, y: p.y, t: performance.now() });
+      setInteraction({ type: "laser" });
+      kickLaser();
       return;
     }
 
@@ -1901,7 +2150,7 @@ export function BoardCanvas({
   function shapeFromStroke(r: Recognized, color = penColor, width = penWidth, z = maxZ() + 1): El {
     if (r.kind === "line")
       return { id: uid("cx"), kind: "connector", z, from: { x: r.a.x, y: r.a.y }, to: { x: r.b.x, y: r.b.y }, route: "straight", stroke: color, width: Math.max(2, Math.min(width, 6)), arrowEnd: false, arrowStart: false };
-    return { id: uid(), kind: "shape", shape: r.kind, x: r.x, y: r.y, w: Math.max(r.w, 12), h: Math.max(r.h, 12), z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16 };
+    return { id: uid(), kind: "shape", shape: r.kind, x: r.x, y: r.y, w: Math.max(r.w, 12), h: Math.max(r.h, 12), z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16, ...shapeLook() };
   }
 
   /**
@@ -2058,7 +2307,7 @@ export function BoardCanvas({
     } else if (eraserAt) setEraserAt(null);
     const p = toWorld(e.clientX, e.clientY);
     lastPointer.current = p;
-    rt.sendCursor(p);
+    rt.sendCursor(p, undefined, interRef.current?.type === "laser");
     const it = interRef.current;
     if (!it) {
       if (tool === "sticky") setGhost(p);
@@ -2066,6 +2315,10 @@ export function BoardCanvas({
       return;
     }
     switch (it.type) {
+      case "laser":
+        laserTrail.current.push({ x: p.x, y: p.y, t: performance.now() });
+        kickLaser();
+        break;
       case "pan":
         stopGlide();
         setCamera({ ...it.cam, x: it.cam.x + e.clientX - it.sx, y: it.cam.y + e.clientY - it.sy });
@@ -2658,6 +2911,158 @@ export function BoardCanvas({
     URL.revokeObjectURL(a.href);
   }
 
+  // ---------------------------------------------------------------- Excalidraw extras
+  /** Points along an SVG path (for shapes Excalidraw doesn't have). */
+  function samplePath(d: string, n: number) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", d);
+    svg.setAttribute("style", "position:absolute;width:0;height:0;visibility:hidden");
+    svg.appendChild(path);
+    document.body.appendChild(svg);
+    const len = path.getTotalLength();
+    const pts = Array.from({ length: n }, (_, i) => {
+      const q = path.getPointAtLength((len * i) / n);
+      return { x: q.x, y: q.y };
+    });
+    svg.remove();
+    return pts;
+  }
+  const imageSize = (src: string) =>
+    new Promise<{ w: number; h: number }>((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+      im.onerror = reject;
+      im.src = src;
+    });
+  /** What's selected plus the ink drawn on it; the whole board when nothing is. */
+  function scopeEls(scope: "all" | "selection") {
+    if (scope === "all" || !selRef.current.length) return elRef.current;
+    const chosen = selectedEls();
+    return [...chosen, ...inkOn(chosen.map((e) => e.id)).filter((d) => !chosen.includes(d))];
+  }
+  async function saveExcalidraw(scope: "all" | "selection") {
+    const scene = await toExcalidraw(scopeEls(scope), { shapePath, samplePath, imageSize });
+    const blob = new Blob([JSON.stringify(scene, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name.replace(/[^\w\-ก-๙ ]+/g, "_")}.excalidraw`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    flash("Saved .excalidraw — it opens on excalidraw.com");
+  }
+  /** Copy as Excalidraw clipboard data: paste straight into excalidraw.com. */
+  async function copyForExcalidraw() {
+    const scene = await toExcalidraw(scopeEls("selection"), { shapePath, samplePath, imageSize });
+    await navigator.clipboard.writeText(JSON.stringify({ type: "excalidraw/clipboard", elements: scene.elements, files: scene.files }));
+    flash(`Copied ${selRef.current.length || "the board"} for Excalidraw — paste it there`);
+  }
+  /** Add an Excalidraw scene to the board (at `at`, or where it was drawn, then zoom to it). */
+  function importScene(scene: XScene, at?: { x: number; y: number }) {
+    if (readOnly) return;
+    const r = fromExcalidraw(scene, { zFrom: maxZ(), at, newId: uid });
+    if (!r.elements.length) {
+      flash("Nothing to add from that Excalidraw drawing");
+      return;
+    }
+    commit([...elRef.current, ...r.elements]);
+    setSelection(r.elements.filter((e) => e.kind !== "frame").map((e) => e.id));
+    setTool("select");
+    if (!at) fitTo(r.elements);
+    flash(`Added ${r.elements.length} item${r.elements.length > 1 ? "s" : ""} from Excalidraw${r.rotated ? ` · ${r.rotated} turned item${r.rotated > 1 ? "s" : ""} placed straight` : ""}${r.skipped ? ` · ${r.skipped} skipped` : ""}`);
+  }
+  /** A board file exported from here (.board.json): add its items with fresh ids. */
+  function importBoardFile(els: El[]) {
+    const map = new Map(els.map((e) => [e.id, uid(e.kind === "connector" ? "cx" : e.kind === "draw" ? "ink" : "el")]));
+    let z = maxZ();
+    const add = els.map((e) =>
+      e.kind === "connector"
+        ? { ...e, id: map.get(e.id)!, z: ++z, from: { ...e.from, id: e.from.id && map.get(e.from.id) }, to: { ...e.to, id: e.to.id && map.get(e.to.id) } }
+        : ({ ...e, id: map.get(e.id)!, z: e.kind === "frame" ? e.z : ++z, ...(e.kind === "draw" && e.on ? { on: map.get(e.on) } : {}) } as El)
+    );
+    commit([...elRef.current, ...add]);
+    setSelection(add.filter((e) => e.kind !== "frame").map((e) => e.id));
+    fitTo(add);
+    flash(`Added ${add.length} items`);
+  }
+  async function openFile(file: File) {
+    if (readOnly) return;
+    if (file.type.startsWith("image/")) return void addImageFile(file, viewCenter());
+    const text = await file.text();
+    const scene = parseExcalidraw(text);
+    if (scene) return importScene(scene);
+    try {
+      const j = JSON.parse(text);
+      const els = normalizeElements(Array.isArray(j) ? j : j.elements ?? j.nodes);
+      if (els.length) return importBoardFile(els);
+    } catch {}
+    flash("That file isn't an Excalidraw (.excalidraw) or board (.json) file");
+  }
+  function insertMermaid(src: string) {
+    const make = (at: { x: number; y: number }) =>
+      mermaidToElements(src, {
+        at,
+        zFrom: maxZ(),
+        newId: uid,
+        shape: (sh) => ({ ...sh, ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16, ...shapeLook() }),
+        line: (c, o) => ({ ...c, stroke: INK, width: o.thick ? 3 : (cur.strokeWidth ?? 2), ...lineLook(), ...(c.dashed ? { dashed: true, dotted: undefined } : {}) }),
+      });
+    const probe = make({ x: 0, y: 0 });
+    if (probe.error) return flash(probe.error);
+    const b = boundsOf(probe.elements, new Map(probe.elements.map((e) => [e.id, e]))) ?? { x: 0, y: 0, w: 0, h: 0 };
+    const c = viewCenter();
+    let at = { x: c.x - b.w / 2, y: c.y - b.h / 2 };
+    // Don't drop it on top of what's there: if the middle of the view is taken, put it to the right of everything.
+    const taken = elRef.current.filter((e) => isBox(e) && e.kind !== "frame");
+    if (taken.some((e) => isBox(e) && intersects(e, { x: at.x, y: at.y, w: b.w, h: b.h }))) {
+      const all = boundsOf(taken, new Map(elRef.current.map((e) => [e.id, e])));
+      if (all) at = { x: all.x + all.w + 160, y: all.y };
+    }
+    const r = make(at);
+    commit([...elRef.current, ...r.elements]);
+    setSelection(r.elements.filter((e) => e.kind !== "frame").map((e) => e.id));
+    setTool("select");
+    setMermaidOpen(false);
+    fitTo(r.elements);
+    flash(`Added ${r.nodes} shapes and ${r.edges} lines`);
+  }
+  function copyStyle() {
+    const el = selectedEls()[0];
+    if (!el) return;
+    styleClip.current = el;
+    setStyleCopied(true);
+    flash("Style copied — Ctrl+Alt+V pastes it on other items");
+  }
+  function pasteStyle() {
+    const src = styleClip.current;
+    if (!src || !selRef.current.length || readOnly) return;
+    update(selRef.current, (el) => (el.locked ? el : styleFrom(el, src)));
+    flash("Style pasted");
+  }
+  async function editLink() {
+    const el = selectedEls()[0];
+    if (!el || readOnly) return;
+    const v = await promptDialog({ title: el.link ? "Edit link" : "Add a link", label: "Web address", placeholder: "https://…", defaultValue: el.link || "", confirmLabel: "Save" });
+    if (v === null) return;
+    const t = v.trim();
+    const url = t ? (/^[a-z][\w+.-]*:/i.test(t) ? t : `https://${t}`) : undefined;
+    update(selRef.current, (x) => ({ ...x, link: url }) as El);
+    flash(url ? "Link added — click the blue button on the item to open it" : "Link removed");
+  }
+  /** Make everything (or what's selected) hand-drawn, or clean again. */
+  function sketchAll(on: boolean) {
+    const ids = selRef.current.length ? selRef.current : elRef.current.map((e) => e.id);
+    update(ids, (el) => {
+      if (el.kind === "shape") return on ? { ...el, rough: el.rough || 1, fillStyle: el.fillStyle ?? (el.fill === "#FFFFFF" || el.fill === "transparent" ? undefined : "hachure"), fmt: { ...el.fmt, font: "hand" } } : { ...el, rough: undefined, fillStyle: undefined, fmt: { ...el.fmt, font: undefined } };
+      if (el.kind === "connector") return { ...el, rough: on ? el.rough || 1 : undefined };
+      if (el.kind === "sticky" || el.kind === "text") return { ...el, fmt: { ...fmtOf(el), font: on ? "hand" : undefined } } as El;
+      return el;
+    });
+    setCur(on ? SKETCH_STYLE : DEFAULT_STYLE);
+    flash(on ? "Hand-drawn look on — new items too" : "Clean look on — new items too");
+  }
+
   function align(mode: "left" | "hcenter" | "top" | "right") {
     if (!selBounds) return;
     update(selection, (el) => {
@@ -2678,7 +3083,7 @@ export function BoardCanvas({
       "data-anim": el.id,
       onPointerEnter: () => setHoverId(el.id),
       onPointerLeave: () => setHoverId((h) => (h === el.id ? null : h)),
-      style: { left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z, opacity: erasing.has(el.id) ? 0.25 : undefined } as React.CSSProperties,
+      style: { left: el.x, top: el.y, width: el.w, height: el.h, zIndex: el.z, opacity: erasing.has(el.id) ? 0.25 : el.alpha } as React.CSSProperties,
     };
     const fmt = fmtStyle(fmtOf(el));
     let inner: React.ReactNode = null;
@@ -2704,7 +3109,7 @@ export function BoardCanvas({
       inner = (
         <>
           <svg className="wb-shape absolute inset-0 overflow-visible" width={el.w} height={el.h}>
-            <path d={shapePath(el.shape, el.w, el.h)} fill={el.fill} stroke={el.stroke} strokeWidth={2} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <ShapeBody el={el} />
           </svg>
           {!editing && (
             <div
@@ -2760,7 +3165,23 @@ export function BoardCanvas({
     return (
       <div key={el.id} {...common} className={clsx("absolute", el.kind === "sticky" && "rounded-[2px]", isSel && "cursor-move")}>
         {inner}
-        {hovered && <div className="wb-fade pointer-events-none absolute -inset-px rounded-[2px]" style={{ boxShadow: `0 0 0 ${1.5 / camera.zoom}px ${MIRO_BLUE}` }} />}
+        {hovered && <div data-export-skip className="wb-fade pointer-events-none absolute -inset-px rounded-[2px]" style={{ boxShadow: `0 0 0 ${1.5 / camera.zoom}px ${MIRO_BLUE}` }} />}
+        {el.link && !editing && (
+          <a
+            data-export-skip
+            data-ui
+            href={el.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={el.link}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="absolute z-10 grid place-items-center rounded-full bg-[#4262FF] text-white shadow-[0_2px_6px_rgba(0,0,0,.25)] hover:bg-[#3550E6]"
+            style={{ right: -11 / camera.zoom, top: -11 / camera.zoom, width: 22 / camera.zoom, height: 22 / camera.zoom }}
+            aria-label={`Open link ${el.link}`}
+          >
+            <ExternalLink style={{ width: 12 / camera.zoom, height: 12 / camera.zoom }} />
+          </a>
+        )}
         {editing && el.kind === "card" && (
           <div
             className="absolute inset-0 z-10 flex min-h-full flex-col gap-1.5 rounded-xl bg-white p-3 pt-4 shadow-lg ring-2 ring-[#4262FF]"
@@ -2861,7 +3282,7 @@ export function BoardCanvas({
             strokeLinejoin="round"
             style={{ pointerEvents: editingHost ? "none" : "stroke" }}
           />
-          {selection.includes(d.id) && <rect x={-4} y={-4} width={d.w + 8} height={d.h + 8} fill="none" stroke={MIRO_BLUE} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
+          {selection.includes(d.id) && <rect data-export-skip x={-4} y={-4} width={d.w + 8} height={d.h + 8} fill="none" stroke={MIRO_BLUE} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />}
         </g>
       </svg>
     );
@@ -2879,9 +3300,9 @@ export function BoardCanvas({
           {hs && <HeadMarker id={`ah-${c.id}-s`} head={hs} color={color} />}
           {he && <HeadMarker id={`ah-${c.id}-e`} head={he} color={color} />}
         </defs>
-        <g data-anim={c.id} opacity={erasing.has(c.id) ? 0.2 : undefined}>
+        <g data-anim={c.id} opacity={erasing.has(c.id) ? 0.2 : c.alpha}>
           {hoverLine === c.id && !sel && !interaction && (
-            <path d={pth.d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.35} strokeWidth={c.width + 6 / camera.zoom} strokeLinecap="round" style={{ pointerEvents: "none" }} />
+            <path data-export-skip d={pth.d} fill="none" stroke={MIRO_BLUE} strokeOpacity={0.35} strokeWidth={c.width + 6 / camera.zoom} strokeLinecap="round" style={{ pointerEvents: "none" }} />
           )}
           <path
             d={pth.d}
@@ -2893,13 +3314,20 @@ export function BoardCanvas({
             onPointerEnter={() => setHoverLine(c.id)}
             onPointerLeave={() => setHoverLine((h) => (h === c.id ? null : h))}
           />
+          {/* Hand-drawn: roughjs strokes for the line; the clean path below then only carries the arrowheads. */}
+          {c.rough
+            ? roughLine(pth.d, { seed: seedOf(c.id), rough: c.rough, stroke: color, width: c.width, style: c.dotted ? "dotted" : c.dashed ? "dashed" : undefined }).map((p, i) => (
+                <path key={i} d={p.d} fill="none" stroke={p.stroke} strokeWidth={p.strokeWidth} strokeDasharray={p.dash} strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "none" }} />
+              ))
+            : null}
           <path
             data-wire=""
             d={pth.d}
             fill="none"
             stroke={color}
+            strokeOpacity={c.rough ? 0 : undefined}
             strokeWidth={c.width}
-            strokeDasharray={c.dashed ? "7 6" : undefined}
+            strokeDasharray={c.dotted ? `1.5 ${5 + c.width}` : c.dashed ? "7 6" : undefined}
             markerEnd={he ? `url(#ah-${c.id}-e)` : undefined}
             markerStart={hs ? `url(#ah-${c.id}-s)` : undefined}
             strokeLinecap="round"
@@ -2916,6 +3344,77 @@ export function BoardCanvas({
         </g>
       </svg>
     );
+  }
+
+  /** Everything the command palette (Ctrl+/) can do. */
+  function commands(): Command[] {
+    const sel = selection.length > 0;
+    const tool_ = (id: string, label: string, shortcut: string, run: () => void, keywords = ""): Command => ({ id, label, group: "Tools", shortcut, run, keywords, disabled: readOnly && id !== "t-select" && id !== "t-hand" && id !== "t-laser" });
+    const pickTool = (t: Tool) => {
+      setTool(t);
+      if (t !== "select" && t !== "hand") setSelection([]);
+    };
+    return [
+      tool_("t-select", "Select", "1 / V", () => pickTool("select"), "เลือก"),
+      tool_("t-hand", "Hand (pan)", "H", () => pickTool("hand"), "เลื่อน"),
+      tool_("t-sticky", "Sticky note", "N", () => pickTool("sticky"), "โน้ต"),
+      tool_("t-rect", "Rectangle", "2 / R", () => (pickTool("shape"), setShapeKind("rect")), "สี่เหลี่ยม shape"),
+      tool_("t-diamond", "Diamond", "3", () => (pickTool("shape"), setShapeKind("diamond")), "ข้าวหลามตัด decision"),
+      tool_("t-ellipse", "Ellipse", "4 / O", () => (pickTool("shape"), setShapeKind("ellipse")), "วงกลม circle"),
+      tool_("t-arrow", "Arrow", "5 / L", () => (pickTool("connector"), setLineArrow(true)), "ลูกศร connector"),
+      tool_("t-line", "Line", "6", () => (pickTool("connector"), setLineArrow(false)), "เส้น"),
+      tool_("t-pen", "Draw (pen)", "7 / P", () => (pickTool("pen"), setPenMode("pen")), "วาด ปากกา freedraw"),
+      tool_("t-hl", "Highlighter", "", () => (pickTool("pen"), setPenMode("highlighter")), "ไฮไลต์"),
+      tool_("t-text", "Text", "8 / T", () => pickTool("text"), "ข้อความ"),
+      tool_("t-image", "Insert image", "9", () => imageInput.current?.click(), "รูป picture"),
+      tool_("t-eraser", "Eraser", "0 / E", () => pickTool("eraser"), "ยางลบ"),
+      tool_("t-laser", "Laser pointer", "K", () => pickTool("laser"), "เลเซอร์ ชี้ present"),
+      tool_("t-frame", "Frame", "F", () => pickTool("frame"), "กรอบ"),
+      { id: "e-undo", group: "Edit", label: "Undo", shortcut: "Ctrl+Z", run: undo, disabled: readOnly },
+      { id: "e-redo", group: "Edit", label: "Redo", shortcut: "Ctrl+Shift+Z", run: redo, disabled: readOnly },
+      { id: "e-all", group: "Edit", label: "Select all", shortcut: "Ctrl+A", run: () => setSelection(elRef.current.map((x) => x.id)) },
+      { id: "e-dup", group: "Edit", label: "Duplicate", shortcut: "Ctrl+D", run: () => duplicate(selectedEls()), disabled: !sel || readOnly },
+      { id: "e-del", group: "Edit", label: "Delete", shortcut: "Del", run: deleteSelection, disabled: !sel || readOnly },
+      { id: "e-group", group: "Edit", label: "Group", shortcut: "Ctrl+G", run: groupSelection, disabled: !grouping.canGroup || readOnly },
+      { id: "e-ungroup", group: "Edit", label: "Ungroup", shortcut: "Ctrl+Shift+G", run: ungroupSelection, disabled: !grouping.grouped || readOnly },
+      { id: "e-lock", group: "Edit", label: "Lock / unlock", shortcut: "Ctrl+Shift+L", run: toggleLock, disabled: !sel || readOnly },
+      { id: "e-front", group: "Edit", label: "Bring to front", shortcut: "PgUp", run: bringFront, disabled: !sel || readOnly },
+      { id: "e-back", group: "Edit", label: "Send to back", shortcut: "PgDn", run: sendBack, disabled: !sel || readOnly },
+      { id: "e-cstyle", group: "Edit", label: "Copy style", shortcut: "Ctrl+Alt+C", run: copyStyle, disabled: !sel },
+      { id: "e-pstyle", group: "Edit", label: "Paste style", shortcut: "Ctrl+Alt+V", run: pasteStyle, disabled: !sel || !styleCopied || readOnly },
+      { id: "e-link", group: "Edit", label: "Add or edit link", shortcut: "Alt+K", run: () => void editLink(), disabled: !sel || readOnly, keywords: "url ลิงก์" },
+      { id: "b-open", group: "Board", label: "Open file (.excalidraw, .json, picture)", shortcut: "Ctrl+O", run: () => fileInput.current?.click(), disabled: readOnly, keywords: "import เปิด excalidraw" },
+      { id: "b-xsave", group: "Board", label: "Save as .excalidraw", run: () => void saveExcalidraw("all"), keywords: "export excalidraw บันทึก" },
+      { id: "b-xcopy", group: "Board", label: sel ? "Copy selection for Excalidraw" : "Copy board for Excalidraw", run: () => void copyForExcalidraw(), keywords: "clipboard excalidraw" },
+      { id: "b-image", group: "Board", label: "Export image (PNG / SVG)", shortcut: "Ctrl+Shift+E", run: () => setExportOpen(true), keywords: "png svg รูป ส่งออก" },
+      { id: "b-json", group: "Board", label: "Export board (.json)", run: exportJson },
+      { id: "b-mermaid", group: "Board", label: "Text to diagram (Mermaid)", run: () => setMermaidOpen(true), disabled: readOnly, keywords: "mermaid flowchart แผนภาพ ข้อความ" },
+      { id: "b-find", group: "Board", label: "Find on board", shortcut: "Ctrl+F", run: () => setFindOpen(true), keywords: "search ค้นหา" },
+      { id: "b-sketch", group: "Board", label: sel ? "Make selection hand-drawn" : "Make everything hand-drawn", run: () => sketchAll(true), disabled: readOnly, keywords: "sketch rough วาดมือ สเก็ตช์ excalidraw" },
+      { id: "b-clean", group: "Board", label: sel ? "Make selection clean" : "Make everything clean", run: () => sketchAll(false), disabled: readOnly, keywords: "clean miro เรียบ" },
+      { id: "v-fit", group: "View", label: "Zoom to fit", shortcut: "Shift+1", run: () => fitTo(elRef.current) },
+      { id: "v-sel", group: "View", label: "Zoom to selection", shortcut: "Shift+2", run: zoomToSelection, disabled: !sel },
+      { id: "v-100", group: "View", label: "Zoom to 100%", shortcut: "Shift+0", run: () => zoomTo(1) },
+      { id: "v-grid", group: "View", label: "Show grid", shortcut: "Ctrl+'", checked: look.grid, run: () => toggleLook("grid") },
+      { id: "v-dark", group: "View", label: "Dark canvas", shortcut: "Alt+Shift+D", checked: look.dark, run: () => toggleLook("dark"), keywords: "theme มืด" },
+      { id: "v-zen", group: "View", label: "Zen mode", shortcut: "Alt+Z", checked: zen, run: () => setZen((z) => !z), keywords: "focus ซ่อน" },
+      { id: "v-full", group: "View", label: "Full screen", checked: focusMode, run: () => changeFocus(!focusMode) },
+      { id: "v-layers", group: "View", label: "Layers", checked: layersOpen, run: () => setLayersOpen((v) => !v) },
+      { id: "v-help", group: "View", label: "Keyboard shortcuts", run: () => setHelpOpen(true), keywords: "help คีย์ลัด" },
+    ];
+  }
+
+  // Find on board: every item whose text matches, top-left first.
+  const findText = findQ.trim().toLowerCase();
+  const findHits = findOpen && findText ? sorted.filter((el) => (el.kind === "connector" ? el.label || "" : textOf(el)).toLowerCase().includes(findText)) : [];
+  function goFind(dir: 1 | -1) {
+    const n = findHits.length;
+    if (!n) return;
+    const shown = selection.length === 1 && findHits[findAt % n]?.id === selection[0];
+    const i = shown ? (findAt + dir + n) % n : findAt % n;
+    setFindAt(i);
+    setSelection([findHits[i].id]);
+    fitTo([findHits[i]]);
   }
 
   // Toolbar geometry for the chosen layout.
@@ -2969,7 +3468,7 @@ export function BoardCanvas({
   // The drawing bar shows every colour / width / line type when there's room, else one button each.
   // (A top bar is centred under the toolbar, so it needs room on both sides of that centre.)
   const barMid = topInRow && headerGap ? (headerGap.left + headerGap.right) / 2 : view.w / 2;
-  const penFull = tbVertical ? availH - (tb.pos === "right" ? 56 : 0) >= 730 : 2 * Math.min(barMid - 12, view.w - 12 - barMid) >= 800;
+  const penFull = tbVertical ? availH - (tb.pos === "right" ? 56 : 0) >= 774 : 2 * Math.min(barMid - 12, view.w - 12 - barMid) >= 844;
   const tbTop = topInRow ? 12 : 72;
   const tbW = tbSize?.w ?? tbPanel * 2 + 8;
   const tbH = tbSize?.h ?? tbPanel;
@@ -2990,7 +3489,9 @@ export function BoardCanvas({
       ? "grabbing"
       : spaceDown || tool === "hand"
         ? "grab"
-        : tool === "select"
+        : tool === "laser"
+          ? `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='10' cy='10' r='5' fill='%23FF2E2E' stroke='white' stroke-width='2'/%3E%3C/svg%3E") 10 10, crosshair`
+          : tool === "select"
           ? "default"
           : tool === "sticky" || tool === "eraser"
             ? "none"
@@ -3000,7 +3501,8 @@ export function BoardCanvas({
     <div
       ref={boardRef}
       className={clsx(
-        "zoom-native wb-board-in overflow-clip bg-[#F2F2F2] text-[#1C1C1E] select-none [-webkit-touch-callout:none]",
+        "zoom-native wb-board-in overflow-clip text-[#1C1C1E] select-none [-webkit-touch-callout:none]",
+        look.dark ? "bg-[#121212]" : "bg-[#F2F2F2]",
         focusMode ? "fixed inset-0 z-[70]" : "relative h-full w-full rounded-xl"
       )}
     >
@@ -3009,7 +3511,9 @@ export function BoardCanvas({
         className="absolute inset-0 touch-none"
         style={{
           cursor,
-          backgroundImage: `radial-gradient(circle, rgba(28,28,30,.22) ${Math.max(0.75, Math.min(1.25, camera.zoom))}px, transparent ${Math.max(0.75, Math.min(1.25, camera.zoom)) + 0.5}px)`,
+          backgroundImage: look.grid
+            ? `radial-gradient(circle, ${look.dark ? "rgba(255,255,255,.2)" : "rgba(28,28,30,.22)"} ${Math.max(0.75, Math.min(1.25, camera.zoom))}px, transparent ${Math.max(0.75, Math.min(1.25, camera.zoom)) + 0.5}px)`
+            : "none",
           backgroundSize: `${gridSize}px ${gridSize}px`,
           backgroundPosition: `${camera.x}px ${camera.y}px`,
         }}
@@ -3027,6 +3531,12 @@ export function BoardCanvas({
           if (e.dataTransfer.types.includes("application/x-wb-block") || (!readOnly && e.dataTransfer.types.includes("Files"))) e.preventDefault();
         }}
         onDrop={(e) => {
+          const docs = [...e.dataTransfer.files].filter((f) => /\.(excalidraw|json)$/i.test(f.name));
+          if (docs.length && !readOnly) {
+            e.preventDefault();
+            docs.forEach((f) => void openFile(f));
+            return;
+          }
           const pics = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
           if (pics.length && !readOnly) {
             e.preventDefault();
@@ -3043,7 +3553,7 @@ export function BoardCanvas({
         {/* World */}
         <div
           ref={worldRef}
-          className="absolute left-0 top-0 origin-top-left"
+          className={clsx("absolute left-0 top-0 origin-top-left", look.dark && "wb-dark")}
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
           {frames.map((f) => (
@@ -3074,6 +3584,7 @@ export function BoardCanvas({
                 />
               ) : (
                 <span
+                  data-export-skip
                   className="absolute left-0 whitespace-nowrap"
                   style={{ fontSize: 14 / camera.zoom, top: -22 / camera.zoom, color: selection.includes(f.id) ? MIRO_BLUE : "#656B81" }}
                 >
@@ -3156,6 +3667,33 @@ export function BoardCanvas({
 
         {/* Screen-space overlays */}
         <div className="pointer-events-none absolute inset-0" style={{ zIndex: 5 }}>
+          {/* laser pointer trails (yours and collaborators') */}
+          {laserFrame.trails.length > 0 && (
+            <svg className="absolute inset-0 h-full w-full overflow-visible" aria-hidden>
+              {laserFrame.trails.map((tr, ti) =>
+                tr.slice(1).map((q, i) => {
+                  const a = tr[i];
+                  const age = Math.min(1, (laserFrame.now - q.t) / LASER_MS);
+                  const s1 = toScreen(a.x, a.y);
+                  const s2 = toScreen(q.x, q.y);
+                  return (
+                    <line
+                      key={`${ti}-${i}`}
+                      x1={s1.x}
+                      y1={s1.y}
+                      x2={s2.x}
+                      y2={s2.y}
+                      stroke="#FF2E2E"
+                      strokeOpacity={1 - age}
+                      strokeWidth={1.5 + 5 * (1 - age)}
+                      strokeLinecap="round"
+                      style={{ filter: "drop-shadow(0 0 3px rgba(255,46,46,.7))" }}
+                    />
+                  );
+                })
+              )}
+            </svg>
+          )}
           {/* remote selections */}
           {peers.map((peer) =>
             peer.selection.map((id) => {
@@ -3407,7 +3945,7 @@ export function BoardCanvas({
 
       {/* ---------------- Floating UI ---------------- */}
       {/* Top-left: board header */}
-      <div ref={titleRef} data-ui className={clsx("wb-from-top absolute left-3 top-3 z-20 flex h-12 items-center gap-0.5 px-1.5", PANEL)}>
+      <div ref={titleRef} data-ui className={clsx("wb-from-top absolute left-3 top-3 z-20 flex h-12 items-center gap-0.5 px-1.5", PANEL, zen && "pointer-events-none invisible")}>
         <button type="button" onClick={onBack} className={clsx(ICON_BTN, "h-9 w-9")} title={backLabel} aria-label={backLabel}>
           <ChevronLeft className="h-5 w-5" />
         </button>
@@ -3438,9 +3976,82 @@ export function BoardCanvas({
         >
           {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : saveState === "error" ? <CloudOff className="h-4 w-4" /> : <Cloud className="h-4 w-4" />}
         </span>
-        <button type="button" onClick={exportJson} className={clsx(ICON_BTN, "h-9 w-9", slimTitle && "hidden")} title="Export board (.json)" aria-label="Export board">
-          <Download className="h-[18px] w-[18px]" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMainMenu((v) => !v)}
+            aria-pressed={mainMenu}
+            aria-haspopup="menu"
+            className={clsx(ICON_BTN, "h-9 w-9", mainMenu && ACTIVE_BTN)}
+            title="Board menu — open & export, Excalidraw, text to diagram, view"
+            aria-label="Board menu"
+          >
+            <MenuIcon className="h-[18px] w-[18px]" />
+          </button>
+          {mainMenu && (
+            <div role="menu" data-scrollable className={clsx("absolute left-0 top-11 z-40 max-h-[75vh] w-[290px] overflow-y-auto p-1.5", POPOVER)}>
+              {(
+                [
+                  ...(!readOnly ? ([["open", FileUp, "Open file…", "Ctrl+O", "Excalidraw (.excalidraw), board (.json) or a picture"]] as const) : []),
+                  ["xsave", FileDown, "Save as .excalidraw", "", "Opens on excalidraw.com"],
+                  ["image", ImageIcon, "Export image…", "Ctrl+Shift+E", "PNG, SVG or copy"],
+                  ["json", Download, "Export board (.json)", "", ""],
+                  ["sep1"],
+                  ...(!readOnly ? ([["mermaid", WandSparkles, "Text to diagram…", "", "Paste a Mermaid flowchart"]] as const) : []),
+                  ["find", Search, "Find on board", "Ctrl+F", ""],
+                  ["palette", CommandIcon, "Command palette", "Ctrl+/", "Every tool and action"],
+                  ["sep2"],
+                  ...(!readOnly ? ([["sketch", Paintbrush, "Hand-drawn look", "", "Like Excalidraw — for everything and new items", cur.rough > 0]] as const) : []),
+                  ["grid", Grid3x3, "Show grid", "Ctrl+'", "", look.grid],
+                  ["dark", Moon, "Dark canvas", "Alt+Shift+D", "", look.dark],
+                  ["zen", Maximize, "Zen mode", "Alt+Z", "Hide the toolbars", zen],
+                  ["sep3"],
+                  ["help", CircleHelp, "Keyboard shortcuts", "", ""],
+                ] as ([string] | [string, LucideIcon, string, string, string, boolean?])[]
+              ).map((row) => {
+                if (row.length === 1) return <span key={row[0]} className="my-1 block h-px bg-[#E9EAEF]" />;
+                const [id, Icon, label, keys, hint, on] = row;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role={on === undefined ? "menuitem" : "menuitemcheckbox"}
+                    aria-checked={on}
+                    onClick={() => {
+                      setMainMenu(false);
+                      if (id === "open") fileInput.current?.click();
+                      else if (id === "xsave") void saveExcalidraw("all");
+                      else if (id === "image") setExportOpen(true);
+                      else if (id === "json") exportJson();
+                      else if (id === "mermaid") setMermaidOpen(true);
+                      else if (id === "find") setFindOpen(true);
+                      else if (id === "palette") setPaletteOpen(true);
+                      else if (id === "sketch") sketchAll(!(cur.rough > 0));
+                      else if (id === "grid") toggleLook("grid");
+                      else if (id === "dark") toggleLook("dark");
+                      else if (id === "zen") setZen((z) => !z);
+                      else if (id === "help") setHelpOpen(true);
+                    }}
+                    className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-[#F1F2F5]"
+                  >
+                    <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#656B81]" strokeWidth={1.75} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13.5px] text-[#1C1C1E]">{label}</span>
+                      {hint && <span className="block text-[11.5px] leading-snug text-[#9A9DAA]">{hint}</span>}
+                    </span>
+                    {on !== undefined ? (
+                      <span className={clsx("mt-0.5 h-4 w-7 shrink-0 rounded-full p-0.5 transition-colors", on ? "bg-[#4262FF]" : "bg-[#C3C6D4]")}>
+                        <span className={clsx("block h-3 w-3 rounded-full bg-white transition-transform", on && "translate-x-3")} />
+                      </span>
+                    ) : (
+                      keys && <span className="mt-0.5 shrink-0 text-[11.5px] text-[#9A9DAA]">{keys}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div className="relative">
           <button
             type="button"
@@ -3502,7 +4113,7 @@ export function BoardCanvas({
       </div>
 
       {/* Top-right: collaborators + share */}
-      <div ref={shareRef} data-ui className="wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2">
+      <div ref={shareRef} data-ui className={clsx("wb-from-top absolute right-3 top-3 z-20 flex items-center gap-2", zen && "pointer-events-none invisible")}>
         {extraActions && <div className={clsx("flex h-12 items-center gap-1 px-1.5", PANEL)}>{extraActions}</div>}
         <div className={clsx("flex h-12 items-center gap-2 pl-2.5 pr-1.5", PANEL)}>
           <div className="flex -space-x-1.5">
@@ -3551,6 +4162,7 @@ export function BoardCanvas({
         }}
         className={clsx(
           "absolute top-[72px] z-20 flex gap-2",
+          zen && "pointer-events-none invisible",
           tb.pos === "left" && "wb-from-left left-3 flex-row items-start",
           tb.pos === "right" && "wb-from-right right-3 flex-row-reverse items-start",
           tb.pos === "top" && "wb-from-top flex-col items-center",
@@ -3591,6 +4203,7 @@ export function BoardCanvas({
                   aria-pressed={active}
                   onClick={() => {
                     setTool(t);
+                    if (t === "connector") setLineArrow(true);
                     if (t !== "select" && t !== "hand") setSelection([]);
                     setFlyoutOpen(t === "sticky" ? !(flyoutOpen && tool === "sticky") : false);
                     setLibraryOpen(false);
@@ -3686,6 +4299,7 @@ export function BoardCanvas({
                             return;
                           }
                           setTool(t as Tool);
+                          if (t === "connector") setLineArrow(true);
                           if (t !== "hand") setSelection([]);
                         }}
                         className={clsx("flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px]", tool === t ? ACTIVE_BTN : "hover:bg-[#F1F2F5]")}
@@ -3900,6 +4514,9 @@ export function BoardCanvas({
             <button type="button" aria-label="Eraser (E)" title="Eraser (E)" aria-pressed={tool === "eraser"} onClick={() => { setTool("eraser"); setSelection([]); }} className={btn(tool === "eraser")}>
               <Eraser className="h-5 w-5" strokeWidth={1.75} />
             </button>
+            <button type="button" aria-label="Laser pointer (K)" title="Laser pointer (K) — point things out; the trail fades, collaborators see it" aria-pressed={tool === "laser"} onClick={() => { setTool("laser"); setSelection([]); }} className={btn(tool === "laser")}>
+              <Zap className={clsx("h-5 w-5", tool === "laser" && "text-[#FF2E2E]")} strokeWidth={1.75} />
+            </button>
             </BarSection>
             {tool === "eraser" ? (
               <>
@@ -3958,7 +4575,7 @@ export function BoardCanvas({
       </div>
 
       {/* Layers: everything on the board, top first; drag to reorder */}
-      {layersOpen && (
+      {layersOpen && !zen && (
         <LayersPanel
           units={stackUnits(elements).reverse()}
           frames={frames}
@@ -4061,7 +4678,7 @@ export function BoardCanvas({
                     onClick={() => {
                       const z = maxZ() + 1;
                       const { w, h } = shapeSize(sh.kind);
-                      const el: BoxEl = { id: uid(), kind: "shape", shape: sh.kind, x: menu.world.x - w / 2, y: menu.world.y - h / 2, w, h, z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16 };
+                      const el: BoxEl = { id: uid(), kind: "shape", shape: sh.kind, x: menu.world.x - w / 2, y: menu.world.y - h / 2, w, h, z, text: "", ...SHAPE_LOOK, textColor: SHAPE_TEXT, fontSize: 16, ...shapeLook() };
                       setMenu(null);
                       commit([...elRef.current, el]);
                       setSelection([el.id]);
@@ -4170,15 +4787,21 @@ export function BoardCanvas({
           }
           onDelete={deleteSelection}
           onAlign={align}
+          onDefaults={setCur}
+          onCopyStyle={copyStyle}
+          onPasteStyle={pasteStyle}
+          canPasteStyle={styleCopied}
+          onLink={() => void editLink()}
+          onCopyExcalidraw={() => void copyForExcalidraw()}
         />
       )}
 
       {/* Bottom-right: minimap + zoom */}
-      {showMap && <Minimap elements={elements} camera={camera} size={view} onJump={(x, y) => {
+      {showMap && !zen && <Minimap elements={elements} camera={camera} size={view} onJump={(x, y) => {
         const c = camRef.current;
         glideTo({ ...c, x: view.w / 2 - x * c.zoom, y: view.h / 2 - y * c.zoom });
       }} />}
-      <div data-ui className="wb-from-bottom absolute bottom-3 right-3 z-20 flex items-center gap-2">
+      <div data-ui className={clsx("wb-from-bottom absolute bottom-3 right-3 z-20 flex items-center gap-2", zen && "pointer-events-none invisible")}>
         <div className={clsx("flex h-10 items-center gap-0.5 px-1", PANEL)}>
           <button
             type="button"
@@ -4298,8 +4921,137 @@ export function BoardCanvas({
       {toast && (
         <div className="absolute bottom-16 left-1/2 z-30 -translate-x-1/2 rounded-lg bg-[#1C1C1E] px-4 py-2.5 text-[14px] text-white shadow-lg">{toast}</div>
       )}
+
+      {zen && (
+        <button
+          type="button"
+          data-ui
+          onClick={() => setZen(false)}
+          className={clsx("absolute bottom-4 left-1/2 z-30 flex h-9 -translate-x-1/2 items-center gap-2 px-3.5 text-[13px] font-medium text-[#1C1C1E] hover:bg-[#F1F2F5]", PANEL)}
+        >
+          Exit zen mode <span className="text-[12px] text-[#9A9DAA]">Alt+Z</span>
+        </button>
+      )}
+
+      {/* Find on board */}
+      {findOpen && (
+        <div data-ui className={clsx("wb-pop absolute left-1/2 top-[72px] z-30 flex h-11 w-[min(92%,440px)] -translate-x-1/2 items-center gap-1 pl-3 pr-1", PANEL)}>
+          <Search className="h-4 w-4 shrink-0 text-[#9A9DAA]" />
+          <input
+            autoFocus
+            value={findQ}
+            onChange={(e) => {
+              setFindQ(e.target.value);
+              setFindAt(0);
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                goFind(e.shiftKey ? -1 : 1);
+              } else if (e.key === "Escape") setFindOpen(false);
+            }}
+            placeholder="Find text on the board…"
+            style={{ outline: "none" }}
+            className="h-9 min-w-0 flex-1 bg-transparent text-[14px] text-[#1C1C1E] outline-none placeholder:text-[#9A9DAA]"
+            aria-label="Find on board"
+          />
+          <span className="px-1 text-[12px] tabular-nums text-[#656B81]">{findText ? (findHits.length ? `${(findAt % findHits.length) + 1} / ${findHits.length}` : "None") : ""}</span>
+          <button type="button" onClick={() => goFind(-1)} disabled={!findHits.length} className="grid h-8 w-8 place-items-center rounded-md text-[#656B81] hover:bg-[#F1F2F5] disabled:opacity-40" aria-label="Previous match" title="Previous (Shift+Enter)">
+            <ArrowUp className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => goFind(1)} disabled={!findHits.length} className="grid h-8 w-8 place-items-center rounded-md text-[#656B81] hover:bg-[#F1F2F5] disabled:opacity-40" aria-label="Next match" title="Next (Enter)">
+            <ArrowDown className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => setFindOpen(false)} className="grid h-8 w-8 place-items-center rounded-md text-[#656B81] hover:bg-[#F1F2F5]" aria-label="Close find">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".excalidraw,.json,application/json,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void openFile(f);
+        }}
+      />
+      <input
+        ref={imageInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void addImageFile(f, viewCenter());
+        }}
+      />
+      {exportOpen && (
+        <ExportDialog
+          source={{
+            node: () => worldRef.current,
+            all: boundsOf(elements, byId),
+            selection: selection.length
+              ? (() => {
+                  const ids = new Set([...selection, ...inkOn(selection).map((d) => d.id)]);
+                  const b = boundsOf(elements.filter((e) => ids.has(e.id)), byId);
+                  return b ? { ids, bounds: b } : null;
+                })()
+              : null,
+          }}
+          name={name}
+          dark={look.dark}
+          onDark={(on) => setLook({ dark: on })}
+          onExcalidraw={(scope) => void saveExcalidraw(scope)}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
+      {mermaidOpen && <MermaidDialog shapePath={shapePath} onInsert={insertMermaid} onClose={() => setMermaidOpen(false)} />}
+      {paletteOpen && <CommandPalette commands={commands()} onClose={() => setPaletteOpen(false)} />}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+/** `el` with the look of `src` (Ctrl+Alt+V): everything for the same kind, else opacity, font and hand-drawn look. */
+function styleFrom(el: El, src: El): El {
+  const font = "fmt" in src ? (src as { fmt?: TextFmt }).fmt?.font : undefined;
+  const alpha = isBox(src) || src.kind === "connector" ? src.alpha : undefined;
+  if (el.kind === "shape" && src.kind === "shape")
+    return { ...el, fill: src.fill, stroke: src.stroke, textColor: src.textColor, fontSize: src.fontSize, fmt: src.fmt, rough: src.rough, fillStyle: src.fillStyle, strokeStyle: src.strokeStyle, strokeWidth: src.strokeWidth, alpha };
+  if (el.kind === "sticky" && src.kind === "sticky") return { ...el, color: src.color, fontSize: src.fontSize, fmt: src.fmt, alpha };
+  if (el.kind === "text" && src.kind === "text") return { ...el, color: src.color, fontSize: src.fontSize, fmt: src.fmt, bold: src.bold, alpha };
+  if (el.kind === "connector" && src.kind === "connector")
+    return { ...el, stroke: src.stroke, width: src.width, dashed: src.dashed, dotted: src.dotted, rough: src.rough, route: src.route, arrowStart: src.arrowStart, arrowEnd: src.arrowEnd, headStart: src.headStart, headEnd: src.headEnd, alpha };
+  let out: El = el.kind === "draw" ? el : ({ ...el, alpha } as El);
+  if (font !== undefined && (out.kind === "sticky" || out.kind === "shape" || out.kind === "text")) out = { ...out, fmt: { ...fmtOf(out), font } } as El;
+  const rough = src.kind === "shape" || src.kind === "connector" ? src.rough : undefined;
+  if (out.kind === "shape" || out.kind === "connector") out = { ...out, rough } as El;
+  return out;
+}
+
+/** A shape's outline and fill: clean SVG, or hand-drawn (Excalidraw) when it has a wobble or a hatched fill. */
+function ShapeBody({ el }: { el: ShapeEl }) {
+  const d = shapePath(el.shape, el.w, el.h);
+  if (needsRough(el)) {
+    const paths = roughShape(d, { seed: seedOf(el.id), rough: el.rough ?? 0, fill: el.fill, fillStyle: el.fillStyle ?? "solid", stroke: el.stroke, strokeWidth: el.strokeWidth ?? 2, strokeStyle: el.strokeStyle });
+    return (
+      <>
+        {paths.map((p, i) => (
+          <path key={i} d={p.d} stroke={p.stroke} strokeWidth={p.strokeWidth} fill={p.fill ?? "none"} strokeDasharray={p.dash} strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+      </>
+    );
+  }
+  // Without a set width, the border keeps its 2px look at any zoom (the classic Miro style).
+  const w = el.strokeWidth;
+  const dash = el.strokeStyle === "dashed" ? `8 ${8 + (w ?? 2)}` : el.strokeStyle === "dotted" ? `1.5 ${6 + (w ?? 2)}` : undefined;
+  return <path d={d} fill={el.fill} stroke={el.stroke} strokeWidth={w ?? 2} strokeDasharray={dash} strokeLinecap={el.strokeStyle === "dotted" ? "round" : undefined} strokeLinejoin="round" vectorEffect={w ? undefined : "non-scaling-stroke"} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -4382,7 +5134,20 @@ function ContextBar({
   grouping,
   onGroup,
   onUngroup,
+  onDefaults,
+  onCopyStyle,
+  onPasteStyle,
+  canPasteStyle,
+  onLink,
+  onCopyExcalidraw,
 }: {
+  /** A style choice also becomes the default for new items. */
+  onDefaults: (patch: Partial<CurStyle>) => void;
+  onCopyStyle: () => void;
+  onPasteStyle: () => void;
+  canPasteStyle: boolean;
+  onLink: () => void;
+  onCopyExcalidraw: () => void;
   grouping: { grouped: boolean; canGroup: boolean };
   onGroup: () => void;
   onUngroup: () => void;
@@ -4409,7 +5174,7 @@ function ContextBar({
   onForward: () => void;
   onBackward: () => void;
 }) {
-  type Pop = "color" | "stroke" | "textColor" | "shape" | "size" | "route" | "align" | "more" | "textAlign" | "headStart" | "headEnd";
+  type Pop = "color" | "stroke" | "textColor" | "shape" | "size" | "route" | "align" | "more" | "textAlign" | "headStart" | "headEnd" | "style";
   const [pop, setPop] = useState<Pop | null>(null);
   const kinds = new Set(selected.map((s) => s.kind));
   const only = kinds.size === 1 ? selected[0] : null;
@@ -4846,13 +5611,24 @@ function ContextBar({
       <Btn title={locked ? "Unlock" : "Lock"} active={locked} onClick={() => onUpdate((el) => ({ ...el, locked: !locked }))}>
         {locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
       </Btn>
+      {selected.some((e) => e.kind !== "draw") && (
+        <Trigger
+          open={pop === "style"}
+          onToggle={() => toggle("style")}
+          popCls={popCls}
+          title="Style — hand-drawn look, fill, stroke, font, opacity"
+          popover={<StylePanel selected={selected} onUpdate={onUpdate} onDefaults={onDefaults} />}
+        >
+          <Paintbrush className="h-4 w-4" />
+        </Trigger>
+      )}
       <Trigger
         open={pop === "more"}
         onToggle={() => toggle("more")}
         popCls={popCls}
         title="More"
         popover={
-          <div className="-m-1.5 flex w-52 flex-col text-[13px]">
+          <div className="-m-1.5 flex w-60 flex-col text-[13px]">
             {(
               [
                 [BringToFront, "Bring to front", "PgUp", onFront],
@@ -4860,6 +5636,10 @@ function ContextBar({
                 [ChevronsDown, "Send backward", "Ctrl+[", onBackward],
                 [SendToBack, "Send to back", "PgDn", onBack],
                 [Copy, "Duplicate", "Ctrl+D", onDuplicate],
+                [Paintbrush, "Copy style", "Ctrl+Alt+C", onCopyStyle],
+                ...(canPasteStyle ? ([[ClipboardPaste, "Paste style", "Ctrl+Alt+V", onPasteStyle]] as const) : []),
+                [Link2, selected[0]?.link ? "Edit link" : "Add link", "Alt+K", onLink],
+                [FileDown, "Copy for Excalidraw", "", onCopyExcalidraw],
                 [Trash2, "Delete", "Del", onDelete],
               ] as const
             ).map(([Icon, label, hint, fn]) => (
