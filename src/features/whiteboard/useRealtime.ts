@@ -12,6 +12,8 @@ export type Peer = {
   color: string;
   cursor: { x: number; y: number } | null;
   selection: string[];
+  /** Pointing with the laser (their cursor leaves a fading red trail). */
+  laser?: boolean;
   seenAt: number;
 };
 
@@ -78,7 +80,7 @@ export function useBoardRealtime(boardId: string | null, onRemoteOps: (ops: Ops)
           });
         })
         .on("broadcast", { event: "cursor" }, ({ payload }) => {
-          const p = payload as { key: string; x: number; y: number; name: string; email: string; color: string; selection: string[] };
+          const p = payload as { key: string; x: number; y: number; name: string; email: string; color: string; selection: string[]; laser?: boolean };
           setPeers((prev) => ({
             ...prev,
             [p.key]: {
@@ -88,6 +90,7 @@ export function useBoardRealtime(boardId: string | null, onRemoteOps: (ops: Ops)
               color: p.color,
               cursor: Number.isFinite(p.x) ? { x: p.x, y: p.y } : null,
               selection: p.selection || [],
+              laser: Boolean(p.laser),
               seenAt: Date.now(),
             },
           }));
@@ -118,17 +121,18 @@ export function useBoardRealtime(boardId: string | null, onRemoteOps: (ops: Ops)
     void ch.send({ type: "broadcast", event: "ops", payload: ops });
   }
 
-  function sendCursor(pt: { x: number; y: number } | null, selection?: string[]) {
+  function sendCursor(pt: { x: number; y: number } | null, selection?: string[], laser?: boolean) {
     const ch = channelRef.current;
     if (!ch || !me) return;
     if (selection) selectionRef.current = selection;
     const now = performance.now();
-    if (pt && now - lastCursor.current < 40) return;
+    // The laser sends more often so its trail looks smooth for others.
+    if (pt && now - lastCursor.current < (laser ? 24 : 40)) return;
     lastCursor.current = now;
     void ch.send({
       type: "broadcast",
       event: "cursor",
-      payload: { key: keyRef.current, x: pt ? pt.x : NaN, y: pt ? pt.y : NaN, ...me, selection: selectionRef.current },
+      payload: { key: keyRef.current, x: pt ? pt.x : NaN, y: pt ? pt.y : NaN, ...me, selection: selectionRef.current, laser: laser || undefined },
     });
   }
 

@@ -25,6 +25,14 @@ export type ShapeKind =
   | "document"
   | "plus";
 
+/** Excalidraw's "sloppiness": 0 architect (clean), 1 artist, 2 cartoonist. */
+export type Sloppiness = 0 | 1 | 2;
+/** How a shape is filled: solid colour, or Excalidraw's hand-drawn hatching. */
+export type FillStyle = "solid" | "hachure" | "cross-hatch" | "dots" | "zigzag";
+export type StrokeStyle = "solid" | "dashed" | "dotted";
+/** Text font: hand-drawn (Excalidraw-like), normal (the app's font) or code. */
+export type FontKind = "hand" | "normal" | "code";
+
 type Base = {
   id: string;
   x: number;
@@ -35,6 +43,10 @@ type Base = {
   locked?: boolean;
   /** Items sharing a groupId select and move together (Ctrl+G). */
   groupId?: string;
+  /** 0.1–1; undefined = fully opaque. (Ink uses its own `opacity` for the highlighter.) */
+  alpha?: number;
+  /** A web link: the item shows a link button that opens it. */
+  link?: string;
 };
 
 /** Whole-item text formatting (Miro's B / I / U / S and alignment). */
@@ -44,6 +56,7 @@ export type TextFmt = {
   underline?: boolean;
   strike?: boolean;
   align?: "left" | "center" | "right";
+  font?: FontKind;
 };
 
 /** Sticky font size: undefined = auto-fit to the text, like Miro's "Auto". */
@@ -52,11 +65,18 @@ export type ShapeEl = Base & {
   kind: "shape";
   shape: ShapeKind;
   text: string;
+  /** A colour, or "transparent" for no fill. */
   fill: string;
   stroke: string;
   textColor: string;
   fontSize: number;
   fmt?: TextFmt;
+  /** Hand-drawn look (Excalidraw); undefined = clean. */
+  rough?: Sloppiness;
+  fillStyle?: FillStyle;
+  strokeStyle?: StrokeStyle;
+  /** Border width in board units; undefined = the classic 2px hairline that keeps its size when zooming. */
+  strokeWidth?: number;
 };
 /** `bold` is the pre-`fmt` field; fmtOf() reads either. */
 export type TextEl = Base & { kind: "text"; text: string; color: string; fontSize: number; bold?: boolean; fmt?: TextFmt };
@@ -95,6 +115,12 @@ export type ConnectorEl = {
   headEnd?: Head;
   label?: string;
   locked?: boolean;
+  /** Hand-drawn look (Excalidraw); undefined = clean. */
+  rough?: Sloppiness;
+  /** Dotted lines; `dashed` stays for dashes. */
+  dotted?: boolean;
+  alpha?: number;
+  link?: string;
 };
 
 export type BoxEl = StickyEl | ShapeEl | TextEl | CardEl | FrameEl | DrawEl | ImageEl;
@@ -154,14 +180,22 @@ export function fmtOf(el: El): TextFmt {
   return {};
 }
 
+/** Font stacks: Sriracha is a handwriting face with both Thai and Latin letters. */
+export const FONT_STACK: Record<FontKind, string> = {
+  hand: '"Sriracha", "Comic Sans MS", cursive',
+  normal: "var(--font-sans)",
+  code: '"IBM Plex Mono", "IBM Plex Sans Thai", ui-monospace, monospace',
+};
+
 /** CSS for an item's whole-text formatting. */
-export function fmtStyle(f: TextFmt): { fontWeight?: number; fontStyle?: string; textDecoration?: string; textAlign?: "left" | "center" | "right" } {
+export function fmtStyle(f: TextFmt): { fontWeight?: number; fontStyle?: string; textDecoration?: string; textAlign?: "left" | "center" | "right"; fontFamily?: string } {
   const deco = [f.underline && "underline", f.strike && "line-through"].filter(Boolean).join(" ");
   return {
     fontWeight: f.bold ? 700 : undefined,
     fontStyle: f.italic ? "italic" : undefined,
     textDecoration: deco || undefined,
     textAlign: f.align,
+    fontFamily: f.font && f.font !== "normal" ? FONT_STACK[f.font] : undefined,
   };
 }
 

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Sriracha&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Anuphan:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
 @plugin "daisyui";
 
@@ -679,3 +679,7 @@ html[data-motion="off"] .ebo-curve {
   animation: none;
   stroke-dashoffset: 0;
 }
+
+/* Whiteboard dark canvas (Excalidraw's trick): invert the drawing, keep pictures natural. */
+.wb-dark { filter: invert(93%) hue-rotate(180deg); }
+.wb-dark img { filter: invert(100%) hue-rotate(180deg); }
